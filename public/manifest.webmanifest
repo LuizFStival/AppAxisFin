@@ -1,0 +1,17 @@
+{
+  "name": "AxisFin",
+  "short_name": "AxisFin",
+  "description": "Controle financeiro pessoal com contas, cartoes, receitas, despesas e relatorios mensais.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "icons": [
+    {
+      "src": "/axisfin-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
