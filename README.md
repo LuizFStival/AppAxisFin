@@ -11,6 +11,7 @@ AxisFin e um aplicativo web mobile-first para controle financeiro pessoal. O obj
 - Supabase CLI para migrations
 - Recharts para graficos
 - Lucide React para icones
+- Vercel Speed Insights para metricas de performance em producao
 - Vercel para deploy
 
 ## Regras de Produto
@@ -119,6 +120,12 @@ Configurar o projeto como Vite:
 - Environment variables: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
 
 No Supabase Auth, configurar Site URL e Redirect URLs com o dominio da Vercel.
+
+Speed Insights:
+
+- O pacote `@vercel/speed-insights` esta instalado.
+- O componente `<SpeedInsights />` e renderizado no entrypoint React.
+- As primeiras metricas aparecem na Vercel depois de acessar o site publicado.
 
 ## SDD
 
