@@ -19,6 +19,7 @@ Decisoes atuais que passam a valer:
 - Dados mockados ficam restritos a constantes nao sensiveis de interface, como categorias iniciais do sistema, e nao podem criar contas, cartoes ou transacoes para o usuario.
 - Supabase e a fonte de verdade para toda informacao financeira do usuario.
 - A sessao de autenticacao no navegador deve usar chave propria do AxisFin e preferir `sessionStorage` a `localStorage`, reduzindo persistencia local de tokens em maquinas compartilhadas.
+- Variaveis `VITE_` expostas no navegador devem usar apenas chaves publicas do Supabase (`sb_publishable_...` ou legacy `anon public`); chaves `sb_secret_...` devem ser bloqueadas no cliente.
 - O app deve coletar metricas de performance em producao com Vercel Speed Insights, sem capturar dados financeiros do usuario.
 - Toda tabela financeira deve ter RLS por `user_id` e toda referencia entre tabelas deve validar que o registro referenciado pertence ao mesmo usuario.
 - Contas e cartoes nao podem repetir nome para o mesmo usuario, ignorando maiusculas/minusculas e espacos extras.
@@ -47,6 +48,7 @@ Atualizacao tecnica aplicada:
 - `accountRepository`, `cardRepository` e `transactionRepository` fazem suas proprias escritas exclusivamente no Supabase e exigem usuario autenticado.
 - `categoryRepository` tambem expoe `list`, `create`, `update` e `remove`, com escrita exclusiva no Supabase e isolamento por usuario.
 - `src/lib/supabase/supabaseClient.ts` usa `axisfin.auth.session` em `sessionStorage` para a sessao do Supabase; dados financeiros continuam fora do storage do navegador.
+- `src/lib/supabase/supabaseClient.ts` bloqueia inicializacao com chave Supabase `sb_secret_...` em ambiente client-side e orienta trocar por chave publica.
 - `@vercel/speed-insights` foi adicionado e `<SpeedInsights />` e renderizado em `src/main.tsx` para medir performance do deploy na Vercel.
 - `supabase/migrations/20260611195552_enforce_user_owned_finance_refs.sql` adiciona triggers para impedir que cards, transacoes, faturas, parcelas e orcamentos apontem para registros de outro usuario.
 - `supabase/migrations/20260612022118_unique_category_names_ci.sql` adiciona unicidade case-insensitive para categorias por usuario e fluxo.

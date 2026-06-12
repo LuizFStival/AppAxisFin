@@ -65,6 +65,7 @@ VITE_SUPABASE_ANON_KEY=
 ```
 
 Nunca colocar `service_role` ou secret key no frontend.
+Em projetos novos do Supabase, use a chave `sb_publishable_...` no `VITE_SUPABASE_ANON_KEY`. Em projetos legados, use a chave `anon public`. Nunca use `sb_secret_...` em variavel `VITE_`, porque ela vai para o navegador.
 
 Comandos principais:
 
