@@ -1,8 +1,28 @@
 # SDD - AxisFin
 
-Versao: 1.0  
-Status: oficial para desenvolvimento inicial  
-Stack alvo: Next.js, React, TypeScript, Supabase, PostgreSQL, Vercel  
+Versao: 1.1  
+Status: documento vivo do produto  
+Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel  
+
+## Status de Atualizacao - 2026-06-15
+
+Atualizacao aplicada apos melhorias de contas, cartoes, faturas, categorias e navegacao do dashboard.
+
+Estado atual do repositorio:
+
+- O app em execucao e Vite + React + TypeScript. Next.js segue apenas como possibilidade futura, nao como stack atual.
+- A navegacao principal atual e: Home, Transacoes, Cartoes e Perfil, com botao central para novo lancamento. Relatorios continuam acessiveis por fluxo contextual.
+- O dashboard permite abrir transacoes filtradas ao clicar em Receitas, Despesas do mes, Recebido e Pago.
+- O dashboard permite abrir o detalhe de uma conta ao clicar no card da conta em Minhas Contas.
+- A tela de Contas possui visao geral e detalhe por conta, com saldo, entradas, saidas, quantidade de movimentos e lista de transacoes do mes ativo.
+- A tela de Cartoes possui faturas por ciclo de fechamento, valor da fatura, status, pagamento de fatura, menu de mais opcoes, alteracao de fechamento, edicao e exclusao de cartao.
+- Pagamento de fatura exige data e conta, desconta o saldo da conta escolhida e marca os lancamentos da fatura como pagos, registrando metadados de pagamento nos lancamentos.
+- Exclusao de cartao pede confirmacao explicita e remove os lancamentos vinculados ao cartao.
+- Categorias exibem seletor visual de icones em vez de select textual.
+- Tags de lancamentos de cartao usam cores distintas para parcela/fixa/variavel e essencial/superflua.
+- As regras de fechamento/vencimento de cartao devem continuar usando helpers centralizados em `src/lib/utils/cardInvoices.ts`.
+- Metadados tecnicos de lancamentos ficam encapsulados em `src/lib/utils/transactionMeta.ts`.
+- O README foi atualizado para refletir a stack real, arquitetura, variaveis, comandos e funcionalidades atuais.
 
 ## Status de Atualizacao - 2026-06-11
 
@@ -93,15 +113,16 @@ O produto deve abrir diretamente como app financeiro. A landing nao deve aparece
   - Grafico simples de fluxo.
   - Gastos por categoria.
 - Perfil com dados do usuario, configuracoes, notificacoes e ajuda.
-- Dados mockados temporarios enquanto Supabase nao estiver conectado.
+- Categorias iniciais como ponto de partida por usuario.
 - Repositorios/services isolando a origem dos dados.
 - Layout mobile-first sem aparencia de prototipo.
 - Website/landing preservado em `/archive/landing-page`.
+- Faturas de cartao por ciclo de fechamento/vencimento.
+- Parcelamentos com metadados de serie e numero de parcela.
+- Pagamento de fatura com data e conta de pagamento.
 
 ## 4. Escopo Futuro
 
-- Faturas completas por cartao.
-- Parcelamentos.
 - Metas financeiras.
 - Orcamentos por categoria.
 - Notificacoes de vencimento.
@@ -116,12 +137,14 @@ O produto deve abrir diretamente como app financeiro. A landing nao deve aparece
 
 ### Frontend
 
-- Next.js com App Router.
+- Vite como bundler atual.
 - React com componentes funcionais.
 - TypeScript estrito.
+- Tailwind CSS v4 via `@tailwindcss/vite`.
 - UI mobile-first.
 - Dark mode como tema principal.
 - Camada de dados desacoplada via repositories/services.
+- Migracao para Next.js pode ser reavaliada no futuro, mas nao deve ser tratada como realidade atual do repositorio.
 
 ### Backend e Banco
 
@@ -134,7 +157,7 @@ O produto deve abrir diretamente como app financeiro. A landing nao deve aparece
 ### Deploy
 
 - Desenvolvimento local primeiro.
-- Deploy futuro na Vercel.
+- Deploy na Vercel como app Vite.
 - Variaveis de ambiente gerenciadas por ambiente.
 
 ## 6. Preservacao do Website Atual
@@ -363,12 +386,12 @@ Deve exibir:
 
 ## 11. Navegacao Mobile-First
 
-Navegacao inferior obrigatoria:
+Navegacao inferior atual:
 
 - Home.
 - Transacoes.
 - Botao central `+`.
-- Relatorios.
+- Cartoes.
 - Perfil.
 
 Regras:
@@ -377,6 +400,7 @@ Regras:
 - Em desktop, centralizar app ou usar layout responsivo elegante.
 - O botao `+` abre o modal/bottom sheet de novo lancamento.
 - A navegacao deve ser persistente.
+- Relatorios podem ser acessados por fluxo contextual enquanto nao voltarem para a barra principal.
 
 ## 12. Modelagem de Dados para Supabase
 
@@ -603,9 +627,9 @@ Observacoes:
 
 ## 23. Estrategia de Deploy na Vercel
 
-1. Criar projeto Vercel.
+1. Criar projeto Vercel como Vite.
 2. Definir variaveis de ambiente.
-3. Configurar build Next.js.
+3. Configurar build `npm run build`.
 4. Validar preview deploy.
 5. Testar auth callback URLs no Supabase.
 6. Configurar dominio.
@@ -679,7 +703,7 @@ Observacoes:
 
 ## 27. Riscos Tecnicos
 
-- Migracao Vite -> Next.js pode gerar ajustes de estrutura.
+- Migracao Vite -> Next.js, se for retomada no futuro, pode gerar ajustes de estrutura.
 - RLS mal configurado pode bloquear o app ou vazar dados.
 - Modelagem de faturas/cartoes pode ficar incorreta se fechamento/vencimento nao forem tratados como regras centrais.
 - Misturar caixa real com previsao pode gerar numeros enganosos.
@@ -697,7 +721,7 @@ Observacoes:
 6. Implementar Auth.
 7. Conectar dados reais.
 8. Validar RLS.
-9. Implementar faturas/cartoes.
+9. Evoluir faturas/cartoes para persistencia dedicada em tabelas de invoices/installments quando necessario.
 10. Preparar Vercel.
 
 ## SQL Inicial Supabase
@@ -1006,9 +1030,8 @@ for delete using (user_id = auth.uid());
 
 ### Fase 6 - Vercel
 
-1. Migrar para Next.js se o projeto ainda estiver em Vite.
-2. Ajustar App Router.
-3. Configurar envs.
-4. Publicar preview.
-5. Validar Auth callback.
-6. Publicar producao.
+1. Manter build Vite em `dist`.
+2. Configurar envs.
+3. Publicar preview.
+4. Validar Auth callback.
+5. Publicar producao.

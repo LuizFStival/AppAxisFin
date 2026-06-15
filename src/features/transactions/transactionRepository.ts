@@ -36,10 +36,31 @@ export const transactionRepository = {
     return mapTransaction(data);
   },
 
+  async createMany(transactions: Array<Omit<Transaction, 'id'>>): Promise<Transaction[]> {
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const { data, error } = await client
+      .from('transactions')
+      .insert(transactions.map((transaction) => toTransactionInsert(userId, transaction)))
+      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes')
+      .order('transaction_date', { ascending: true });
+
+    if (error) throw error;
+    return (data ?? []).map(mapTransaction);
+  },
+
   async updateStatus(id: string, status: Transaction['status']): Promise<void> {
     const userId = await assertCurrentUserId();
     const client = assertSupabaseConfigured();
     const { error } = await client.from('transactions').update({ status }).eq('id', id).eq('user_id', userId);
+    if (error) throw error;
+  },
+
+  async updateManyStatus(ids: string[], status: Transaction['status']): Promise<void> {
+    if (ids.length === 0) return;
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const { error } = await client.from('transactions').update({ status }).eq('user_id', userId).in('id', ids);
     if (error) throw error;
   },
 
@@ -58,10 +79,34 @@ export const transactionRepository = {
     return mapTransaction(data);
   },
 
+  async updateMany(transactions: Transaction[]): Promise<Transaction[]> {
+    const saved: Transaction[] = [];
+    for (const transaction of transactions) {
+      const { id, ...input } = transaction;
+      saved.push(await this.update(id, input));
+    }
+    return saved;
+  },
+
   async remove(id: string): Promise<void> {
     const userId = await assertCurrentUserId();
     const client = assertSupabaseConfigured();
     const { error } = await client.from('transactions').delete().eq('id', id).eq('user_id', userId);
+    if (error) throw error;
+  },
+
+  async removeMany(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const { error } = await client.from('transactions').delete().eq('user_id', userId).in('id', ids);
+    if (error) throw error;
+  },
+
+  async removeByCard(cardId: string): Promise<void> {
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const { error } = await client.from('transactions').delete().eq('user_id', userId).eq('card_id', cardId);
     if (error) throw error;
   },
 };

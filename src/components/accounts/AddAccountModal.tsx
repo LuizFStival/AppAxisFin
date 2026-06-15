@@ -22,7 +22,7 @@ interface AddAccountModalProps {
 
 const accountTypes: { id: AccountType; label: string }[] = [
   { id: 'checking', label: 'Corrente' },
-  { id: 'savings', label: 'Poupanca' },
+  { id: 'savings', label: 'Poupança' },
   { id: 'cash', label: 'Dinheiro' },
   { id: 'investment', label: 'Investimento' },
 ];
@@ -65,13 +65,13 @@ export function AddAccountModal({ isOpen, accounts, account, onClose, onSave }: 
     }
 
     if (hasDuplicateName(trimmedName, accounts.map((item) => item.name), account?.name)) {
-      setError('Ja existe uma conta com esse nome.');
+      setError('Já existe uma conta com esse nome.');
       return;
     }
 
     const parsedBalance = parseCurrencyInput(balance);
     if (parsedBalance < 0) {
-      setError('Informe um saldo inicial valido.');
+      setError('Informe um saldo inicial válido.');
       return;
     }
 
@@ -90,7 +90,7 @@ export function AddAccountModal({ isOpen, accounts, account, onClose, onSave }: 
       if (saveError instanceof DuplicateNameError) {
         setError(saveError.message);
       } else {
-        setError('Nao foi possivel criar a conta. Tente novamente.');
+        setError('Não foi possível criar a conta. Tente novamente.');
       }
     } finally {
       setIsSaving(false);
@@ -169,7 +169,7 @@ export function AddAccountModal({ isOpen, accounts, account, onClose, onSave }: 
           </label>
 
           <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Instituicao
+            Instituição
             <input
               value={institution}
               onChange={(event) => setInstitution(event.target.value)}

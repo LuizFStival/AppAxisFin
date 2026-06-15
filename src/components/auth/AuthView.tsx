@@ -35,14 +35,14 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
         });
 
         if (error) throw error;
-        setMessage('Cadastro criado. Se o Supabase pedir confirmacao por email, confirme antes de entrar.');
+        setMessage('Cadastro criado. Se o Supabase pedir confirmação por email, confirme antes de entrar.');
       } else {
         const { error } = await client.auth.signInWithPassword({ email, password });
         if (error) throw error;
         onAuthenticated();
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Nao foi possivel autenticar agora.');
+      setMessage(error instanceof Error ? error.message : 'Não foi possível autenticar agora.');
     } finally {
       setIsLoading(false);
     }
@@ -117,7 +117,7 @@ export function AuthView({ onAuthenticated }: AuthViewProps) {
                     required
                     minLength={6}
                     className="w-full bg-transparent text-sm text-white outline-none"
-                    placeholder="Minimo 6 caracteres"
+                    placeholder="Mínimo 6 caracteres"
                   />
                 </div>
               </label>

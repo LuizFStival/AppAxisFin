@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeftRight, BarChart3, Home, Plus, User } from 'lucide-react';
+import { ArrowLeftRight, CreditCard, Home, Plus, User } from 'lucide-react';
 import { AppView } from '../../types';
 
 interface BottomNavigationProps {
@@ -10,8 +10,8 @@ interface BottomNavigationProps {
 
 const items = [
   { id: 'home' as const, label: 'Home', icon: Home },
-  { id: 'transactions' as const, label: 'Transacoes', icon: ArrowLeftRight },
-  { id: 'reports' as const, label: 'Relatorios', icon: BarChart3 },
+  { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
+  { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
   { id: 'profile' as const, label: 'Perfil', icon: User },
 ];
 
@@ -41,7 +41,7 @@ export function BottomNavigation({ currentView, onNavigate, onAdd }: BottomNavig
           type="button"
           onClick={onAdd}
           className="mx-auto flex h-14 w-14 -translate-y-4 items-center justify-center rounded-full bg-gradient-to-tr from-[#3B82F6] to-[#8B5CF6] text-white shadow-lg shadow-[#3B82F6]/30 transition hover:rotate-90 hover:scale-105 active:scale-95"
-          aria-label="Adicionar lancamento"
+          aria-label="Adicionar lançamento"
         >
           <Plus size={28} strokeWidth={2.5} />
         </button>

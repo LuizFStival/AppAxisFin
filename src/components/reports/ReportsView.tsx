@@ -1,40 +1,41 @@
 import React from 'react';
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3, PieChart as PieChartIcon, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
-import { Category, DashboardSummary, Transaction } from '../../types';
-import { expensesByCategory, formatCurrency, getMonthKey } from '../../lib/utils/finance';
+import { Card, Category, DashboardSummary, Transaction } from '../../types';
+import { expensesByCategory, formatCurrency, getFinancialMonthKey } from '../../lib/utils/finance';
 import { StatCard } from '../shared/StatCard';
 
 interface ReportsViewProps {
   month: string;
   transactions: Transaction[];
+  cards: Card[];
   categories: Category[];
   summary: DashboardSummary;
 }
 
-export function ReportsView({ month, transactions, categories, summary }: ReportsViewProps) {
-  const categoryData = expensesByCategory(transactions, categories, month);
+export function ReportsView({ month, transactions, cards, categories, summary }: ReportsViewProps) {
+  const categoryData = expensesByCategory(transactions, cards, categories, month);
   const chartData = [
     { name: 'Receitas', value: summary.income, fill: '#10B981' },
     { name: 'Despesas', value: summary.expenses, fill: '#F43F5E' },
     { name: 'Recebido', value: summary.received, fill: '#38BDF8' },
     { name: 'Pago', value: summary.paid, fill: '#8B5CF6' },
   ];
-  const monthTransactions = transactions.filter((transaction) => getMonthKey(transaction.date) === month);
-  const net = summary.received - summary.paid;
+  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction, cards) === month);
+  const net = summary.income - summary.expenses;
 
   return (
     <div className="px-4 pt-7 md:px-8 md:pt-8">
       <header>
-        <p className="text-sm text-slate-400">Analise do mes {month}</p>
-        <h1 className="font-display text-2xl font-bold text-white">Relatorios</h1>
+        <p className="text-sm text-slate-400">Análise do mês {month}</p>
+        <h1 className="font-display text-2xl font-bold text-white">Relatórios</h1>
       </header>
 
       <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Receitas" value={formatCurrency(summary.income)} tone="income" icon={TrendingUp} />
         <StatCard label="Despesas" value={formatCurrency(summary.expenses)} tone="expense" icon={TrendingDown} />
-        <StatCard label="Liquido" value={formatCurrency(net)} tone={net >= 0 ? 'info' : 'expense'} icon={Wallet} />
-        <StatCard label="Lancamentos" value={String(monthTransactions.length)} tone="neutral" icon={BarChart3} />
+        <StatCard label="Líquido" value={formatCurrency(net)} tone={net >= 0 ? 'info' : 'expense'} icon={Wallet} />
+        <StatCard label="Lançamentos" value={String(monthTransactions.length)} tone="neutral" icon={BarChart3} />
       </section>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_0.9fr]">

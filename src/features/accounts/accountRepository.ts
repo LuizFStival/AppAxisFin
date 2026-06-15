@@ -99,6 +99,21 @@ export const accountRepository = {
     return mapAccount(data);
   },
 
+  async updateBalance(id: string, balance: number): Promise<Account> {
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const { data, error } = await client
+      .from('accounts')
+      .update({ balance })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select('id, name, type, institution, balance, color')
+      .single();
+
+    if (error) throw error;
+    return mapAccount(data);
+  },
+
   async remove(id: string): Promise<void> {
     const userId = await assertCurrentUserId();
     const client = assertSupabaseConfigured();
@@ -109,7 +124,7 @@ export const accountRepository = {
       .or(`account_id.eq.${id},from_account_id.eq.${id},to_account_id.eq.${id}`);
 
     if (countError) throw countError;
-    if (count) throw new Error('Nao e possivel excluir uma conta com lancamentos vinculados.');
+    if (count) throw new Error('Não é possível excluir uma conta com lançamentos vinculados.');
 
     const { error } = await client.from('accounts').delete().eq('id', id).eq('user_id', userId);
     if (error) throw error;

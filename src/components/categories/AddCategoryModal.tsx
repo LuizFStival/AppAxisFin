@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, Check, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Briefcase,
+  Car,
+  Check,
+  Compass,
+  Home,
+  Laptop,
+  MoreHorizontal,
+  Settings,
+  Utensils,
+  X,
+} from 'lucide-react';
 import { Category } from '../../types';
 import { DuplicateNameError, hasDuplicateName } from '../../lib/utils/validation';
 
@@ -12,7 +24,16 @@ interface AddCategoryModalProps {
 }
 
 const categoryColors = ['#F43F5E', '#10B981', '#3882F6', '#8B5CF6', '#F59E0B', '#EC4899', '#14B8A6', '#64748B'];
-const categoryIcons = ['Utensils', 'Home', 'Car', 'Compass', 'Settings', 'Briefcase', 'Laptop', 'MoreHorizontal'];
+const categoryIcons = [
+  { id: 'Utensils', label: 'Alimentação', Icon: Utensils },
+  { id: 'Home', label: 'Casa', Icon: Home },
+  { id: 'Car', label: 'Transporte', Icon: Car },
+  { id: 'Compass', label: 'Lazer', Icon: Compass },
+  { id: 'Settings', label: 'Serviços', Icon: Settings },
+  { id: 'Briefcase', label: 'Trabalho', Icon: Briefcase },
+  { id: 'Laptop', label: 'Digital', Icon: Laptop },
+  { id: 'MoreHorizontal', label: 'Outros', Icon: MoreHorizontal },
+];
 
 export function AddCategoryModal({ isOpen, categories, category, onClose, onSave }: AddCategoryModalProps) {
   const [name, setName] = useState('');
@@ -46,7 +67,7 @@ export function AddCategoryModal({ isOpen, categories, category, onClose, onSave
 
     const sameFlowCategories = categories.filter((item) => item.flow === flow).map((item) => item.name);
     if (hasDuplicateName(trimmedName, sameFlowCategories, category?.name)) {
-      setError('Ja existe uma categoria com esse nome para esse tipo.');
+      setError('Já existe uma categoria com esse nome para esse tipo.');
       return;
     }
 
@@ -56,7 +77,7 @@ export function AddCategoryModal({ isOpen, categories, category, onClose, onSave
       await onSave({ name: trimmedName, flow, icon, color });
       onClose();
     } catch (saveError) {
-      setError(saveError instanceof DuplicateNameError ? saveError.message : 'Nao foi possivel salvar a categoria.');
+      setError(saveError instanceof DuplicateNameError ? saveError.message : 'Não foi possível salvar a categoria.');
     } finally {
       setIsSaving(false);
     }
@@ -85,7 +106,7 @@ export function AddCategoryModal({ isOpen, categories, category, onClose, onSave
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Ex: Mercado, Lazer, Salario"
+              placeholder="Ex: Mercado, Lazer, Salário"
               className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400"
             />
           </label>
@@ -102,18 +123,30 @@ export function AddCategoryModal({ isOpen, categories, category, onClose, onSave
             </select>
           </label>
 
-          <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Icone
-            <select
-              value={icon}
-              onChange={(event) => setIcon(event.target.value)}
-              className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400"
-            >
-              {categoryIcons.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          </label>
+          <div className="grid gap-2 text-xs font-semibold text-slate-400">
+            Ícone
+            <div className="grid grid-cols-4 gap-2">
+              {categoryIcons.map(({ id, label, Icon }) => {
+                const selected = icon === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setIcon(id)}
+                    className={`flex h-14 flex-col items-center justify-center gap-1 rounded-2xl border text-[10px] font-bold transition ${
+                      selected
+                        ? 'border-sky-400 bg-sky-500/20 text-white'
+                        : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white'
+                    }`}
+                    title={label}
+                  >
+                    <Icon size={18} />
+                    <span className="max-w-full truncate px-1">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <label className="grid gap-2 text-xs font-semibold text-slate-400">
             Cor

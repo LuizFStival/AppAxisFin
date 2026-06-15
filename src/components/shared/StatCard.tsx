@@ -7,6 +7,7 @@ interface StatCardProps {
   tone: 'income' | 'expense' | 'info' | 'neutral';
   icon: LucideIcon;
   hint?: string;
+  onClick?: () => void;
 }
 
 const toneClasses = {
@@ -16,9 +17,15 @@ const toneClasses = {
   neutral: 'text-violet-300 bg-violet-500/10 border-violet-400/15',
 };
 
-export function StatCard({ label, value, tone, icon: Icon, hint }: StatCardProps) {
+export function StatCard({ label, value, tone, icon: Icon, hint, onClick }: StatCardProps) {
+  const Component = onClick ? 'button' : 'section';
+
   return (
-    <section className="cosmic-card cosmic-card-hover rounded-2xl p-4">
+    <Component
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className="cosmic-card cosmic-card-hover w-full rounded-2xl p-4 text-left"
+    >
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
@@ -29,6 +36,6 @@ export function StatCard({ label, value, tone, icon: Icon, hint }: StatCardProps
         </span>
       </div>
       {hint ? <p className="mt-2 text-xs text-slate-500">{hint}</p> : null}
-    </section>
+    </Component>
   );
 }

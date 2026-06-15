@@ -1,29 +1,46 @@
 # AxisFin
 
-AxisFin e um aplicativo web mobile-first para controle financeiro pessoal. O objetivo e organizar contas, cartoes, receitas, despesas, transferencias, categorias e relatorios mensais com dados reais por usuario.
+AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O app organiza contas, cartões, receitas, despesas, transferências, categorias, faturas e relatórios mensais com dados reais por usuário.
 
 ## Stack
 
-- Vite + React 19 + TypeScript
-- Tailwind CSS v4
+- Vite 6
+- React 19
+- TypeScript
+- Tailwind CSS v4 via `@tailwindcss/vite`
 - Supabase Auth
 - Supabase Postgres com RLS por `user_id`
 - Supabase CLI para migrations
-- Recharts para graficos
-- Lucide React para icones
-- Vercel Speed Insights para metricas de performance em producao
+- Recharts para gráficos
+- Lucide React para ícones
+- Vercel Speed Insights
 - Vercel para deploy
 
-## Regras de Produto
+## Regras De Produto
 
-- Supabase e a fonte de verdade para dados financeiros.
-- Contas, cartoes, categorias, transacoes e saldos nao podem ser persistidos em `localStorage`.
-- Cada usuario ve e altera apenas os proprios dados.
-- Conta nova nao nasce com contas, cartoes ou transacoes de exemplo.
-- Categorias padrao sao criadas por usuario apenas como ponto de partida.
-- Categorias podem ser criadas, editadas e excluidas pelo usuario.
-- Contas, cartoes e categorias bloqueiam nomes repetidos por usuario conforme a regra de negocio.
-- Valores monetarios usam formato brasileiro, como `R$ 0,00`.
+- Supabase é a fonte de verdade para dados financeiros.
+- Contas, cartões, categorias, transações e saldos não podem ser persistidos em `localStorage`.
+- Cada usuário vê e altera apenas os próprios dados.
+- Conta nova não nasce com contas, cartões ou transações de exemplo.
+- Categorias padrão são criadas por usuário apenas como ponto de partida.
+- Categorias podem ser criadas, editadas e excluídas pelo usuário.
+- Contas, cartões e categorias bloqueiam nomes repetidos por usuário conforme a regra de negócio.
+- Valores monetários usam formato brasileiro, como `R$ 0,00`.
+- Faturas de cartão respeitam fechamento e vencimento.
+- Pagamento de fatura deve escolher data e conta, descontar o saldo da conta e marcar os lançamentos da fatura como pagos.
+- Exclusão de dados financeiros críticos deve pedir confirmação antes de executar efeitos destrutivos.
+
+## Funcionalidades Atuais
+
+- Autenticação com Supabase.
+- Dashboard com saldo atual, receitas, despesas do mês, recebido, pago, contas e cartões.
+- Cards de resumo do dashboard abrem a lista de transações filtrada.
+- Contas com visão geral e detalhe por conta, incluindo entradas, saídas e transações do mês.
+- Cartões com fatura por ciclo de fechamento, valor atual, status, pagamento de fatura e ações de edição/exclusão.
+- Lançamentos de receita, despesa, transferência, despesa fixa e despesa parcelada.
+- Categorias com ícones visuais, cores, criação, edição e exclusão.
+- Relatórios com gráficos e agrupamentos por categoria.
+- Perfil com atalhos operacionais, cartões e categorias.
 
 ## Arquitetura
 
@@ -53,11 +70,11 @@ src/
   types.ts
 ```
 
-Os componentes cuidam da interface. Os repositories cuidam de leitura/escrita por feature. `financeStore` centraliza snapshot, usuario atual, bootstrap de categorias e mapeamento dos dados vindos do Supabase.
+Os componentes cuidam da interface. Os repositories cuidam de leitura/escrita por feature. `financeStore` centraliza snapshot, usuário atual, bootstrap de categorias e mapeamento dos dados vindos do Supabase.
 
 ## Supabase
 
-Variaveis exigidas no ambiente local e na Vercel:
+Variáveis exigidas no ambiente local e na Vercel:
 
 ```text
 VITE_SUPABASE_URL=
@@ -65,7 +82,8 @@ VITE_SUPABASE_ANON_KEY=
 ```
 
 Nunca colocar `service_role` ou secret key no frontend.
-Em projetos novos do Supabase, use a chave `sb_publishable_...` no `VITE_SUPABASE_ANON_KEY`. Em projetos legados, use a chave `anon public`. Nunca use `sb_secret_...` em variavel `VITE_`, porque ela vai para o navegador.
+
+Em projetos novos do Supabase, use a chave `sb_publishable_...` no `VITE_SUPABASE_ANON_KEY`. Em projetos legados, use a chave `anon public`. Nunca use `sb_secret_...` em variável `VITE_`, porque ela vai para o navegador.
 
 Comandos principais:
 
@@ -77,22 +95,22 @@ npx supabase db push
 
 Migrations importantes:
 
-- `20260609120000_unique_account_card_names_ci.sql`: nomes unicos para contas/cartoes por usuario, ignorando caixa e espacos.
-- `20260611195552_enforce_user_owned_finance_refs.sql`: triggers para impedir vinculos financeiros entre usuarios diferentes.
-- `20260612022118_unique_category_names_ci.sql`: nomes unicos para categorias por usuario e fluxo.
+- `20260609120000_unique_account_card_names_ci.sql`: nomes únicos para contas/cartões por usuário, ignorando caixa e espaços.
+- `20260611195552_enforce_user_owned_finance_refs.sql`: triggers para impedir vínculos financeiros entre usuários diferentes.
+- `20260612022118_unique_category_names_ci.sql`: nomes únicos para categorias por usuário e fluxo.
 
 ## Segurança
 
 - RLS deve estar habilitado em todas as tabelas financeiras.
 - Policies devem usar `(select auth.uid()) = user_id`.
 - Inserts e updates precisam de `WITH CHECK`.
-- Referencias entre tabelas financeiras devem validar ownership do mesmo usuario.
-- A sessao do Supabase usa `sessionStorage` com chave `axisfin.auth.session`.
-- Dados financeiros nao ficam em storage do navegador.
+- Referências entre tabelas financeiras devem validar ownership do mesmo usuário.
+- A sessão do Supabase usa `sessionStorage` com chave `axisfin.auth.session`.
+- Dados financeiros não ficam em storage do navegador.
 
 ## Desenvolvimento
 
-Instalar dependencias:
+Instalar dependências:
 
 ```bash
 npm install
@@ -120,13 +138,13 @@ Configurar o projeto como Vite:
 - Output directory: `dist`
 - Environment variables: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`
 
-No Supabase Auth, configurar Site URL e Redirect URLs com o dominio da Vercel.
+No Supabase Auth, configurar Site URL e Redirect URLs com o domínio da Vercel.
 
 Speed Insights:
 
-- O pacote `@vercel/speed-insights` esta instalado.
-- O componente `<SpeedInsights />` e renderizado no entrypoint React.
-- As primeiras metricas aparecem na Vercel depois de acessar o site publicado.
+- O pacote `@vercel/speed-insights` está instalado.
+- O componente `<SpeedInsights />` é renderizado no entrypoint React.
+- As primeiras métricas aparecem na Vercel depois de acessar o site publicado.
 
 ## SDD
 
@@ -136,4 +154,4 @@ O documento vivo do produto fica em:
 docs/despezzas-sdd.md
 ```
 
-Toda mudanca de produto, regra financeira, arquitetura, persistencia, navegacao ou schema deve atualizar o SDD no mesmo ciclo de trabalho.
+Toda mudança de produto, regra financeira, arquitetura, persistência, navegação ou schema deve atualizar o SDD no mesmo ciclo de trabalho.

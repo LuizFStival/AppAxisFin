@@ -7,6 +7,7 @@ import {
   shiftMonthKey,
   summarizeDashboard,
 } from './finance';
+import { getCardInvoiceClosingMonth, getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth, getCardInvoiceInfoForPeriod } from './cardInvoices';
 import { Account, Card, Category, Transaction } from '../../types';
 
 const accounts: Account[] = [
@@ -95,18 +96,28 @@ const transactions: Transaction[] = [
     categoryId: 'cat-food',
     cardId: 'card-main',
   },
+  {
+    id: 'tx-card-current-month',
+    description: 'Compra no credito',
+    amount: 132.64,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-18',
+    categoryId: 'cat-food',
+    cardId: 'card-main',
+  },
 ];
 
-const summary = summarizeDashboard(accounts, transactions, '2026-06');
+const summary = summarizeDashboard(accounts, cards, transactions, '2026-06');
 
 assert.deepEqual(summary, {
   currentBalance: 1500,
   income: 5800,
-  expenses: 1550,
+  expenses: 1600,
   received: 5000,
   paid: 350,
   pendingIncome: 800,
-  pendingExpenses: 1200,
+  pendingExpenses: 1250,
 });
 
 assert.deepEqual(getAvailableMonths(transactions), ['2026-06', '2026-05']);
@@ -117,7 +128,48 @@ assert.equal(getPaymentSource(accounts, cards, transactions[2]), 'Principal');
 assert.equal(getPaymentSource(accounts, cards, transactions[4]), 'Principal -> Reserva');
 assert.equal(getPaymentSource(accounts, cards, transactions[5]), 'Credito');
 
-assert.deepEqual(expensesByCategory(transactions, categories, '2026-06'), [
+assert.deepEqual(expensesByCategory(transactions, cards, categories, '2026-06'), [
   { name: 'Moradia', value: 1200, color: '#6366F1' },
-  { name: 'Alimentacao', value: 350, color: '#EF4444' },
+  { name: 'Alimentacao', value: 400, color: '#EF4444' },
 ]);
+
+const closesOnTwentySix: Card = {
+  id: 'card-26',
+  name: 'Fecha 26',
+  accountId: 'acc-main',
+  limit: 5000,
+  used: 0,
+  dueDay: 2,
+  closingDay: 26,
+  color: '#8B5CF6',
+  network: 'mastercard',
+};
+
+assert.deepEqual(getCardInvoiceInfo(closesOnTwentySix, '2026-05-26', '2026-06-12'), {
+  period: '2026-07',
+  label: 'Fatura julho de 2026',
+  startDate: '2026-05-26',
+  endDate: '2026-06-26',
+  dueDate: '2026-07-02',
+  status: 'aberta',
+});
+
+assert.deepEqual(getCardInvoiceInfoForPeriod(closesOnTwentySix, '2026-07', '2026-06-12'), {
+  period: '2026-07',
+  label: 'Fatura julho de 2026',
+  startDate: '2026-05-26',
+  endDate: '2026-06-26',
+  dueDate: '2026-07-02',
+  status: 'aberta',
+});
+
+assert.deepEqual(getCardInvoiceInfoForClosingMonth(closesOnTwentySix, '2026-06', '2026-06-12'), {
+  period: '2026-07',
+  label: 'Fatura julho de 2026',
+  startDate: '2026-05-26',
+  endDate: '2026-06-26',
+  dueDate: '2026-07-02',
+  status: 'aberta',
+});
+
+assert.equal(getCardInvoiceClosingMonth(closesOnTwentySix, '2026-05-26'), '2026-06');

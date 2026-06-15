@@ -21,9 +21,9 @@ export class DuplicateNameError extends Error {
 
   constructor(entityLabel: 'conta' | 'cartao' | 'categoria') {
     const messages = {
-      conta: 'Ja existe uma conta com esse nome.',
-      cartao: 'Ja existe um cartao com esse nome.',
-      categoria: 'Ja existe uma categoria com esse nome para esse tipo.',
+      conta: 'Já existe uma conta com esse nome.',
+      cartao: 'Já existe um cartão com esse nome.',
+      categoria: 'Já existe uma categoria com esse nome para esse tipo.',
     };
 
     super(messages[entityLabel]);

@@ -59,18 +59,18 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
 
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError('Informe o nome do cartao.');
+      setError('Informe o nome do cartão.');
       return;
     }
 
     if (hasDuplicateName(trimmedName, cards.map((item) => item.name), card?.name)) {
-      setError('Ja existe um cartao com esse nome.');
+      setError('Já existe um cartão com esse nome.');
       return;
     }
 
     const parsedLimit = parseCurrencyInput(limit);
     if (parsedLimit <= 0) {
-      setError('Informe um limite valido.');
+      setError('Informe um limite válido.');
       return;
     }
 
@@ -102,7 +102,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
       if (saveError instanceof DuplicateNameError) {
         setError(saveError.message);
       } else {
-        setError('Nao foi possivel criar o cartao. Tente novamente.');
+        setError('Não foi possível criar o cartão. Tente novamente.');
       }
     } finally {
       setIsSaving(false);
@@ -113,7 +113,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
       <form onSubmit={handleSubmit} className="w-full max-w-lg rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold text-white">{card ? 'Editar cartao' : 'Novo cartao'}</h2>
+          <h2 className="font-display text-lg font-bold text-white">{card ? 'Editar cartão' : 'Novo cartão'}</h2>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">
             <X size={18} />
           </button>
@@ -132,7 +132,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Ex: Nu Credito, C6 Carbon"
+              placeholder="Ex: Nu Crédito, C6 Carbon"
               className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400"
             />
           </label>
@@ -205,7 +205,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
           className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-60"
         >
           <Check size={18} />
-          {isSaving ? 'Salvando...' : card ? 'Salvar cartao' : 'Criar cartao'}
+          {isSaving ? 'Salvando...' : card ? 'Salvar cartão' : 'Criar cartão'}
         </button>
       </form>
     </div>

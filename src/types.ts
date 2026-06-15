@@ -1,9 +1,13 @@
 export type MoneyFlow = 'income' | 'expense' | 'transfer';
 export type EntryStatus = 'paid' | 'pending';
+export type ExpenseEntryMode = 'variable' | 'fixed' | 'installment';
+export type EditSeriesScope = 'single' | 'forward';
+export type ExpenseNeed = 'essential' | 'superfluous';
 export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
 export type CardNetwork = 'mastercard' | 'visa' | 'elo' | 'other';
-export type AppView = 'home' | 'transactions' | 'accounts' | 'reports' | 'profile';
+export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reports' | 'profile';
 export type TransactionTab = 'general' | 'cards' | 'accounts';
+export type DashboardTransactionFilter = 'income' | 'expenses' | 'received' | 'paid';
 
 export interface Account {
   id: string;
@@ -48,6 +52,18 @@ export interface Transaction {
   fromAccountId?: string;
   toAccountId?: string;
   notes?: string;
+}
+
+export interface TransactionMeta {
+  entryMode?: ExpenseEntryMode;
+  expenseNeed?: ExpenseNeed;
+  seriesId?: string;
+  installmentNumber?: number;
+  totalInstallments?: number;
+  generatedFrom?: string;
+  generatedUntil?: string;
+  paidAt?: string;
+  paidFromAccountId?: string;
 }
 
 export interface FinanceSnapshot {

@@ -1,4 +1,5 @@
 import { Account, Card, Category, DashboardSummary, Transaction } from '../../types';
+import { getCardInvoiceClosingMonth } from './cardInvoices';
 
 export const currency = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -7,6 +8,10 @@ export const currency = new Intl.NumberFormat('pt-BR', {
 
 export function formatCurrency(value: number): string {
   return currency.format(value);
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 export function getMonthKey(date: string): string {
@@ -35,13 +40,19 @@ export function getAvailableMonths(transactions: Transaction[]): string[] {
     .reverse();
 }
 
+export function getFinancialMonthKey(transaction: Transaction, cards: Card[]): string {
+  if (!transaction.cardId) return getMonthKey(transaction.date);
+  const card = cards.find((item) => item.id === transaction.cardId);
+  return card ? getCardInvoiceClosingMonth(card, transaction.date) : getMonthKey(transaction.date);
+}
+
 export function getCategoryName(categories: Category[], categoryId?: string): string {
-  if (!categoryId) return 'Transferencia';
+  if (!categoryId) return 'Transferência';
   return categories.find((category) => category.id === categoryId)?.name ?? 'Outros';
 }
 
 export function getPaymentSource(accounts: Account[], cards: Card[], transaction: Transaction): string {
-  if (transaction.cardId) return cards.find((card) => card.id === transaction.cardId)?.name ?? 'Cartao';
+  if (transaction.cardId) return cards.find((card) => card.id === transaction.cardId)?.name ?? 'Cartão';
   if (transaction.accountId) return accounts.find((account) => account.id === transaction.accountId)?.name ?? 'Conta';
   if (transaction.fromAccountId && transaction.toAccountId) {
     const from = accounts.find((account) => account.id === transaction.fromAccountId)?.name ?? 'Origem';
@@ -51,36 +62,36 @@ export function getPaymentSource(accounts: Account[], cards: Card[], transaction
   return 'Sem origem';
 }
 
-export function summarizeDashboard(accounts: Account[], transactions: Transaction[], month: string): DashboardSummary {
-  const monthTransactions = transactions.filter((transaction) => getMonthKey(transaction.date) === month);
+export function summarizeDashboard(accounts: Account[], cards: Card[], transactions: Transaction[], month: string): DashboardSummary {
+  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction, cards) === month);
   const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
   const expenseTransactions = monthTransactions.filter((transaction) => transaction.flow === 'expense');
 
-  const income = incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const expenses = expenseTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const received = incomeTransactions
+  const income = roundMoney(incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const expenses = roundMoney(expenseTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const received = roundMoney(incomeTransactions
     .filter((transaction) => transaction.status === 'paid')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const paid = expenseTransactions
-    .filter((transaction) => transaction.status === 'paid')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const paid = roundMoney(expenseTransactions
+    .filter((transaction) => transaction.status === 'paid' && !transaction.cardId)
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
 
   return {
-    currentBalance: accounts.reduce((sum, account) => sum + account.balance, 0),
+    currentBalance: roundMoney(accounts.reduce((sum, account) => sum + account.balance, 0)),
     income,
     expenses,
     received,
     paid,
-    pendingIncome: income - received,
-    pendingExpenses: expenses - paid,
+    pendingIncome: roundMoney(income - received),
+    pendingExpenses: roundMoney(expenses - paid),
   };
 }
 
-export function expensesByCategory(transactions: Transaction[], categories: Category[], month: string) {
+export function expensesByCategory(transactions: Transaction[], cards: Card[], categories: Category[], month: string) {
   const totals = new Map<string, { name: string; value: number; color: string }>();
 
   transactions
-    .filter((transaction) => transaction.flow === 'expense' && getMonthKey(transaction.date) === month)
+    .filter((transaction) => transaction.flow === 'expense' && getFinancialMonthKey(transaction, cards) === month)
     .forEach((transaction) => {
       const category = categories.find((item) => item.id === transaction.categoryId);
       const key = category?.id ?? 'other';
@@ -90,7 +101,7 @@ export function expensesByCategory(transactions: Transaction[], categories: Cate
         color: category?.color ?? '#64748B',
       };
 
-      totals.set(key, { ...current, value: current.value + transaction.amount });
+      totals.set(key, { ...current, value: roundMoney(current.value + transaction.amount) });
     });
 
   return Array.from(totals.values()).sort((a, b) => b.value - a.value);

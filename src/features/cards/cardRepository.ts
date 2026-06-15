@@ -110,15 +110,13 @@ export const cardRepository = {
   async remove(id: string): Promise<void> {
     const userId = await assertCurrentUserId();
     const client = assertSupabaseConfigured();
-    const { count, error: countError } = await client
+    const { error: transactionsError } = await client
       .from('transactions')
-      .select('id', { count: 'exact', head: true })
+      .delete()
       .eq('user_id', userId)
       .eq('card_id', id);
 
-    if (countError) throw countError;
-    if (count) throw new Error('Nao e possivel excluir um cartao com lancamentos vinculados.');
-
+    if (transactionsError) throw transactionsError;
     const { error } = await client.from('cards').delete().eq('id', id).eq('user_id', userId);
     if (error) throw error;
   },
