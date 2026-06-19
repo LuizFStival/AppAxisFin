@@ -15,4 +15,5 @@ export const mockCategories: Category[] = [
   { id: 'cat-transport', name: 'Transporte', flow: 'expense', color: '#EC4899', icon: 'Car' },
   { id: 'cat-leisure', name: 'Lazer', flow: 'expense', color: '#8B5CF6', icon: 'Compass' },
   { id: 'cat-services', name: 'Serviços', flow: 'expense', color: '#F59E0B', icon: 'Settings' },
+  { id: 'cat-reimbursements', name: 'Reembolsos', flow: 'expense', color: '#F59E0B', icon: 'HandCoins' },
 ];

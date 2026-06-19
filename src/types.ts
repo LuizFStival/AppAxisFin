@@ -3,9 +3,10 @@ export type EntryStatus = 'paid' | 'pending';
 export type ExpenseEntryMode = 'variable' | 'fixed' | 'installment';
 export type EditSeriesScope = 'single' | 'forward';
 export type ExpenseNeed = 'essential' | 'superfluous';
+export type ReimbursementStatus = 'pending' | 'received';
 export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
 export type CardNetwork = 'mastercard' | 'visa' | 'elo' | 'other';
-export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reports' | 'profile';
+export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'reports' | 'profile';
 export type TransactionTab = 'general' | 'cards' | 'accounts';
 export type DashboardTransactionFilter = 'income' | 'expenses' | 'received' | 'paid';
 
@@ -39,6 +40,13 @@ export interface Category {
   isSystem?: boolean;
 }
 
+export interface ReimbursementPerson {
+  id: string;
+  name: string;
+  phone?: string;
+  notes?: string;
+}
+
 export interface Transaction {
   id: string;
   description: string;
@@ -52,11 +60,38 @@ export interface Transaction {
   fromAccountId?: string;
   toAccountId?: string;
   notes?: string;
+  isReimbursable?: boolean;
+  reimbursementPersonId?: string;
+  reimbursementStatus?: ReimbursementStatus;
+  reimbursementReceivedAt?: string;
+  recurringTransactionId?: string;
+  recurringOccurrenceDate?: string;
+  isProjected?: boolean;
+}
+
+export interface RecurringTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  flow: Exclude<MoneyFlow, 'transfer'>;
+  status: EntryStatus;
+  startDate: string;
+  endDate?: string;
+  intervalMonths: number;
+  categoryId?: string;
+  accountId?: string;
+  cardId?: string;
+  notes?: string;
+  isReimbursable?: boolean;
+  reimbursementPersonId?: string;
+  reimbursementStatus?: ReimbursementStatus;
+  isActive: boolean;
 }
 
 export interface TransactionMeta {
   entryMode?: ExpenseEntryMode;
   expenseNeed?: ExpenseNeed;
+  invoiceAdjustment?: 'credit';
   seriesId?: string;
   installmentNumber?: number;
   totalInstallments?: number;
@@ -64,12 +99,17 @@ export interface TransactionMeta {
   generatedUntil?: string;
   paidAt?: string;
   paidFromAccountId?: string;
+  invoiceSortOrder?: number;
+  recurringTransactionId?: string;
+  recurringOccurrenceDate?: string;
 }
 
 export interface FinanceSnapshot {
   accounts: Account[];
   cards: Card[];
   categories: Category[];
+  reimbursementPeople: ReimbursementPerson[];
+  recurringTransactions: RecurringTransaction[];
   transactions: Transaction[];
 }
 
@@ -88,6 +128,8 @@ export interface DashboardSummary {
   paid: number;
   pendingIncome: number;
   pendingExpenses: number;
+  reimbursementsPending: number;
+  reimbursementsReceived: number;
 }
 
 export type ViewType = AppView | 'accounts' | 'charts' | 'settings';

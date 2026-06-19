@@ -18,7 +18,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction } from '../../types';
-import { formatCurrency, formatMonthLabel, getCurrentMonthKey, getMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, getCurrentMonthKey, getExpenseSignedAmount, getMonthKey } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatLocalDate } from '../../lib/utils/date';
 import { StatCard } from '../shared/StatCard';
@@ -75,7 +75,7 @@ function getInvoiceSummary(card: Card, transactions: Transaction[], closingMonth
     if (transaction.flow !== 'expense' || transaction.cardId !== card.id) return false;
     return getCardInvoiceInfo(card, transaction.date).endDate.slice(0, 7) === closingMonth;
   });
-  const total = invoiceTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const total = invoiceTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
 
   return {
     ...openInvoice,

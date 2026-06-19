@@ -8,6 +8,7 @@ import {
   summarizeDashboard,
 } from './finance';
 import { getCardInvoiceClosingMonth, getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth, getCardInvoiceInfoForPeriod } from './cardInvoices';
+import { writeTransactionNotes } from './transactionMeta';
 import { Account, Card, Category, Transaction } from '../../types';
 
 const accounts: Account[] = [
@@ -106,6 +107,30 @@ const transactions: Transaction[] = [
     categoryId: 'cat-food',
     cardId: 'card-main',
   },
+  {
+    id: 'tx-third-party-card',
+    description: 'Conta dividida',
+    amount: 90,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-05-29',
+    categoryId: 'cat-food',
+    cardId: 'card-main',
+    isReimbursable: true,
+    reimbursementPersonId: 'person-ana',
+    reimbursementStatus: 'pending',
+  },
+  {
+    id: 'tx-card-credit',
+    description: 'Devolucao TikTok',
+    amount: 25.47,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-05-29',
+    categoryId: 'cat-food',
+    cardId: 'card-main',
+    notes: writeTransactionNotes(undefined, { entryMode: 'variable', invoiceAdjustment: 'credit' }),
+  },
 ];
 
 const summary = summarizeDashboard(accounts, cards, transactions, '2026-06');
@@ -113,11 +138,13 @@ const summary = summarizeDashboard(accounts, cards, transactions, '2026-06');
 assert.deepEqual(summary, {
   currentBalance: 1500,
   income: 5800,
-  expenses: 1600,
+  expenses: 1574.53,
   received: 5000,
   paid: 350,
   pendingIncome: 800,
-  pendingExpenses: 1250,
+  pendingExpenses: 1224.53,
+  reimbursementsPending: 90,
+  reimbursementsReceived: 0,
 });
 
 assert.deepEqual(getAvailableMonths(transactions), ['2026-06', '2026-05']);
@@ -130,7 +157,7 @@ assert.equal(getPaymentSource(accounts, cards, transactions[5]), 'Credito');
 
 assert.deepEqual(expensesByCategory(transactions, cards, categories, '2026-06'), [
   { name: 'Moradia', value: 1200, color: '#6366F1' },
-  { name: 'Alimentacao', value: 400, color: '#EF4444' },
+  { name: 'Alimentacao', value: 374.53, color: '#EF4444' },
 ]);
 
 const closesOnTwentySix: Card = {

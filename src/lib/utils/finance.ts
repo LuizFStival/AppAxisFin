@@ -1,5 +1,6 @@
 import { Account, Card, Category, DashboardSummary, Transaction } from '../../types';
 import { getCardInvoiceClosingMonth } from './cardInvoices';
+import { readTransactionMeta } from './transactionMeta';
 
 export const currency = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -62,13 +63,26 @@ export function getPaymentSource(accounts: Account[], cards: Card[], transaction
   return 'Sem origem';
 }
 
+export function isThirdPartyExpense(transaction: Transaction): boolean {
+  return transaction.flow === 'expense' && Boolean(transaction.isReimbursable);
+}
+
+export function isInvoiceCredit(transaction: Transaction): boolean {
+  return transaction.flow === 'expense' && Boolean(transaction.cardId) && readTransactionMeta(transaction.notes).invoiceAdjustment === 'credit';
+}
+
+export function getExpenseSignedAmount(transaction: Transaction): number {
+  return isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
+}
+
 export function summarizeDashboard(accounts: Account[], cards: Card[], transactions: Transaction[], month: string): DashboardSummary {
   const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction, cards) === month);
   const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
-  const expenseTransactions = monthTransactions.filter((transaction) => transaction.flow === 'expense');
+  const expenseTransactions = monthTransactions.filter((transaction) => transaction.flow === 'expense' && !isThirdPartyExpense(transaction));
+  const reimbursementTransactions = monthTransactions.filter(isThirdPartyExpense);
 
   const income = roundMoney(incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
-  const expenses = roundMoney(expenseTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
+  const expenses = roundMoney(expenseTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
   const received = roundMoney(incomeTransactions
     .filter((transaction) => transaction.status === 'paid')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
@@ -84,6 +98,12 @@ export function summarizeDashboard(accounts: Account[], cards: Card[], transacti
     paid,
     pendingIncome: roundMoney(income - received),
     pendingExpenses: roundMoney(expenses - paid),
+    reimbursementsPending: roundMoney(reimbursementTransactions
+      .filter((transaction) => transaction.reimbursementStatus !== 'received')
+      .reduce((sum, transaction) => sum + transaction.amount, 0)),
+    reimbursementsReceived: roundMoney(reimbursementTransactions
+      .filter((transaction) => transaction.reimbursementStatus === 'received')
+      .reduce((sum, transaction) => sum + transaction.amount, 0)),
   };
 }
 
@@ -92,6 +112,7 @@ export function expensesByCategory(transactions: Transaction[], cards: Card[], c
 
   transactions
     .filter((transaction) => transaction.flow === 'expense' && getFinancialMonthKey(transaction, cards) === month)
+    .filter((transaction) => !isThirdPartyExpense(transaction))
     .forEach((transaction) => {
       const category = categories.find((item) => item.id === transaction.categoryId);
       const key = category?.id ?? 'other';
@@ -101,8 +122,10 @@ export function expensesByCategory(transactions: Transaction[], cards: Card[], c
         color: category?.color ?? '#64748B',
       };
 
-      totals.set(key, { ...current, value: roundMoney(current.value + transaction.amount) });
+      totals.set(key, { ...current, value: roundMoney(current.value + getExpenseSignedAmount(transaction)) });
     });
 
-  return Array.from(totals.values()).sort((a, b) => b.value - a.value);
+  return Array.from(totals.values())
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
 }

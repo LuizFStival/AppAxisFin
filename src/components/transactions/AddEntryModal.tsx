@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowRightLeft, CalendarClock, Check, Layers, Plus, Repeat, TrendingDown, TrendingUp, X } from 'lucide-react';
-import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed, MoneyFlow, Transaction } from '../../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ArrowRightLeft, CalendarClock, Check, Layers, Plus, Repeat, TrendingDown, TrendingUp, UserRound, X } from 'lucide-react';
+import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed, MoneyFlow, ReimbursementPerson, Transaction } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
+import { DateInput } from '../shared/DateInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
-import { addMonths } from '../../lib/utils/date';
+import { addMonths, formatDatePtBr } from '../../lib/utils/date';
 import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { createSeriesId, getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { hasDuplicateName } from '../../lib/utils/validation';
@@ -13,8 +14,11 @@ interface AddEntryModalProps {
   accounts: Account[];
   cards: Card[];
   categories: Category[];
+  reimbursementPeople: ReimbursementPerson[];
   transaction?: Transaction | null;
   onCreateCategory: (input: Omit<Category, 'id' | 'isSystem'>) => Promise<Category>;
+  onCreateReimbursementPerson: (input: Omit<ReimbursementPerson, 'id'>) => Promise<ReimbursementPerson>;
+  onCreateRecurring: (transaction: Omit<Transaction, 'id'>, endDate?: string) => Promise<void>;
   onClose: () => void;
   onSave: (
     transaction: Omit<Transaction, 'id'> | Array<Omit<Transaction, 'id'>>,
@@ -40,13 +44,35 @@ const expenseNeedOptions = [
 ];
 
 type PaymentSourceType = 'account' | 'card';
+const OPEN_ENDED_FIXED_MONTHS = 12;
+const MAX_FIXED_MONTHS = 120;
+const REIMBURSEMENT_CATEGORY_NAME = 'Reembolsos';
+const INVOICE_ADJUSTMENT_CATEGORY_NAME = 'Ajustes de fatura';
 
-function buildMonthlyDates(startDate: string, endDate: string): string[] {
+function normalizeCategoryName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function isReimbursementCategory(category: Category): boolean {
+  const name = normalizeCategoryName(category.name);
+  return category.flow === 'expense' && (name === 'reembolso' || name === 'reembolsos');
+}
+
+function isInvoiceAdjustmentCategory(category: Category): boolean {
+  const name = normalizeCategoryName(category.name);
+  return category.flow === 'expense' && (name === 'ajuste de fatura' || name === 'ajustes de fatura');
+}
+
+function buildMonthlyDates(startDate: string, endDate: string, maxMonths = MAX_FIXED_MONTHS): string[] {
   if (!startDate || !endDate || endDate < startDate) return [];
   const dates: string[] = [];
   let currentDate = startDate;
 
-  while (currentDate <= endDate && dates.length < 120) {
+  while (currentDate <= endDate && dates.length < maxMonths) {
     dates.push(currentDate);
     currentDate = addMonths(currentDate, 1);
   }
@@ -55,7 +81,7 @@ function buildMonthlyDates(startDate: string, endDate: string): string[] {
 }
 
 function buildOpenEndedMonthlyDates(startDate: string): string[] {
-  return buildMonthlyDates(startDate, addMonths(startDate, 119));
+  return buildMonthlyDates(startDate, addMonths(startDate, OPEN_ENDED_FIXED_MONTHS - 1), OPEN_ENDED_FIXED_MONTHS);
 }
 
 function parseEntryCount(value: string, minimum: number): number {
@@ -64,7 +90,7 @@ function parseEntryCount(value: string, minimum: number): number {
   return Math.min(60, Math.max(minimum, parsed));
 }
 
-export function AddEntryModal({ isOpen, accounts, cards, categories, transaction, onCreateCategory, onClose, onSave }: AddEntryModalProps) {
+export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, transaction, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onClose, onSave }: AddEntryModalProps) {
   const [flow, setFlow] = useState<MoneyFlow>('expense');
   const [expenseMode, setExpenseMode] = useState<ExpenseEntryMode>('variable');
   const [expenseNeed, setExpenseNeed] = useState<ExpenseNeed | ''>('');
@@ -79,6 +105,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
   const [fromAccountId, setFromAccountId] = useState('');
   const [toAccountId, setToAccountId] = useState('');
   const [notes, setNotes] = useState('');
+  const [isReimbursable, setIsReimbursable] = useState(false);
+  const [isInvoiceCredit, setIsInvoiceCredit] = useState(false);
+  const [reimbursementPersonId, setReimbursementPersonId] = useState('');
+  const [reimbursementStatus, setReimbursementStatus] = useState<'pending' | 'received'>('pending');
+  const [newPersonName, setNewPersonName] = useState('');
+  const [personError, setPersonError] = useState('');
+  const [isCreatingPerson, setIsCreatingPerson] = useState(false);
   const [hasFixedEndDate, setHasFixedEndDate] = useState(false);
   const [fixedEndDate, setFixedEndDate] = useState('');
   const [installmentCount, setInstallmentCount] = useState('2');
@@ -87,16 +120,27 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
   const [categoryError, setCategoryError] = useState('');
   const [formError, setFormError] = useState('');
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+  const [isPreparingReimbursementCategory, setIsPreparingReimbursementCategory] = useState(false);
+  const initializedFormKeyRef = useRef<string | null>(null);
 
   const transactionMeta = useMemo(() => readTransactionMeta(transaction?.notes), [transaction]);
   const isGroupedTransaction = Boolean(transactionMeta.seriesId);
+  const reimbursementCategory = useMemo(() => categories.find(isReimbursementCategory), [categories]);
+  const invoiceAdjustmentCategory = useMemo(() => categories.find(isInvoiceAdjustmentCategory), [categories]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      initializedFormKeyRef.current = null;
+      return;
+    }
+
+    const formKey = transaction?.id ?? 'new';
+    if (initializedFormKeyRef.current === formKey) return;
+    initializedFormKeyRef.current = formKey;
 
     setFlow(transaction?.flow ?? 'expense');
     setExpenseMode(transactionMeta.entryMode ?? 'variable');
-    setExpenseNeed(transactionMeta.expenseNeed ?? '');
+    setExpenseNeed(transaction?.isReimbursable ? '' : transactionMeta.expenseNeed ?? '');
     setAmount(transaction ? formatCurrencyInput(transaction.amount) : DEFAULT_CURRENCY_INPUT);
     setDescription(transaction?.description.replace(/\s\(\d+\/\d+\)$/, '') ?? '');
     setDate(transaction?.date ?? new Date().toISOString().slice(0, 10));
@@ -108,6 +152,12 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
     setFromAccountId(transaction?.fromAccountId ?? accounts[0]?.id ?? '');
     setToAccountId(transaction?.toAccountId ?? accounts[1]?.id ?? accounts[0]?.id ?? '');
     setNotes(getVisibleNotes(transaction?.notes));
+    setIsReimbursable(Boolean(transaction?.isReimbursable));
+    setIsInvoiceCredit(transactionMeta.invoiceAdjustment === 'credit');
+    setReimbursementPersonId(transaction?.reimbursementPersonId ?? reimbursementPeople[0]?.id ?? '');
+    setReimbursementStatus(transaction?.reimbursementStatus ?? 'pending');
+    setNewPersonName('');
+    setPersonError('');
     setHasFixedEndDate(Boolean(transactionMeta.generatedUntil));
     setFixedEndDate(transactionMeta.generatedUntil ?? '');
     setInstallmentCount(String(transactionMeta.totalInstallments ?? 2));
@@ -115,7 +165,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
     setNewCategoryName('');
     setCategoryError('');
     setFormError('');
-  }, [accounts, isOpen, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.totalInstallments]);
+  }, [accounts, isOpen, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.generatedUntil, transactionMeta.invoiceAdjustment, transactionMeta.totalInstallments]);
 
   const selectedCard = sourceType === 'card' ? cards.find((card) => card.id === cardId) : undefined;
   const invoiceInfo = selectedCard && flow === 'expense' ? getCardInvoiceInfo(selectedCard, date) : null;
@@ -136,10 +186,20 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
     });
   }, [categories, flow, isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || flow !== 'expense' || !isReimbursable || !reimbursementCategory) return;
+    setCategoryId(reimbursementCategory.id);
+  }, [flow, isOpen, isReimbursable, reimbursementCategory]);
+
+  useEffect(() => {
+    if (!isOpen || flow !== 'expense' || !isInvoiceCredit || !invoiceAdjustmentCategory) return;
+    setCategoryId(invoiceAdjustmentCategory.id);
+  }, [flow, invoiceAdjustmentCategory, isInvoiceCredit, isOpen]);
+
   if (!isOpen) return null;
 
   const filteredCategories = categories.filter((category) => category.flow === flow);
-  const isInstallmentExpense = flow === 'expense' && expenseMode === 'installment';
+  const isInstallmentExpense = flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit;
   const fixedDates = expenseMode === 'fixed'
     ? hasFixedEndDate ? buildMonthlyDates(date, fixedEndDate) : buildOpenEndedMonthlyDates(date)
     : [];
@@ -180,9 +240,125 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
     }
   }
 
+  async function ensureReimbursementCategory(): Promise<Category | null> {
+    if (reimbursementCategory) {
+      setCategoryId(reimbursementCategory.id);
+      return reimbursementCategory;
+    }
+
+    setIsPreparingReimbursementCategory(true);
+    setFormError('');
+    try {
+      const saved = await onCreateCategory({
+        name: REIMBURSEMENT_CATEGORY_NAME,
+        flow: 'expense',
+        icon: 'HandCoins',
+        color: '#F59E0B',
+      });
+      setCategoryId(saved.id);
+      return saved;
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Não foi possível preparar a categoria Reembolsos.');
+      return null;
+    } finally {
+      setIsPreparingReimbursementCategory(false);
+    }
+  }
+
+  async function ensureInvoiceAdjustmentCategory(): Promise<Category | null> {
+    if (invoiceAdjustmentCategory) {
+      setCategoryId(invoiceAdjustmentCategory.id);
+      return invoiceAdjustmentCategory;
+    }
+
+    setIsCreatingCategory(true);
+    setFormError('');
+    try {
+      const saved = await onCreateCategory({
+        name: INVOICE_ADJUSTMENT_CATEGORY_NAME,
+        flow: 'expense',
+        icon: 'ReceiptText',
+        color: '#22C55E',
+      });
+      setCategoryId(saved.id);
+      return saved;
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Nao foi possivel preparar a categoria Ajustes de fatura.');
+      return null;
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  }
+
+  async function handleReimbursableChange(checked: boolean) {
+    setIsReimbursable(checked);
+
+    if (!checked) {
+      if (reimbursementCategory && categoryId === reimbursementCategory.id) setCategoryId('');
+      return;
+    }
+
+    setExpenseNeed('');
+    setIsInvoiceCredit(false);
+    if (!reimbursementPersonId && reimbursementPeople[0]) {
+      setReimbursementPersonId(reimbursementPeople[0].id);
+    }
+
+    await ensureReimbursementCategory();
+  }
+
+  async function handleInvoiceCreditChange(checked: boolean) {
+    setIsInvoiceCredit(checked);
+
+    if (!checked) {
+      if (invoiceAdjustmentCategory && categoryId === invoiceAdjustmentCategory.id) setCategoryId('');
+      return;
+    }
+
+    setFlow('expense');
+    setExpenseMode('variable');
+    setExpenseNeed('');
+    setIsReimbursable(false);
+    setSourceType('card');
+    if (!cardId && cards[0]) setCardId(cards[0].id);
+    await ensureInvoiceAdjustmentCategory();
+  }
+
+  async function handleCreatePerson() {
+    const name = newPersonName.trim();
+    setPersonError('');
+    if (!name) {
+      setPersonError('Informe o nome da pessoa.');
+      return;
+    }
+
+    if (hasDuplicateName(name, reimbursementPeople.map((person) => person.name))) {
+      setPersonError('Ja existe uma pessoa com esse nome.');
+      return;
+    }
+
+    setIsCreatingPerson(true);
+    try {
+      const saved = await onCreateReimbursementPerson({ name });
+      setIsReimbursable(true);
+      setReimbursementPersonId(saved.id);
+      setNewPersonName('');
+      await ensureReimbursementCategory();
+    } catch (error) {
+      setPersonError(error instanceof Error ? error.message : 'Nao foi possivel criar a pessoa.');
+    } finally {
+      setIsCreatingPerson(false);
+    }
+  }
+
   function buildTransaction(dateValue: string, descriptionValue = description.trim(), meta = transactionMeta): Omit<Transaction, 'id'> {
-    const nextMeta = flow === 'expense' ? { ...meta, expenseNeed: expenseNeed || undefined } : meta;
-    const shouldUseCard = flow === 'expense' && sourceType === 'card';
+    const nextMeta = {
+      ...meta,
+      expenseNeed: flow === 'expense' && !isReimbursable && !isInvoiceCredit ? expenseNeed || undefined : undefined,
+      invoiceAdjustment: flow === 'expense' && isInvoiceCredit ? 'credit' as const : undefined,
+    };
+    const shouldUseCard = flow === 'expense' && (sourceType === 'card' || isInvoiceCredit);
+    const shouldMarkReimbursement = flow === 'expense' && isReimbursable && !isInvoiceCredit;
     return {
       description: formatDescriptionForMeta(descriptionValue, meta),
       amount: parseCurrencyInput(amount),
@@ -193,6 +369,10 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
       categoryId,
       accountId: shouldUseCard ? undefined : accountId,
       cardId: shouldUseCard ? cardId || undefined : undefined,
+      isReimbursable: shouldMarkReimbursement,
+      reimbursementPersonId: shouldMarkReimbursement ? reimbursementPersonId : undefined,
+      reimbursementStatus: shouldMarkReimbursement ? reimbursementStatus : undefined,
+      reimbursementReceivedAt: shouldMarkReimbursement && reimbursementStatus === 'received' ? dateValue : undefined,
     };
   }
 
@@ -201,19 +381,31 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
     setFormError('');
     const parsedAmount = parseCurrencyInput(amount);
     if (!description.trim() || parsedAmount <= 0) return;
+    if (isInvoiceCredit && !invoiceAdjustmentCategory && !categoryId) {
+      setFormError('Crie ou mantenha a categoria Ajustes de fatura para salvar descontos da fatura.');
+      return;
+    }
+    if (flow === 'expense' && isReimbursable && !reimbursementCategory && !categoryId) {
+      setFormError('Crie ou mantenha a categoria Reembolsos para salvar despesas de terceiros.');
+      return;
+    }
     if (flow !== 'transfer' && !categoryId) {
       setFormError('Selecione uma categoria para salvar o lançamento.');
       return;
     }
-    if (flow === 'expense' && !expenseNeed) {
+    if (flow === 'expense' && !isReimbursable && !isInvoiceCredit && !expenseNeed) {
       setFormError('Selecione se a despesa é essencial ou supérflua.');
+      return;
+    }
+    if (flow === 'expense' && isReimbursable && !isInvoiceCredit && !reimbursementPersonId) {
+      setFormError('Selecione quem deve esse reembolso.');
       return;
     }
     if (flow === 'expense' && sourceType === 'account' && !accountId) {
       setFormError('Selecione uma conta para salvar a despesa.');
       return;
     }
-    if (flow === 'expense' && sourceType === 'card' && !cardId) {
+    if (flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && !cardId) {
       setFormError('Selecione um cartão para salvar a despesa.');
       return;
     }
@@ -243,36 +435,31 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
 
     if (transaction) {
       const meta = transactionMeta.seriesId
-        ? { ...transactionMeta, expenseNeed: expenseNeed || undefined }
-        : { ...transactionMeta, entryMode: expenseMode, expenseNeed: expenseNeed || undefined };
+        ? { ...transactionMeta, expenseNeed: isReimbursable || isInvoiceCredit ? undefined : expenseNeed || undefined, invoiceAdjustment: isInvoiceCredit ? 'credit' as const : undefined }
+        : { ...transactionMeta, entryMode: expenseMode, expenseNeed: isReimbursable || isInvoiceCredit ? undefined : expenseNeed || undefined, invoiceAdjustment: isInvoiceCredit ? 'credit' as const : undefined };
       await onSave(buildTransaction(date, description.trim(), meta), editScope);
       onClose();
       return;
     }
 
-    if (flow === 'expense' && expenseMode === 'fixed') {
-      const seriesId = createSeriesId();
-      const transactions = fixedDates.map((fixedDate) =>
-        buildTransaction(fixedDate, description.trim(), {
-          entryMode: 'fixed',
-          expenseNeed: expenseNeed || undefined,
-          seriesId,
-          generatedFrom: date,
-          generatedUntil: hasFixedEndDate ? fixedEndDate : undefined,
-        }),
-      );
-      await onSave(transactions);
+    if (flow === 'expense' && expenseMode === 'fixed' && !isInvoiceCredit) {
+      await onCreateRecurring(buildTransaction(date, description.trim(), {
+        entryMode: 'fixed',
+        expenseNeed: isReimbursable ? undefined : expenseNeed || undefined,
+        generatedFrom: date,
+        generatedUntil: hasFixedEndDate ? fixedEndDate : undefined,
+      }), hasFixedEndDate ? fixedEndDate : undefined);
       onClose();
       return;
     }
 
-    if (flow === 'expense' && expenseMode === 'installment') {
+    if (flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit) {
       const seriesId = createSeriesId();
       const total = parseEntryCount(installmentCount, 2);
       const transactions = Array.from({ length: total }, (_, index) =>
         buildTransaction(addMonths(date, index), description.trim(), {
           entryMode: 'installment',
-          expenseNeed: expenseNeed || undefined,
+          expenseNeed: isReimbursable ? undefined : expenseNeed || undefined,
           seriesId,
           installmentNumber: index + 1,
           totalInstallments: total,
@@ -284,7 +471,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
       return;
     }
 
-    await onSave(buildTransaction(date, description.trim(), { entryMode: 'variable', expenseNeed: expenseNeed || undefined }));
+    await onSave(buildTransaction(date, description.trim(), { entryMode: 'variable', expenseNeed: isReimbursable ? undefined : expenseNeed || undefined }));
     onClose();
   }
 
@@ -306,7 +493,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
               <button
                 key={option.id}
                 type="button"
-                onClick={() => setFlow(option.id)}
+                onClick={() => {
+                  setFlow(option.id);
+                  if (option.id !== 'expense') {
+                    setIsInvoiceCredit(false);
+                    setIsReimbursable(false);
+                  }
+                }}
                 className={`flex h-12 items-center justify-center gap-1 rounded-xl text-xs font-bold transition ${
                   selected ? 'bg-sky-500 text-white' : 'text-slate-400'
                 }`}
@@ -318,7 +511,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
           })}
         </div>
 
-        {flow === 'expense' ? (
+        {flow === 'expense' && !isInvoiceCredit ? (
           <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
             {expenseModes.map((option) => {
               const Icon = option.icon;
@@ -345,6 +538,25 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
         ) : null}
 
         {flow === 'expense' ? (
+          <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
+            <label className="flex items-center justify-between gap-3 text-xs font-semibold text-emerald-100">
+              <span>Desconto/estorno na fatura</span>
+              <input
+                type="checkbox"
+                checked={isInvoiceCredit}
+                onChange={(event) => {
+                  void handleInvoiceCreditChange(event.target.checked);
+                }}
+                className="h-4 w-4 accent-emerald-400"
+              />
+            </label>
+            {isInvoiceCredit ? (
+              <p className="mt-2 text-[11px] font-medium text-emerald-100/80">Use para devolucoes e creditos do cartao. O valor reduz a fatura e nao vira receita.</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {flow === 'expense' && !isReimbursable && !isInvoiceCredit ? (
           <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
             {expenseNeedOptions.map((option) => (
               <button
@@ -356,8 +568,71 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
                 {option.label}
               </button>
             ))}
-            {!expenseNeed ? (
+            {!expenseNeed && !isReimbursable ? (
               <p className="col-span-2 px-2 pb-1 text-[11px] font-medium text-slate-500">Escolha uma classificação para evitar lançamentos marcados por engano.</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {flow === 'expense' && !isInvoiceCredit ? (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+            <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300">
+              <span className="flex items-center gap-2">
+                <UserRound size={15} className="text-amber-200" />
+                Despesa de terceiro / reembolso
+              </span>
+              <input
+                type="checkbox"
+                checked={isReimbursable}
+                onChange={(event) => {
+                  void handleReimbursableChange(event.target.checked);
+                }}
+                className="h-4 w-4 accent-amber-400"
+              />
+            </label>
+            {isReimbursable ? (
+              <div className="mt-3 grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1 text-xs font-semibold text-slate-400">
+                    Quem deve
+                    <select value={reimbursementPersonId} onChange={(event) => setReimbursementPersonId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300">
+                      <option value="">Selecione</option>
+                      {reimbursementPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-xs font-semibold text-slate-400">
+                    Status
+                    <select value={reimbursementStatus} onChange={(event) => setReimbursementStatus(event.target.value as 'pending' | 'received')} className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300">
+                      <option value="pending">A receber</option>
+                      <option value="received">Recebido</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={newPersonName}
+                    onChange={(event) => setNewPersonName(event.target.value)}
+                    placeholder="Nova pessoa"
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm text-white outline-none focus:border-amber-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCreatePerson}
+                    disabled={isCreatingPerson}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 disabled:opacity-60"
+                    title="Cadastrar pessoa"
+                  >
+                    <Plus size={17} />
+                  </button>
+                </div>
+                {personError ? (
+                  <p className="flex items-center gap-2 text-xs text-rose-200">
+                    <AlertCircle size={14} />
+                    {personError}
+                  </p>
+                ) : null}
+                <p className="text-[11px] font-medium text-slate-500">Esse valor continua entrando na fatura, mas sai dos seus gastos pessoais.</p>
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -394,7 +669,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
           <div className="grid grid-cols-2 gap-3">
             <label className="grid gap-1 text-xs font-semibold text-slate-400">
               Data
-              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400" />
+              <DateInput value={date} onChange={setDate} />
             </label>
             <label className="grid gap-1 text-xs font-semibold text-slate-400">
               Estado
@@ -422,13 +697,29 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
             </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-3">
-              <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                Categoria
-                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
-                  <option value="">Selecione</option>
-                  {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-              </label>
+              {flow === 'expense' && isInvoiceCredit ? (
+                <div className="grid gap-1 text-xs font-semibold text-slate-400">
+                  Categoria
+                  <div className="flex h-12 items-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 text-sm font-bold text-emerald-100">
+                    {isCreatingCategory ? 'Preparando Ajustes...' : invoiceAdjustmentCategory?.name ?? INVOICE_ADJUSTMENT_CATEGORY_NAME}
+                  </div>
+                </div>
+              ) : flow === 'expense' && isReimbursable ? (
+                <div className="grid gap-1 text-xs font-semibold text-slate-400">
+                  Categoria
+                  <div className="flex h-12 items-center rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 text-sm font-bold text-amber-100">
+                    {isPreparingReimbursementCategory ? 'Preparando Reembolsos...' : reimbursementCategory?.name ?? REIMBURSEMENT_CATEGORY_NAME}
+                  </div>
+                </div>
+              ) : (
+                <label className="grid gap-1 text-xs font-semibold text-slate-400">
+                  Categoria
+                  <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+                    <option value="">Selecione</option>
+                    {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
+                </label>
+              )}
               {flow === 'expense' ? (
                 <div className="grid gap-1 text-xs font-semibold text-slate-400 sm:col-span-2">
                   Origem
@@ -436,7 +727,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
                     <button
                       type="button"
                       onClick={() => setSourceType('account')}
-                      disabled={isInstallmentExpense}
+                      disabled={isInstallmentExpense || isInvoiceCredit}
                       className={`h-11 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${sourceType === 'account' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
                     >
                       Conta
@@ -471,7 +762,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
             </div>
           )}
 
-          {flow !== 'transfer' ? (
+          {flow !== 'transfer' && !(flow === 'expense' && (isReimbursable || isInvoiceCredit)) ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
               <div className="flex gap-2">
                 <input
@@ -499,7 +790,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
             </div>
           ) : null}
 
-          {flow === 'expense' && expenseMode === 'fixed' && !transaction ? (
+          {flow === 'expense' && expenseMode === 'fixed' && !isInvoiceCredit && !transaction ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
               <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300">
                 <span>Definir data final</span>
@@ -516,24 +807,18 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
               {hasFixedEndDate ? (
                 <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-400">
                   Repetir até
-                  <input
-                    type="date"
-                    min={date}
-                    value={fixedEndDate}
-                    onChange={(event) => setFixedEndDate(event.target.value)}
-                    className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-4 text-white outline-none focus:border-sky-400"
-                  />
+                  <DateInput value={fixedEndDate} onChange={setFixedEndDate} min={date} />
                 </label>
               ) : null}
               <span className="text-[11px] font-medium text-slate-500">
                 {hasFixedEndDate && fixedEndDate
-                  ? `${fixedDates.length} lançamento${fixedDates.length === 1 ? '' : 's'} mensal${fixedDates.length === 1 ? '' : 'is'} serão criados.`
-                  : 'Sem data final: a despesa fica fixa e pode ser encerrada depois pela exclusão da série.'}
+                  ? `${fixedDates.length} ocorrencia${fixedDates.length === 1 ? '' : 's'} ser${fixedDates.length === 1 ? 'a' : 'ao'} projetada${fixedDates.length === 1 ? '' : 's'} pela regra.`
+                  : 'A regra sera salva no banco e projetada nos proximos 12 meses.'}
               </span>
             </div>
           ) : null}
 
-          {flow === 'expense' && expenseMode === 'installment' && !transaction ? (
+          {flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit && !transaction ? (
             <label className="grid gap-1 text-xs font-semibold text-slate-400">
               Número de parcelas
               <input
@@ -557,16 +842,16 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, transaction
                 <span>{invoiceInfo.label}</span>
                 <span className="ml-auto capitalize">{invoiceInfo.status}</span>
               </div>
-              <p className="mt-2 text-slate-300">Consumo de {invoiceInfo.startDate} a {invoiceInfo.endDate}. Vencimento em {invoiceInfo.dueDate}.</p>
+              <p className="mt-2 text-slate-300">Consumo de {formatDatePtBr(invoiceInfo.startDate)} a {formatDatePtBr(invoiceInfo.endDate)}. Vencimento em {formatDatePtBr(invoiceInfo.dueDate)}.</p>
               {isEditingClosedInvoice ? <p className="mt-2 font-semibold">Esta fatura já fechou ou venceu. Edite com cuidado para não alterar meses passados por engano.</p> : null}
             </div>
           ) : null}
 
-          {isCreditExpense && expenseMode === 'installment' && !transaction ? (
+          {isCreditExpense && expenseMode === 'installment' && !isInvoiceCredit && !transaction ? (
             <p className="text-xs text-slate-500">Cada parcela entrará em uma fatura mensal a partir da data de compra.</p>
           ) : null}
 
-          {flow === 'expense' && expenseMode === 'installment' && cards.length === 0 ? (
+          {flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit && cards.length === 0 ? (
             <p className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-100">
               Cadastre um cartão antes de criar uma despesa parcelada.
             </p>

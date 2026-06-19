@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, CheckCircle2, Circle, CreditCard, Landmark, Pencil, Search, Trash2 } from 'lucide-react';
-import { Account, Card, Category, DashboardTransactionFilter, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getAvailableMonths, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getMonthKey, getPaymentSource } from '../../lib/utils/finance';
+import { CheckCircle2, Circle, CreditCard, Landmark, Pencil, Search, Trash2, UserRound } from 'lucide-react';
+import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getMonthKey, getPaymentSource, isInvoiceCredit, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { getCardInvoiceClosingMonth } from '../../lib/utils/cardInvoices';
+import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
+import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
   accounts: Account[];
   cards: Card[];
   categories: Category[];
+  reimbursementPeople: ReimbursementPerson[];
   activeMonth: string;
   dashboardFilter: DashboardTransactionFilter | null;
   onToggleStatus: (transaction: Transaction) => void;
@@ -33,9 +36,13 @@ const dashboardFilterLabels: Record<DashboardTransactionFilter, string> = {
 function matchesDashboardFilter(transaction: Transaction, cards: Card[], selectedMonth: string, filter: DashboardTransactionFilter) {
   if (getFinancialMonthKey(transaction, cards) !== selectedMonth) return false;
   if (filter === 'income') return transaction.flow === 'income';
-  if (filter === 'expenses') return transaction.flow === 'expense';
+  if (filter === 'expenses') return transaction.flow === 'expense' && !isThirdPartyExpense(transaction);
   if (filter === 'received') return transaction.flow === 'income' && transaction.status === 'paid';
-  return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId;
+  return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId && !isThirdPartyExpense(transaction);
+}
+
+function getReimbursementPersonName(people: ReimbursementPerson[], personId?: string) {
+  return people.find((person) => person.id === personId)?.name ?? 'Pessoa removida';
 }
 
 export function TransactionsView({
@@ -43,6 +50,7 @@ export function TransactionsView({
   accounts,
   cards,
   categories,
+  reimbursementPeople,
   activeMonth,
   dashboardFilter,
   onToggleStatus,
@@ -60,26 +68,11 @@ export function TransactionsView({
     setTab('general');
   }, [activeMonth, dashboardFilter]);
 
-  const months = useMemo(() => {
-    if (tab !== 'cards') return getAvailableMonths(transactions);
-
-    return Array.from(new Set(
-      transactions
-        .filter((transaction) => transaction.cardId)
-        .map((transaction) => {
-          const card = cards.find((item) => item.id === transaction.cardId);
-          return card ? getCardInvoiceClosingMonth(card, transaction.date) : getMonthKey(transaction.date);
-        }),
-    )).sort().reverse();
-  }, [cards, tab, transactions]);
-  const monthOptions = useMemo(() => {
-    return months.includes(selectedMonth) ? months : [selectedMonth, ...months];
-  }, [months, selectedMonth]);
-
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter((transaction) => {
         if (dashboardFilter) return matchesDashboardFilter(transaction, cards, selectedMonth, dashboardFilter);
+        if (isThirdPartyExpense(transaction)) return false;
 
         if (tab === 'cards') {
           if (!transaction.cardId) return false;
@@ -98,10 +91,13 @@ export function TransactionsView({
   const viewTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, transaction) => {
       if (transaction.flow === 'income') return sum + transaction.amount;
+      if (isInvoiceCredit(transaction)) return sum + transaction.amount;
       if (transaction.flow === 'expense') return sum - transaction.amount;
       return sum;
     }, 0);
   }, [filteredTransactions]);
+  const expenseBreakdown = useMemo(() => summarizeExpenseBreakdown(filteredTransactions), [filteredTransactions]);
+  const hasExpenseBreakdown = expenseBreakdown.some((item) => item.count > 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col px-4 pt-7 md:px-8 md:pt-8">
@@ -110,13 +106,15 @@ export function TransactionsView({
           <p className="text-sm text-slate-400">{isDashboardFiltered ? 'Dashboard' : 'Movimentações'}</p>
           <h1 className="font-display text-2xl font-bold text-white">{dashboardFilter ? dashboardFilterLabels[dashboardFilter] : 'Transações'}</h1>
         </div>
-        <label className="flex h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm text-slate-300">
-          <Calendar size={16} />
-          <select value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="bg-transparent text-white outline-none">
-            {monthOptions.map((month) => <option key={month} value={month}>{month}</option>)}
-          </select>
-        </label>
       </header>
+
+      <MonthNavigator
+        month={selectedMonth}
+        onPreviousMonth={() => setSelectedMonth((month) => shiftMonthKey(month, -1))}
+        onNextMonth={() => setSelectedMonth((month) => shiftMonthKey(month, 1))}
+        onCurrentMonth={() => setSelectedMonth(getCurrentMonthKey())}
+        className="mt-4 shrink-0"
+      />
 
       {!isDashboardFiltered ? (
         <div className="mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl bg-white/5 p-1">
@@ -135,7 +133,7 @@ export function TransactionsView({
 
       <section className="mt-4 flex shrink-0 items-center justify-between rounded-2xl border border-white/8 bg-[#101319] px-4 py-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Total da visão</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Meu total</p>
           <p className="mt-0.5 text-xs text-slate-500">{filteredTransactions.length} lançamento{filteredTransactions.length === 1 ? '' : 's'}</p>
         </div>
         <p className={`font-mono text-base font-bold ${viewTotal >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
@@ -143,13 +141,26 @@ export function TransactionsView({
         </p>
       </section>
 
+      {hasExpenseBreakdown ? (
+        <section className="mt-3 grid shrink-0 grid-cols-3 gap-2">
+          {expenseBreakdown.map((item) => (
+            <div key={item.key} className={`rounded-2xl border px-3 py-3 ${item.className}`}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80">{item.shortLabel}</p>
+              <p className="mt-1 font-mono text-sm font-bold">{formatCurrency(item.total)}</p>
+              <p className="mt-0.5 text-[10px] opacity-70">{item.count} lançamento{item.count === 1 ? '' : 's'}</p>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
       <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
         {filteredTransactions.map((transaction) => {
           const isIncome = transaction.flow === 'income';
           const isTransfer = transaction.flow === 'transfer';
+          const isCredit = isInvoiceCredit(transaction);
           const isPaid = transaction.status === 'paid';
           const meta = readTransactionMeta(transaction.notes);
-          const expenseNeedLabel = meta.expenseNeed === 'essential' ? 'Essencial' : meta.expenseNeed === 'superfluous' ? 'Supérflua' : '';
+          const expenseNeedLabel = transaction.isReimbursable ? '' : meta.expenseNeed === 'essential' ? 'Essencial' : meta.expenseNeed === 'superfluous' ? 'Supérflua' : '';
           return (
             <article key={transaction.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] p-4">
               <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${transaction.cardId ? 'bg-violet-500/10 text-violet-300' : isTransfer ? 'bg-sky-500/10 text-sky-300' : 'bg-white/5 text-slate-300'}`}>
@@ -166,10 +177,21 @@ export function TransactionsView({
                   {getCategoryName(categories, transaction.categoryId)} - {getPaymentSource(accounts, cards, transaction)}
                   {expenseNeedLabel ? ` - ${expenseNeedLabel}` : ''}
                 </p>
+                {transaction.isReimbursable ? (
+                  <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                    <UserRound size={11} />
+                    Reembolso - {getReimbursementPersonName(reimbursementPeople, transaction.reimbursementPersonId)}
+                  </span>
+                ) : null}
+                {isCredit ? (
+                  <span className="mt-2 inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
+                    Credito na fatura
+                  </span>
+                ) : null}
               </div>
               <div className="text-right">
-                <p className={`font-mono text-sm font-bold ${isIncome ? 'text-emerald-300' : isTransfer ? 'text-sky-300' : 'text-rose-300'}`}>
-                  {isIncome ? '+' : isTransfer ? '' : '-'}{formatCurrency(transaction.amount)}
+                <p className={`font-mono text-sm font-bold ${isIncome || isCredit ? 'text-emerald-300' : isTransfer ? 'text-sky-300' : 'text-rose-300'}`}>
+                  {isIncome || isCredit ? '+' : isTransfer ? '' : '-'}{formatCurrency(transaction.amount)}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-500">{transaction.date.slice(8, 10)}/{transaction.date.slice(5, 7)}</p>
                 <div className="mt-2 flex justify-end gap-1">

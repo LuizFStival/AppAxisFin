@@ -11,6 +11,25 @@ export function formatLocalDate(date: Date): string {
   ].join('-');
 }
 
+export function formatDatePtBr(value: string): string {
+  if (!value) return '';
+  const date = parseLocalDate(value);
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+export function formatShortDatePtBr(value: string): string {
+  if (!value) return '';
+  const date = parseLocalDate(value);
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+  }).format(date);
+}
+
 export function addMonths(dateValue: string, amount: number): string {
   const source = parseLocalDate(dateValue);
   const day = source.getDate();

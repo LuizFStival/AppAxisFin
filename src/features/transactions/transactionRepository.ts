@@ -19,8 +19,14 @@ function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'
     from_account_id: transaction.fromAccountId ?? null,
     to_account_id: transaction.toAccountId ?? null,
     notes: transaction.notes ?? null,
+    is_reimbursable: transaction.isReimbursable ?? false,
+    reimbursement_person_id: transaction.isReimbursable ? transaction.reimbursementPersonId ?? null : null,
+    reimbursement_status: transaction.isReimbursable ? transaction.reimbursementStatus ?? 'pending' : null,
+    reimbursement_received_at: transaction.isReimbursable ? transaction.reimbursementReceivedAt ?? null : null,
   };
 }
+
+const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at';
 
 export const transactionRepository = {
   async create(transaction: Omit<Transaction, 'id'>): Promise<Transaction> {
@@ -29,7 +35,7 @@ export const transactionRepository = {
     const { data, error } = await client
       .from('transactions')
       .insert(toTransactionInsert(userId, transaction))
-      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes')
+      .select(transactionSelect)
       .single();
 
     if (error) throw error;
@@ -42,7 +48,7 @@ export const transactionRepository = {
     const { data, error } = await client
       .from('transactions')
       .insert(transactions.map((transaction) => toTransactionInsert(userId, transaction)))
-      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes')
+      .select(transactionSelect)
       .order('transaction_date', { ascending: true });
 
     if (error) throw error;
@@ -72,7 +78,7 @@ export const transactionRepository = {
       .update(toTransactionInsert(userId, transaction))
       .eq('id', id)
       .eq('user_id', userId)
-      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes')
+      .select(transactionSelect)
       .single();
 
     if (error) throw error;

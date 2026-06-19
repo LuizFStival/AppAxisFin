@@ -3,6 +3,7 @@ import { AlertCircle, CalendarDays, Check, MoreVertical, Pencil, Trash2, WalletC
 import { Account, Card, Transaction } from '../../types';
 import { formatCurrency } from '../../lib/utils/finance';
 import { formatLocalDate } from '../../lib/utils/date';
+import { DateInput } from '../shared/DateInput';
 
 interface CardInvoiceActionsProps {
   card: Card;
@@ -168,7 +169,7 @@ export function CardInvoiceActions({
             <div className="mt-5 grid gap-4">
               <label className="grid gap-1 text-xs font-semibold text-slate-400">
                 Data do pagamento
-                <input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-emerald-400" />
+                <DateInput value={paymentDate} onChange={setPaymentDate} />
               </label>
               <label className="grid gap-1 text-xs font-semibold text-slate-400">
                 Conta usada

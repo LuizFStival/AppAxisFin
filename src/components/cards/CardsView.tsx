@@ -1,16 +1,19 @@
-import React, { useMemo, useState } from 'react';
-import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, CreditCard, Pencil, Search, Trash2 } from 'lucide-react';
-import { Account, Card, Category, Transaction } from '../../types';
-import { formatCurrency, formatMonthLabel, getCategoryName } from '../../lib/utils/finance';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, Search, Trash2, UserRound } from 'lucide-react';
+import { Account, Card, Category, ReimbursementPerson, Transaction } from '../../types';
+import { formatCurrency, getCategoryName, getExpenseSignedAmount, isInvoiceCredit } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
-import { formatLocalDate } from '../../lib/utils/date';
+import { formatDatePtBr, formatLocalDate, formatShortDatePtBr } from '../../lib/utils/date';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
+import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { CardInvoiceActions } from './CardInvoiceActions';
+import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface CardsViewProps {
   cards: Card[];
   accounts: Account[];
   categories: Category[];
+  reimbursementPeople: ReimbursementPerson[];
   transactions: Transaction[];
   selectedCardId: string;
   activeMonth: string;
@@ -20,6 +23,7 @@ interface CardsViewProps {
   onCurrentMonth: () => void;
   onEditTransaction: (transaction: Transaction) => void;
   onDeleteTransaction: (transaction: Transaction) => void;
+  onReorderInvoiceTransactions: (transactions: Transaction[]) => Promise<void>;
   onPayInvoice: (input: {
     card: Card;
     accountId: string;
@@ -38,7 +42,7 @@ function getInvoiceTransactions(card: Card, transactions: Transaction[], closing
       if (transaction.flow !== 'expense' || transaction.cardId !== card.id) return false;
       return getCardInvoiceInfo(card, transaction.date).endDate.slice(0, 7) === closingMonth;
     })
-    .sort((left, right) => left.date.localeCompare(right.date));
+    .sort(compareInvoiceTransactions);
 }
 
 function getInvoiceStatusLabel(status: 'aberta' | 'fechada' | 'vencida') {
@@ -77,10 +81,36 @@ function getExpenseNeedTagClass(expenseNeed?: string) {
   return 'border-slate-400/20 bg-slate-500/15 text-slate-100';
 }
 
+function getReimbursementPersonName(people: ReimbursementPerson[], personId?: string) {
+  return people.find((person) => person.id === personId)?.name ?? 'Pessoa removida';
+}
+
+function getInvoiceSortOrder(transaction: Transaction) {
+  const order = readTransactionMeta(transaction.notes).invoiceSortOrder;
+  return typeof order === 'number' && Number.isFinite(order) ? order : undefined;
+}
+
+function compareInvoiceTransactions(left: Transaction, right: Transaction) {
+  const leftOrder = getInvoiceSortOrder(left);
+  const rightOrder = getInvoiceSortOrder(right);
+
+  if (leftOrder !== undefined || rightOrder !== undefined) {
+    return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER)
+      || left.date.localeCompare(right.date)
+      || left.description.localeCompare(right.description)
+      || left.id.localeCompare(right.id);
+  }
+
+  return left.date.localeCompare(right.date)
+    || left.description.localeCompare(right.description)
+    || left.id.localeCompare(right.id);
+}
+
 export function CardsView({
   cards,
   accounts,
   categories,
+  reimbursementPeople,
   transactions,
   selectedCardId,
   activeMonth,
@@ -90,19 +120,53 @@ export function CardsView({
   onCurrentMonth,
   onEditTransaction,
   onDeleteTransaction,
+  onReorderInvoiceTransactions,
   onPayInvoice,
   onUpdateCardClosingDay,
   onEditCard,
   onDeleteCard,
 }: CardsViewProps) {
   const [search, setSearch] = useState('');
+  const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
+  const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null);
+  const [dragTargetTransactionId, setDragTargetTransactionId] = useState<string | null>(null);
+  const [isPointerDragging, setIsPointerDragging] = useState(false);
+  const pointerDragRef = useRef({
+    transactionId: '',
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    hasMoved: false,
+  });
   const selectedCard = cards.find((card) => card.id === selectedCardId);
   const invoices = useMemo(() => {
     return cards.map((card) => {
       const invoice = getCardInvoiceInfoForClosingMonth(card, activeMonth, formatLocalDate(new Date()));
       const invoiceTransactions = getInvoiceTransactions(card, transactions, activeMonth);
-      const total = invoiceTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-      return { card, invoice, transactions: invoiceTransactions, total };
+      const total = invoiceTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
+      const invoiceCreditTotal = invoiceTransactions
+        .filter((transaction) => isInvoiceCredit(transaction))
+        .reduce((sum, transaction) => sum + transaction.amount, 0);
+      const reimbursementTotal = invoiceTransactions
+        .filter((transaction) => transaction.isReimbursable)
+        .reduce((sum, transaction) => sum + transaction.amount, 0);
+      const personalTransactions = invoiceTransactions.filter((transaction) => !transaction.isReimbursable);
+      const reimbursementTransactions = invoiceTransactions.filter((transaction) => transaction.isReimbursable);
+      const personalTotal = personalTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
+      const personalBreakdown = summarizeExpenseBreakdown(personalTransactions.filter((transaction) => !isInvoiceCredit(transaction)));
+      const reimbursementBreakdown = summarizeExpenseBreakdown(reimbursementTransactions);
+
+      return {
+        card,
+        invoice,
+        transactions: invoiceTransactions,
+        total,
+        invoiceCreditTotal,
+        reimbursementTotal,
+        personalTotal,
+        personalBreakdown,
+        reimbursementBreakdown,
+      };
     });
   }, [activeMonth, cards, transactions]);
   const selectedInvoice = selectedCard
@@ -111,6 +175,112 @@ export function CardsView({
   const visibleTransactions = (selectedInvoice?.transactions ?? [])
     .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()));
   const totalAllCards = invoices.reduce((sum, item) => sum + item.total, 0);
+
+  useEffect(() => {
+    setIsBreakdownOpen(false);
+  }, [activeMonth, selectedCardId]);
+
+  function resetDragState() {
+    setDraggedTransactionId(null);
+    setDragTargetTransactionId(null);
+    setIsPointerDragging(false);
+    pointerDragRef.current = {
+      transactionId: '',
+      pointerId: -1,
+      startX: 0,
+      startY: 0,
+      hasMoved: false,
+    };
+  }
+
+  async function reorderInvoiceTransaction(draggedId: string, targetId: string) {
+    if (!selectedInvoice || draggedId === targetId) return;
+
+    const currentIndex = selectedInvoice.transactions.findIndex((item) => item.id === draggedId);
+    const targetIndex = selectedInvoice.transactions.findIndex((item) => item.id === targetId);
+    if (currentIndex < 0 || targetIndex < 0) return;
+
+    const reordered = [...selectedInvoice.transactions];
+    const [moved] = reordered.splice(currentIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    await onReorderInvoiceTransactions(reordered);
+  }
+
+  function getTransactionIdFromPoint(clientX: number, clientY: number, ignoredId?: string) {
+    const element = document.elementFromPoint(clientX, clientY);
+    const directTargetId = element?.closest<HTMLElement>('[data-invoice-transaction-id]')?.dataset.invoiceTransactionId;
+    if (directTargetId && directTargetId !== ignoredId) return directTargetId;
+
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>('[data-invoice-transaction-id]'));
+    const target = candidates.find((candidate) => {
+      if (candidate.dataset.invoiceTransactionId === ignoredId) return false;
+      const rect = candidate.getBoundingClientRect();
+      return clientY >= rect.top && clientY <= rect.bottom;
+    });
+
+    if (target?.dataset.invoiceTransactionId) return target.dataset.invoiceTransactionId;
+
+    const closest = candidates
+      .filter((candidate) => candidate.dataset.invoiceTransactionId !== ignoredId)
+      .map((candidate) => {
+        const rect = candidate.getBoundingClientRect();
+        const centerY = rect.top + rect.height / 2;
+        return { id: candidate.dataset.invoiceTransactionId, distance: Math.abs(clientY - centerY) };
+      })
+      .filter((item): item is { id: string; distance: number } => Boolean(item.id))
+      .sort((left, right) => left.distance - right.distance)[0];
+
+    return closest?.id ?? null;
+  }
+
+  function handlePointerDown(event: React.PointerEvent<HTMLElement>, transaction: Transaction) {
+    if (transaction.isProjected || event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, a')) return;
+
+    pointerDragRef.current = {
+      transactionId: transaction.id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      hasMoved: false,
+    };
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Some browsers may release capture during scroll/gesture negotiation.
+    }
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLElement>) {
+    const dragState = pointerDragRef.current;
+    if (!dragState.transactionId || dragState.pointerId !== event.pointerId) return;
+
+    const deltaX = Math.abs(event.clientX - dragState.startX);
+    const deltaY = Math.abs(event.clientY - dragState.startY);
+    if (!dragState.hasMoved && Math.max(deltaX, deltaY) < 10) return;
+
+    dragState.hasMoved = true;
+    setIsPointerDragging(true);
+    setDraggedTransactionId(dragState.transactionId);
+    setDragTargetTransactionId(getTransactionIdFromPoint(event.clientX, event.clientY, dragState.transactionId));
+    event.preventDefault();
+  }
+
+  async function handlePointerUp(event: React.PointerEvent<HTMLElement>) {
+    const dragState = pointerDragRef.current;
+    if (!dragState.transactionId || dragState.pointerId !== event.pointerId) return;
+
+    const draggedId = dragState.transactionId;
+    const targetId = dragState.hasMoved ? getTransactionIdFromPoint(event.clientX, event.clientY, draggedId) : null;
+    resetDragState();
+    if (targetId) await reorderInvoiceTransaction(draggedId, targetId);
+  }
+
+  function handlePointerCancel() {
+    resetDragState();
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col px-4 pt-7 text-white md:px-8 md:pt-8">
@@ -132,18 +302,7 @@ export function CardsView({
           ) : null}
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-2 rounded-2xl border border-white/8 bg-[#101319] p-2">
-          <button type="button" onClick={onPreviousMonth} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300">
-            <ChevronLeft size={18} />
-          </button>
-          <button type="button" onClick={onCurrentMonth} className="min-w-0 flex flex-1 items-center justify-center gap-2 rounded-xl px-2 py-2 text-center hover:bg-white/5">
-            <CalendarDays size={16} className="text-sky-300" />
-            <span className="truncate text-sm font-bold capitalize text-white">{formatMonthLabel(activeMonth)}</span>
-          </button>
-          <button type="button" onClick={onNextMonth} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300">
-            <ChevronRight size={18} />
-          </button>
-        </div>
+        <MonthNavigator month={activeMonth} onPreviousMonth={onPreviousMonth} onNextMonth={onNextMonth} onCurrentMonth={onCurrentMonth} className="mt-5" />
       </header>
 
       {!selectedCard ? (
@@ -155,8 +314,8 @@ export function CardsView({
           </section>
 
           <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total }) => {
-              const progress = card.limit > 0 ? Math.min(100, (total / card.limit) * 100) : 0;
+            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, invoiceCreditTotal }) => {
+              const progress = card.limit > 0 ? Math.max(0, Math.min(100, (total / card.limit) * 100)) : 0;
               return (
                 <article key={card.id} className="rounded-2xl border border-white/8 bg-[#101319] p-4">
                   <button type="button" onClick={() => onSelectCard(card.id)} className="w-full text-left">
@@ -164,7 +323,7 @@ export function CardsView({
                       <div className="min-w-0">
                         <p className="truncate text-sm font-bold text-white">{card.name}</p>
                         <p className="mt-1 text-[10px] font-semibold text-sky-200">{invoice.label} {getInvoiceDisplayStatus(invoice.status, invoiceTransactions)}</p>
-                        <p className="mt-1 text-[10px] text-slate-500">{invoice.startDate} até {invoice.endDate}. Vence em {invoice.dueDate}</p>
+                        <p className="mt-1 text-[10px] text-slate-500">{formatDatePtBr(invoice.startDate)} até {formatDatePtBr(invoice.endDate)}. Vence em {formatDatePtBr(invoice.dueDate)}</p>
                       </div>
                       <CreditCard size={20} style={{ color: card.color }} />
                     </div>
@@ -175,6 +334,12 @@ export function CardsView({
                       <span className="font-mono font-bold text-white">{formatCurrency(total)}</span>
                       <span className="text-slate-500">{invoiceTransactions.length} lançamento{invoiceTransactions.length === 1 ? '' : 's'}</span>
                     </div>
+                    {reimbursementTotal > 0 ? (
+                      <p className="mt-1 text-[10px] font-semibold text-amber-200">Reembolsos na fatura: {formatCurrency(reimbursementTotal)}</p>
+                    ) : null}
+                    {invoiceCreditTotal > 0 ? (
+                      <p className="mt-1 text-[10px] font-semibold text-emerald-200">Descontos/estornos: -{formatCurrency(invoiceCreditTotal)}</p>
+                    ) : null}
                   </button>
                 </article>
               );
@@ -185,15 +350,27 @@ export function CardsView({
 
       {selectedCard && selectedInvoice ? (
         <>
-          <section className="mt-4 shrink-0 rounded-2xl border border-white/8 bg-[#101319] p-4">
+          <section className="mt-3 shrink-0 rounded-2xl border border-white/8 bg-[#101319] p-3">
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Fatura do ciclo</p>
-                <p className="mt-1 font-display text-2xl font-bold text-white">{formatCurrency(selectedInvoice.total)}</p>
-                <p className="mt-1 text-xs text-slate-500">{selectedInvoice.invoice.startDate} até {selectedInvoice.invoice.endDate}. Vence em {selectedInvoice.invoice.dueDate}</p>
+                <p className="mt-1 font-display text-xl font-bold text-white">{formatCurrency(selectedInvoice.total)}</p>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold">
+                  <span className="text-emerald-200">Meu: {formatCurrency(selectedInvoice.personalTotal)}</span>
+                  {selectedInvoice.reimbursementTotal > 0 ? (
+                    <span className="text-amber-200">Dos outros: {formatCurrency(selectedInvoice.reimbursementTotal)}</span>
+                  ) : null}
+                  {selectedInvoice.invoiceCreditTotal > 0 ? (
+                    <span className="text-emerald-200">Descontos: -{formatCurrency(selectedInvoice.invoiceCreditTotal)}</span>
+                  ) : null}
+                </div>
+                {selectedInvoice.reimbursementTotal > 0 ? (
+                  <p className="sr-only">Dos outros: {formatCurrency(selectedInvoice.reimbursementTotal)}</p>
+                ) : null}
+                <p className="mt-1 text-[11px] text-slate-500">{formatDatePtBr(selectedInvoice.invoice.startDate)} até {formatDatePtBr(selectedInvoice.invoice.endDate)}. Vence em {formatDatePtBr(selectedInvoice.invoice.dueDate)}</p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-2">
-                <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-200">
+                <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-bold text-sky-200">
                   {getInvoiceDisplayStatus(selectedInvoice.invoice.status, selectedInvoice.transactions)}
                 </span>
                 <CardInvoiceActions
@@ -211,39 +388,124 @@ export function CardsView({
             </div>
           </section>
 
-          <label className="mt-4 flex h-12 shrink-0 items-center gap-3 rounded-2xl border border-white/10 bg-[#101319] px-4 text-slate-400">
-            <Search size={17} />
+          <section className="mt-2 shrink-0 rounded-2xl border border-white/8 bg-[#101319] px-3 py-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Meu gasto</p>
+                <p className="mt-0.5 truncate font-mono text-sm font-bold text-white">{formatCurrency(selectedInvoice.personalTotal)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBreakdownOpen((current) => !current)}
+                className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-white/5 px-2 text-[11px] font-bold text-slate-200 transition hover:bg-white/10"
+                title={isBreakdownOpen ? 'Recolher detalhes' : 'Mostrar detalhes'}
+              >
+                Detalhes
+                {isBreakdownOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </div>
+
+            {isBreakdownOpen ? (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Meu gasto</p>
+                    <p className="font-mono text-xs font-bold text-emerald-200">{formatCurrency(selectedInvoice.personalTotal)}</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {selectedInvoice.personalBreakdown.map((item) => (
+                      <div key={item.key} className={`rounded-xl border px-2 py-2 ${item.className}`}>
+                        <p className="text-[9px] font-semibold uppercase tracking-widest opacity-80">{item.shortLabel}</p>
+                        <p className="mt-1 font-mono text-xs font-bold">{formatCurrency(item.total)}</p>
+                        <p className="mt-0.5 text-[9px] opacity-70">{item.count} lançamento{item.count === 1 ? '' : 's'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedInvoice.reimbursementTotal > 0 ? (
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-200">Dos outros</p>
+                      <p className="font-mono text-xs font-bold text-amber-200">{formatCurrency(selectedInvoice.reimbursementTotal)}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {selectedInvoice.reimbursementBreakdown.map((item) => (
+                        <div key={item.key} className={`rounded-xl border px-2 py-2 ${item.className}`}>
+                          <p className="text-[9px] font-semibold uppercase tracking-widest opacity-80">{item.shortLabel}</p>
+                          <p className="mt-1 font-mono text-xs font-bold">{formatCurrency(item.total)}</p>
+                          <p className="mt-0.5 text-[9px] opacity-70">{item.count} lançamento{item.count === 1 ? '' : 's'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+
+          <label className="mt-3 flex h-10 shrink-0 items-center gap-3 rounded-2xl border border-white/10 bg-[#101319] px-3 text-slate-400">
+            <Search size={15} />
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar na fatura" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
           </label>
 
-          <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
+          <section className="no-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
             {visibleTransactions.map((transaction) => {
               const meta = readTransactionMeta(transaction.notes);
-              const expenseNeedLabel = getExpenseNeedLabel(meta.expenseNeed);
+              const isCredit = isInvoiceCredit(transaction);
+              const expenseNeedLabel = transaction.isReimbursable ? '' : getExpenseNeedLabel(meta.expenseNeed);
               const entryModeLabel = getEntryModeLabel(meta.entryMode);
+              const isDragging = draggedTransactionId === transaction.id;
+              const isDropTarget = dragTargetTransactionId === transaction.id && draggedTransactionId !== transaction.id;
               return (
-                <article key={transaction.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] p-4">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300">
-                    <CreditCard size={17} />
+                <article
+                  key={transaction.id}
+                  data-invoice-transaction-id={transaction.id}
+                  onPointerDown={(event) => handlePointerDown(event, transaction)}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={(event) => void handlePointerUp(event)}
+                  onPointerCancel={handlePointerCancel}
+                  className={`flex touch-none items-center gap-3 rounded-2xl border px-3 py-2.5 transition ${
+                    isDropTarget
+                      ? 'border-sky-300 bg-sky-500/15'
+                      : isDragging
+                        ? 'border-violet-300/50 bg-violet-500/10 opacity-70'
+                        : 'border-white/8 bg-[#101319]'
+                  } ${transaction.isProjected ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                    <CreditCard size={16} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <GripVertical size={14} className="shrink-0 text-slate-600" />
+                      <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">
                       {getCategoryName(categories, transaction.categoryId)}
                     </p>
-                    <div className="mt-2 flex flex-wrap gap-1">
+                    <div className="mt-1.5 flex flex-wrap gap-1">
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${getEntryModeTagClass(meta.entryMode)}`}>{entryModeLabel}</span>
+                      {isCredit ? <span className="rounded-full border border-emerald-400/20 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-100">Crédito na fatura</span> : null}
                       {expenseNeedLabel ? <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${getExpenseNeedTagClass(meta.expenseNeed)}`}>{expenseNeedLabel}</span> : null}
+                      {transaction.isReimbursable ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                          <UserRound size={11} />
+                          {getReimbursementPersonName(reimbursementPeople, transaction.reimbursementPersonId)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-mono text-sm font-bold text-rose-300">-{formatCurrency(transaction.amount)}</p>
-                    <p className="mt-1 text-[11px] text-slate-500">{transaction.date.slice(8, 10)}/{transaction.date.slice(5, 7)}</p>
-                    <div className="mt-2 flex justify-end gap-1">
-                      <button type="button" onClick={() => onEditTransaction(transaction)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-slate-300" title="Editar lançamento">
+                    <p className={`font-mono text-sm font-bold ${isCredit ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {isCredit ? '-' : '-'}{formatCurrency(transaction.amount)}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">{formatShortDatePtBr(transaction.date)}</p>
+                    <div className="mt-1.5 flex justify-end gap-1">
+                      <button type="button" onClick={() => onEditTransaction(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-slate-300" title="Editar lançamento">
                         <Pencil size={14} />
                       </button>
-                      <button type="button" onClick={() => onDeleteTransaction(transaction)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/10 text-rose-300" title="Excluir lançamento">
+                      <button type="button" onClick={() => onDeleteTransaction(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/10 text-rose-300" title="Excluir lançamento">
                         <Trash2 size={14} />
                       </button>
                     </div>

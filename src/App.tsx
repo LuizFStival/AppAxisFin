@@ -8,6 +8,7 @@ import { AddCardModal } from './components/cards/AddCardModal';
 import { CardsView } from './components/cards/CardsView';
 import { AddCategoryModal } from './components/categories/AddCategoryModal';
 import { ReportsView } from './components/reports/ReportsView';
+import { ReimbursementsView } from './components/reimbursements/ReimbursementsView';
 import { ProfileView } from './components/profile/ProfileView';
 import { AccountsView } from './components/accounts/AccountsView';
 import { AuthView } from './components/auth/AuthView';
@@ -16,6 +17,8 @@ import { accountRepository } from './features/accounts/accountRepository';
 import { cardRepository } from './features/cards/cardRepository';
 import { categoryRepository } from './features/categories/categoryRepository';
 import { loadFinanceSnapshot, resetFinanceSnapshot } from './features/finance/financeStore';
+import { reimbursementRepository } from './features/reimbursements/reimbursementRepository';
+import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
 import { isSupabaseConfigured, supabase } from './lib/supabase/supabaseClient';
 import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, Transaction, UserProfile } from './types';
@@ -27,6 +30,8 @@ const emptyFinanceSnapshot: FinanceSnapshot = {
   accounts: [],
   cards: [],
   categories: [],
+  reimbursementPeople: [],
+  recurringTransactions: [],
   transactions: [],
 };
 
@@ -167,6 +172,17 @@ export default function App() {
     }
 
     if (editingTransaction) {
+      if (editingTransaction.isProjected) {
+        const saved = await transactionRepository.create(transaction);
+        setSnapshot((current) => ({
+          ...current,
+          transactions: [saved, ...current.transactions.filter((item) => item.id !== editingTransaction.id)]
+            .sort((left, right) => right.date.localeCompare(left.date)),
+        }));
+        setEditingTransaction(null);
+        return;
+      }
+
       const meta = readTransactionMeta(editingTransaction.notes);
       const shouldUpdateForward = scope === 'forward' && meta.seriesId;
 
@@ -178,13 +194,14 @@ export default function App() {
         const updatedMeta = readTransactionMeta(transaction.notes);
         const updatedTransactions = relatedTransactions.map((item, index) => {
           const itemMeta = readTransactionMeta(item.notes);
+          const expenseNeed = transaction.isReimbursable ? undefined : updatedMeta.expenseNeed ?? itemMeta.expenseNeed;
           return {
             ...item,
             ...transaction,
             id: item.id,
             description: formatDescriptionForTransactionMeta(transaction.description, item),
             date: addMonths(transaction.date, index),
-            notes: writeTransactionNotes(visibleNotes, { ...itemMeta, expenseNeed: updatedMeta.expenseNeed ?? itemMeta.expenseNeed }),
+            notes: writeTransactionNotes(visibleNotes, { ...itemMeta, expenseNeed }),
           };
         });
         const saved = await transactionRepository.updateMany(updatedTransactions);
@@ -215,6 +232,11 @@ export default function App() {
     }));
   }
 
+  async function handleCreateRecurring(transaction: Omit<Transaction, 'id'>, endDate?: string) {
+    await recurringRepository.createFromTransaction(transaction, endDate);
+    await loadSnapshot();
+  }
+
   async function handleSaveCategory(input: Omit<Category, 'id' | 'isSystem'>) {
     if (editingCategory) {
       const saved = await categoryRepository.update(editingCategory.id, { ...input, originalName: editingCategory.name });
@@ -242,14 +264,61 @@ export default function App() {
     return saved;
   }
 
+  async function handleCreateReimbursementPerson(input: { name: string; phone?: string; notes?: string }) {
+    const saved = await reimbursementRepository.createPerson(input);
+    setSnapshot((current) => ({
+      ...current,
+      reimbursementPeople: [...current.reimbursementPeople, saved].sort((left, right) => left.name.localeCompare(right.name)),
+    }));
+    return saved;
+  }
+
   async function handleToggleStatus(transaction: Transaction) {
     const nextStatus = transaction.status === 'paid' ? 'pending' : 'paid';
+    if (transaction.isProjected) {
+      const { id: _id, isProjected: _isProjected, ...input } = transaction;
+      const saved = await transactionRepository.create({ ...input, status: nextStatus });
+      setSnapshot((current) => ({
+        ...current,
+        transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
+      }));
+      return;
+    }
+
     await transactionRepository.updateStatus(transaction.id, nextStatus);
     setSnapshot((current) => ({
       ...current,
       transactions: current.transactions.map((item) =>
         item.id === transaction.id ? { ...item, status: nextStatus } : item,
       ),
+    }));
+  }
+
+  async function handleMarkReimbursementReceived(transaction: Transaction) {
+    if (transaction.isProjected) {
+      const { id: _id, isProjected: _isProjected, ...input } = transaction;
+      const saved = await transactionRepository.create({
+        ...input,
+        isReimbursable: true,
+        reimbursementStatus: 'received',
+        reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
+      });
+      setSnapshot((current) => ({
+        ...current,
+        transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
+      }));
+      return;
+    }
+
+    const saved = await transactionRepository.update(transaction.id, {
+      ...transaction,
+      isReimbursable: true,
+      reimbursementStatus: 'received',
+      reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
+    });
+    setSnapshot((current) => ({
+      ...current,
+      transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
     }));
   }
 
@@ -287,6 +356,43 @@ export default function App() {
     }));
   }
 
+  async function handleReorderInvoiceTransactions(transactions: Transaction[]) {
+    const reorderedTransactions = transactions.map((transaction, index) => ({
+      ...transaction,
+      notes: writeTransactionNotes(getVisibleNotes(transaction.notes), {
+        ...readTransactionMeta(transaction.notes),
+        invoiceSortOrder: (index + 1) * 1000,
+      }),
+    }));
+    const previousTransactions = snapshot.transactions;
+    const optimisticById = new Map(reorderedTransactions.map((transaction) => [transaction.id, transaction]));
+
+    setSnapshot((current) => ({
+      ...current,
+      transactions: current.transactions.map((transaction) =>
+        optimisticById.get(transaction.id) ?? transaction,
+      ),
+    }));
+
+    try {
+      const savedTransactions = await transactionRepository.updateMany(reorderedTransactions);
+      const savedById = new Map(savedTransactions.map((transaction) => [transaction.id, transaction]));
+
+      setSnapshot((current) => ({
+        ...current,
+        transactions: current.transactions.map((transaction) =>
+          savedById.get(transaction.id) ?? transaction,
+        ),
+      }));
+    } catch (error) {
+      setSnapshot((current) => ({
+        ...current,
+        transactions: previousTransactions,
+      }));
+      throw error;
+    }
+  }
+
   async function handleUpdateCardClosingDay(card: FinanceSnapshot['cards'][number], closingDay: number) {
     const saved = await cardRepository.update(card.id, {
       name: card.name,
@@ -312,6 +418,11 @@ export default function App() {
   }
 
   async function handleDeleteTransaction(transaction: Transaction) {
+    if (transaction.isProjected) {
+      alert('Esta e uma ocorrencia projetada por uma regra fixa. Para remover, edite ou encerre a regra recorrente.');
+      return;
+    }
+
     const meta = readTransactionMeta(transaction.notes);
     const groupedTransactions = meta.seriesId
       ? snapshot.transactions.filter((item) => readTransactionMeta(item.notes).seriesId === meta.seriesId)
@@ -514,6 +625,7 @@ export default function App() {
           cards={snapshot.cards}
           accounts={snapshot.accounts}
           categories={snapshot.categories}
+          reimbursementPeople={snapshot.reimbursementPeople}
           transactions={snapshot.transactions}
           selectedCardId={selectedCardId}
           activeMonth={activeMonth}
@@ -526,6 +638,7 @@ export default function App() {
             setIsAddOpen(true);
           }}
           onDeleteTransaction={handleDeleteTransaction}
+          onReorderInvoiceTransactions={handleReorderInvoiceTransactions}
           onPayInvoice={handlePayCardInvoice}
           onUpdateCardClosingDay={handleUpdateCardClosingDay}
           onEditCard={(card) => {
@@ -542,6 +655,7 @@ export default function App() {
           accounts={snapshot.accounts}
           cards={snapshot.cards}
           categories={snapshot.categories}
+          reimbursementPeople={snapshot.reimbursementPeople}
           activeMonth={activeMonth}
           dashboardFilter={dashboardTransactionFilter}
           onToggleStatus={handleToggleStatus}
@@ -550,6 +664,22 @@ export default function App() {
             setIsAddOpen(true);
           }}
           onDelete={handleDeleteTransaction}
+        />
+      ) : null}
+
+      {currentView === 'reimbursements' ? (
+        <ReimbursementsView
+          people={snapshot.reimbursementPeople}
+          transactions={snapshot.transactions}
+          activeMonth={activeMonth}
+          onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
+          onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
+          onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
+          onMarkReceived={handleMarkReimbursementReceived}
+          onEditTransaction={(transaction) => {
+            setEditingTransaction(transaction);
+            setIsAddOpen(true);
+          }}
         />
       ) : null}
 
@@ -597,8 +727,11 @@ export default function App() {
         accounts={snapshot.accounts}
         cards={snapshot.cards}
         categories={snapshot.categories}
+        reimbursementPeople={snapshot.reimbursementPeople}
         transaction={editingTransaction}
         onCreateCategory={handleCreateCategoryFromEntry}
+        onCreateReimbursementPerson={handleCreateReimbursementPerson}
+        onCreateRecurring={handleCreateRecurring}
         onClose={() => {
           setIsAddOpen(false);
           setEditingTransaction(null);

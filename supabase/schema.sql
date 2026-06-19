@@ -82,6 +82,16 @@ create table if not exists public.categories (
   unique (user_id, name, flow)
 );
 
+create table if not exists public.reimbursement_people (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  phone text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.transactions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -96,6 +106,10 @@ create table if not exists public.transactions (
   from_account_id uuid references public.accounts(id) on delete set null,
   to_account_id uuid references public.accounts(id) on delete set null,
   notes text,
+  is_reimbursable boolean not null default false,
+  reimbursement_person_id uuid references public.reimbursement_people(id) on delete set null,
+  reimbursement_status text check (reimbursement_status in ('pending', 'received')),
+  reimbursement_received_at date,
   attachment_path text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -115,6 +129,63 @@ create table if not exists public.transactions (
       and account_id is null
       and card_id is null
       and category_id is null
+    )
+  ),
+  constraint transactions_reimbursement_check check (
+    (
+      is_reimbursable = false
+      and reimbursement_person_id is null
+      and reimbursement_status is null
+      and reimbursement_received_at is null
+    )
+    or
+    (
+      is_reimbursable = true
+      and flow = 'expense'
+      and reimbursement_person_id is not null
+      and reimbursement_status in ('pending', 'received')
+      and (reimbursement_status = 'received' or reimbursement_received_at is null)
+    )
+  )
+);
+
+create table if not exists public.recurring_transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  description text not null,
+  amount numeric(14,2) not null check (amount > 0),
+  flow text not null default 'expense' check (flow in ('income', 'expense')),
+  status text not null default 'pending' check (status in ('paid', 'pending')),
+  start_date date not null,
+  end_date date,
+  interval_months int not null default 1 check (interval_months > 0 and interval_months <= 12),
+  category_id uuid references public.categories(id) on delete set null,
+  account_id uuid references public.accounts(id) on delete set null,
+  card_id uuid references public.cards(id) on delete set null,
+  notes text,
+  is_reimbursable boolean not null default false,
+  reimbursement_person_id uuid references public.reimbursement_people(id) on delete set null,
+  reimbursement_status text check (reimbursement_status in ('pending', 'received')),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (end_date is null or end_date >= start_date),
+  constraint recurring_transactions_flow_source_check check (
+    (account_id is not null or card_id is not null)
+    and not (account_id is not null and card_id is not null)
+  ),
+  constraint recurring_transactions_reimbursement_check check (
+    (
+      is_reimbursable = false
+      and reimbursement_person_id is null
+      and reimbursement_status is null
+    )
+    or
+    (
+      is_reimbursable = true
+      and flow = 'expense'
+      and reimbursement_person_id is not null
+      and reimbursement_status = 'pending'
     )
   )
 );
@@ -197,12 +268,22 @@ create unique index if not exists cards_user_id_name_ci_idx on public.cards (use
 create index if not exists categories_user_id_idx on public.categories(user_id);
 create unique index if not exists categories_user_flow_name_ci_unique
 on public.categories (user_id, flow, lower(trim(name)));
+create index if not exists reimbursement_people_user_id_idx on public.reimbursement_people(user_id);
+create unique index if not exists reimbursement_people_user_id_name_ci_idx on public.reimbursement_people(user_id, lower(trim(name)));
 create index if not exists transactions_user_id_date_idx on public.transactions(user_id, transaction_date desc);
 create index if not exists transactions_account_id_idx on public.transactions(account_id);
 create index if not exists transactions_card_id_idx on public.transactions(card_id);
 create index if not exists transactions_category_id_idx on public.transactions(category_id);
 create index if not exists transactions_from_account_id_idx on public.transactions(from_account_id);
 create index if not exists transactions_to_account_id_idx on public.transactions(to_account_id);
+create index if not exists transactions_reimbursement_person_id_idx on public.transactions(reimbursement_person_id);
+create index if not exists transactions_user_reimbursement_idx on public.transactions(user_id, is_reimbursable, reimbursement_status);
+create index if not exists recurring_transactions_user_id_idx on public.recurring_transactions(user_id);
+create index if not exists recurring_transactions_user_active_start_idx on public.recurring_transactions(user_id, is_active, start_date);
+create index if not exists recurring_transactions_category_id_idx on public.recurring_transactions(category_id);
+create index if not exists recurring_transactions_account_id_idx on public.recurring_transactions(account_id);
+create index if not exists recurring_transactions_card_id_idx on public.recurring_transactions(card_id);
+create index if not exists recurring_transactions_reimbursement_person_id_idx on public.recurring_transactions(reimbursement_person_id);
 create index if not exists invoices_user_id_period_idx on public.invoices(user_id, period);
 create index if not exists invoices_card_id_idx on public.invoices(card_id);
 create index if not exists installments_user_id_due_date_idx on public.installments(user_id, due_date);
@@ -233,9 +314,19 @@ create trigger categories_set_updated_at
 before update on public.categories
 for each row execute function public.set_updated_at();
 
+drop trigger if exists reimbursement_people_set_updated_at on public.reimbursement_people;
+create trigger reimbursement_people_set_updated_at
+before update on public.reimbursement_people
+for each row execute function public.set_updated_at();
+
 drop trigger if exists transactions_set_updated_at on public.transactions;
 create trigger transactions_set_updated_at
 before update on public.transactions
+for each row execute function public.set_updated_at();
+
+drop trigger if exists recurring_transactions_set_updated_at on public.recurring_transactions;
+create trigger recurring_transactions_set_updated_at
+before update on public.recurring_transactions
 for each row execute function public.set_updated_at();
 
 drop trigger if exists invoices_set_updated_at on public.invoices;
@@ -267,7 +358,9 @@ alter table public.profiles enable row level security;
 alter table public.accounts enable row level security;
 alter table public.cards enable row level security;
 alter table public.categories enable row level security;
+alter table public.reimbursement_people enable row level security;
 alter table public.transactions enable row level security;
+alter table public.recurring_transactions enable row level security;
 alter table public.invoices enable row level security;
 alter table public.installments enable row level security;
 alter table public.goals enable row level security;
@@ -348,6 +441,27 @@ create policy categories_delete_own on public.categories
 for delete to authenticated
 using ((select auth.uid()) = user_id);
 
+drop policy if exists reimbursement_people_select_own on public.reimbursement_people;
+create policy reimbursement_people_select_own on public.reimbursement_people
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists reimbursement_people_insert_own on public.reimbursement_people;
+create policy reimbursement_people_insert_own on public.reimbursement_people
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists reimbursement_people_update_own on public.reimbursement_people;
+create policy reimbursement_people_update_own on public.reimbursement_people
+for update to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists reimbursement_people_delete_own on public.reimbursement_people;
+create policy reimbursement_people_delete_own on public.reimbursement_people
+for delete to authenticated
+using ((select auth.uid()) = user_id);
+
 drop policy if exists transactions_select_own on public.transactions;
 create policy transactions_select_own on public.transactions
 for select to authenticated
@@ -366,6 +480,27 @@ with check ((select auth.uid()) = user_id);
 
 drop policy if exists transactions_delete_own on public.transactions;
 create policy transactions_delete_own on public.transactions
+for delete to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists recurring_transactions_select_own on public.recurring_transactions;
+create policy recurring_transactions_select_own on public.recurring_transactions
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists recurring_transactions_insert_own on public.recurring_transactions;
+create policy recurring_transactions_insert_own on public.recurring_transactions
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists recurring_transactions_update_own on public.recurring_transactions;
+create policy recurring_transactions_update_own on public.recurring_transactions
+for update to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists recurring_transactions_delete_own on public.recurring_transactions;
+create policy recurring_transactions_delete_own on public.recurring_transactions
 for delete to authenticated
 using ((select auth.uid()) = user_id);
 
@@ -591,6 +726,27 @@ begin
 end;
 $$;
 
+create or replace function public.assert_owned_reimbursement_person(person_id uuid, owner_id uuid)
+returns void
+language plpgsql
+as $$
+begin
+  if person_id is null then
+    return;
+  end if;
+
+  if not exists (
+    select 1
+    from public.reimbursement_people
+    where id = person_id
+      and user_id = owner_id
+  ) then
+    raise exception 'Pessoa de reembolso nao pertence ao usuario autenticado.'
+      using errcode = '42501';
+  end if;
+end;
+$$;
+
 create or replace function public.assert_owned_transaction(transaction_id uuid, owner_id uuid)
 returns void
 language plpgsql
@@ -653,6 +809,20 @@ begin
   perform public.assert_owned_account(new.to_account_id, new.user_id);
   perform public.assert_owned_card(new.card_id, new.user_id);
   perform public.assert_owned_category(new.category_id, new.user_id);
+  perform public.assert_owned_reimbursement_person(new.reimbursement_person_id, new.user_id);
+  return new;
+end;
+$$;
+
+create or replace function public.validate_recurring_transaction_owner_refs()
+returns trigger
+language plpgsql
+as $$
+begin
+  perform public.assert_owned_account(new.account_id, new.user_id);
+  perform public.assert_owned_card(new.card_id, new.user_id);
+  perform public.assert_owned_category(new.category_id, new.user_id);
+  perform public.assert_owned_reimbursement_person(new.reimbursement_person_id, new.user_id);
   return new;
 end;
 $$;
@@ -698,6 +868,11 @@ drop trigger if exists transactions_validate_owner_refs on public.transactions;
 create trigger transactions_validate_owner_refs
 before insert or update on public.transactions
 for each row execute function public.validate_transaction_owner_refs();
+
+drop trigger if exists recurring_transactions_validate_owner_refs on public.recurring_transactions;
+create trigger recurring_transactions_validate_owner_refs
+before insert or update on public.recurring_transactions
+for each row execute function public.validate_recurring_transaction_owner_refs();
 
 drop trigger if exists invoices_validate_owner_refs on public.invoices;
 create trigger invoices_validate_owner_refs
