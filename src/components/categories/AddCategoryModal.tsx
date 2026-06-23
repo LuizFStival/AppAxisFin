@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Category } from '../../types';
 import { DuplicateNameError, hasDuplicateName } from '../../lib/utils/validation';
+import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 
 interface AddCategoryModalProps {
   isOpen: boolean;
@@ -77,7 +78,11 @@ export function AddCategoryModal({ isOpen, categories, category, onClose, onSave
       await onSave({ name: trimmedName, flow, icon, color });
       onClose();
     } catch (saveError) {
-      setError(saveError instanceof DuplicateNameError ? saveError.message : 'Não foi possível salvar a categoria.');
+      setError(
+        saveError instanceof DuplicateNameError
+          ? saveError.message
+          : getUserFriendlyError(saveError, 'Não foi possível salvar a categoria. Tente novamente.'),
+      );
     } finally {
       setIsSaving(false);
     }

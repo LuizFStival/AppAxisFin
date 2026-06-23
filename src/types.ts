@@ -66,6 +66,7 @@ export interface Transaction {
   reimbursementReceivedAt?: string;
   recurringTransactionId?: string;
   recurringOccurrenceDate?: string;
+  createdAt?: string;
   isProjected?: boolean;
 }
 

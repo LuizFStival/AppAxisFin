@@ -33,7 +33,7 @@ export function getCardInvoiceInfo(card: Card, purchaseDate: string, todayValue 
   const dueMonthOffset = card.dueDay > card.closingDay ? 0 : 1;
   const dueMonth = shiftMonth(endDate, dueMonthOffset);
   const dueDate = clampDay(dueMonth.getFullYear(), dueMonth.getMonth(), card.dueDay);
-  const period = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}`;
+  const period = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`;
   const today = parseLocalDate(todayValue);
   const status = today <= endDate ? 'aberta' : today <= dueDate ? 'fechada' : 'vencida';
 
@@ -48,25 +48,7 @@ export function getCardInvoiceInfo(card: Card, purchaseDate: string, todayValue 
 }
 
 export function getCardInvoiceInfoForPeriod(card: Card, period: string, todayValue = formatLocalDate(new Date())): CardInvoiceInfo {
-  const [year, month] = period.split('-').map(Number);
-  const dueMonthIndex = month - 1;
-  const dueDate = clampDay(year, dueMonthIndex, card.dueDay);
-  const dueMonthOffset = card.dueDay > card.closingDay ? 0 : 1;
-  const endMonth = new Date(year, dueMonthIndex - dueMonthOffset, 1);
-  const endDate = clampDay(endMonth.getFullYear(), endMonth.getMonth(), card.closingDay);
-  const previousEndMonth = new Date(endDate.getFullYear(), endDate.getMonth() - 1, 1);
-  const previousEndDate = clampDay(previousEndMonth.getFullYear(), previousEndMonth.getMonth(), card.closingDay);
-  const today = parseLocalDate(todayValue);
-  const status = today <= endDate ? 'aberta' : today <= dueDate ? 'fechada' : 'vencida';
-
-  return {
-    period,
-    label: `Fatura ${formatInvoiceMonthLabel(period)}`,
-    startDate: formatLocalDate(previousEndDate),
-    endDate: formatLocalDate(endDate),
-    dueDate: formatLocalDate(dueDate),
-    status,
-  };
+  return getCardInvoiceInfoForClosingMonth(card, period, todayValue);
 }
 
 export function getCardInvoiceInfoForClosingMonth(card: Card, closingMonth: string, todayValue = formatLocalDate(new Date())): CardInvoiceInfo {
@@ -77,7 +59,7 @@ export function getCardInvoiceInfoForClosingMonth(card: Card, closingMonth: stri
   const dueMonthOffset = card.dueDay > card.closingDay ? 0 : 1;
   const dueMonth = shiftMonth(endDate, dueMonthOffset);
   const dueDate = clampDay(dueMonth.getFullYear(), dueMonth.getMonth(), card.dueDay);
-  const period = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}`;
+  const period = closingMonth;
   const today = parseLocalDate(todayValue);
   const status = today <= endDate ? 'aberta' : today <= dueDate ? 'fechada' : 'vencida';
 

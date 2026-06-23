@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRightLeft, CalendarClock, Check, Layers, Plus, Repeat, TrendingDown, TrendingUp, UserRound, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRightLeft, Calculator, CalendarClock, Check, CircleMinus, CirclePlus, Delete, Layers, Plus, Repeat, TrendingDown, UserRound, X } from 'lucide-react';
 import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed, MoneyFlow, ReimbursementPerson, Transaction } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { DateInput } from '../shared/DateInput';
@@ -8,6 +8,7 @@ import { addMonths, formatDatePtBr } from '../../lib/utils/date';
 import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { createSeriesId, getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { hasDuplicateName } from '../../lib/utils/validation';
+import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 
 interface AddEntryModalProps {
   isOpen: boolean;
@@ -25,12 +26,6 @@ interface AddEntryModalProps {
     scope?: EditSeriesScope,
   ) => void | Promise<void>;
 }
-
-const flowOptions = [
-  { id: 'expense' as const, label: 'Despesa', icon: TrendingDown },
-  { id: 'income' as const, label: 'Receita', icon: TrendingUp },
-  { id: 'transfer' as const, label: 'Transferência', icon: ArrowRightLeft },
-];
 
 const expenseModes = [
   { id: 'variable' as const, label: 'Variável', icon: TrendingDown },
@@ -90,7 +85,20 @@ function parseEntryCount(value: string, minimum: number): number {
   return Math.min(60, Math.max(minimum, parsed));
 }
 
+function evaluateExpression(rawValue: string): number | null {
+  const expression = rawValue.replace(/\s+/g, '').replace(/,/g, '.');
+  if (!expression || !/^[\d.+\-*/]+$/.test(expression)) return null;
+
+  try {
+    const result = Function(`"use strict"; return (${expression});`)();
+    return typeof result === 'number' && Number.isFinite(result) && result >= 0 ? result : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, transaction, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onClose, onSave }: AddEntryModalProps) {
+  const [entryStep, setEntryStep] = useState<'picker' | 'form'>('picker');
   const [flow, setFlow] = useState<MoneyFlow>('expense');
   const [expenseMode, setExpenseMode] = useState<ExpenseEntryMode>('variable');
   const [expenseNeed, setExpenseNeed] = useState<ExpenseNeed | ''>('');
@@ -119,6 +127,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoryError, setCategoryError] = useState('');
   const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [calculatorExpression, setCalculatorExpression] = useState('');
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [isPreparingReimbursementCategory, setIsPreparingReimbursementCategory] = useState(false);
   const initializedFormKeyRef = useRef<string | null>(null);
@@ -139,6 +150,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     initializedFormKeyRef.current = formKey;
 
     setFlow(transaction?.flow ?? 'expense');
+    setEntryStep(transaction ? 'form' : 'picker');
     setExpenseMode(transactionMeta.entryMode ?? 'variable');
     setExpenseNeed(transaction?.isReimbursable ? '' : transactionMeta.expenseNeed ?? '');
     setAmount(transaction ? formatCurrencyInput(transaction.amount) : DEFAULT_CURRENCY_INPUT);
@@ -165,6 +177,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setNewCategoryName('');
     setCategoryError('');
     setFormError('');
+    setIsSaving(false);
+    setIsCalculatorOpen(false);
+    setCalculatorExpression('');
   }, [accounts, isOpen, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.generatedUntil, transactionMeta.invoiceAdjustment, transactionMeta.totalInstallments]);
 
   const selectedCard = sourceType === 'card' ? cards.find((card) => card.id === cardId) : undefined;
@@ -197,6 +212,38 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   }, [flow, invoiceAdjustmentCategory, isInvoiceCredit, isOpen]);
 
   if (!isOpen) return null;
+
+  function selectNewEntryFlow(nextFlow: MoneyFlow) {
+    setFlow(nextFlow);
+    setStatus(nextFlow === 'income' ? 'pending' : 'paid');
+    setIsInvoiceCredit(false);
+    setIsReimbursable(false);
+    setExpenseNeed('');
+    setEntryStep('form');
+  }
+
+  function appendCalculatorToken(token: string) {
+    setCalculatorExpression((current) => {
+      if (/^[+\-*/]$/.test(token)) {
+        if (!current) return token === '-' ? '-' : '';
+        return /[+\-*/]$/.test(current) ? `${current.slice(0, -1)}${token}` : `${current}${token}`;
+      }
+
+      if (token === ',') {
+        const currentNumber = current.split(/[+\-*/]/).pop() ?? '';
+        if (currentNumber.includes(',') || currentNumber.includes('.')) return current;
+      }
+
+      return `${current}${token}`;
+    });
+  }
+
+  function applyCalculatorResult() {
+    const result = evaluateExpression(calculatorExpression);
+    if (result === null) return;
+    setAmount(formatCurrencyInput(result));
+    setIsCalculatorOpen(false);
+  }
 
   const filteredCategories = categories.filter((category) => category.flow === flow);
   const isInstallmentExpense = flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit;
@@ -234,7 +281,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       setCategoryId(saved.id);
       setNewCategoryName('');
     } catch (error) {
-      setCategoryError(error instanceof Error ? error.message : 'Não foi possível criar a categoria.');
+      setCategoryError(getUserFriendlyError(error, 'Não foi possível criar a categoria. Tente novamente.'));
     } finally {
       setIsCreatingCategory(false);
     }
@@ -258,7 +305,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       setCategoryId(saved.id);
       return saved;
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Não foi possível preparar a categoria Reembolsos.');
+      setFormError(getUserFriendlyError(error, 'Não foi possível preparar a categoria Reembolsos. Tente novamente.'));
       return null;
     } finally {
       setIsPreparingReimbursementCategory(false);
@@ -283,7 +330,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       setCategoryId(saved.id);
       return saved;
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Nao foi possivel preparar a categoria Ajustes de fatura.');
+      setFormError(getUserFriendlyError(error, 'Não foi possível preparar a categoria Ajustes de fatura. Tente novamente.'));
       return null;
     } finally {
       setIsCreatingCategory(false);
@@ -345,7 +392,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       setNewPersonName('');
       await ensureReimbursementCategory();
     } catch (error) {
-      setPersonError(error instanceof Error ? error.message : 'Nao foi possivel criar a pessoa.');
+      setPersonError(getUserFriendlyError(error, 'Não foi possível criar a pessoa. Tente novamente.'));
     } finally {
       setIsCreatingPerson(false);
     }
@@ -418,6 +465,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       return;
     }
 
+    setIsSaving(true);
+    try {
     if (flow === 'transfer') {
       await onSave({
         description: description.trim(),
@@ -473,42 +522,93 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
     await onSave(buildTransaction(date, description.trim(), { entryMode: 'variable', expenseNeed: isReimbursable ? undefined : expenseNeed || undefined }));
     onClose();
+    } catch (error) {
+      setFormError(getUserFriendlyError(error, 'Não foi possível salvar o lançamento. Tente novamente.'));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
+  if (!transaction && entryStep === 'picker') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
+        <div className="max-h-[100dvh] w-full max-w-[430px] overflow-y-auto rounded-none border border-white/10 bg-[#151A22] px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl md:max-h-[860px] md:rounded-[34px]">
+          <div className="mx-auto mb-5 h-1.5 w-14 rounded-full bg-slate-600" />
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-display text-2xl font-bold text-white">O que você quer adicionar?</h2>
+              <p className="mt-1 text-xs font-medium text-slate-400">Escolha o tipo de lançamento</p>
+            </div>
+            <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-400">
+              <X size={19} />
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-3">
+            <button type="button" onClick={() => selectNewEntryFlow('income')} className="flex min-h-14 items-center justify-between rounded-2xl border border-emerald-400 px-5 py-3 text-left text-white transition hover:bg-emerald-400/10">
+              <span className="text-base font-bold">Receita</span>
+              <CirclePlus size={24} className="text-emerald-400" />
+            </button>
+            <button type="button" onClick={() => selectNewEntryFlow('expense')} className="flex min-h-14 items-center justify-between rounded-2xl border border-rose-400 px-5 py-3 text-left text-white transition hover:bg-rose-400/10">
+              <span className="text-base font-bold">Despesa</span>
+              <CircleMinus size={24} className="text-rose-400" />
+            </button>
+            <button type="button" onClick={() => selectNewEntryFlow('transfer')} className="flex min-h-14 items-center justify-between rounded-2xl border border-slate-400 px-5 py-3 text-left text-white transition hover:bg-white/5">
+              <span className="text-base font-bold">Transferência</span>
+              <ArrowRightLeft size={24} className="text-slate-300" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const calculatorResult = evaluateExpression(calculatorExpression);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <form onSubmit={handleSubmit} className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/70 p-0 backdrop-blur-sm md:p-6">
+      <form onSubmit={handleSubmit} className="h-[100dvh] max-h-[100dvh] w-full max-w-[430px] overflow-y-auto rounded-none border border-white/10 bg-[#0B0E14] p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl md:h-[860px] md:max-h-[calc(100dvh-3rem)] md:rounded-[34px] md:p-5">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold text-white">{transaction ? 'Editar lançamento' : 'Novo lançamento'}</h2>
+          <button
+            type="button"
+            onClick={() => transaction ? onClose() : setEntryStep('picker')}
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-300"
+            title={transaction ? 'Fechar' : 'Voltar'}
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <h2 className="font-display text-lg font-bold text-white">
+            {transaction ? 'Editar lançamento' : flow === 'income' ? 'Receita' : flow === 'expense' ? 'Despesa' : 'Transferência'}
+          </h2>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">
             <X size={18} />
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
-          {flowOptions.map((option) => {
-            const Icon = option.icon;
-            const selected = flow === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => {
-                  setFlow(option.id);
-                  if (option.id !== 'expense') {
-                    setIsInvoiceCredit(false);
-                    setIsReimbursable(false);
-                  }
-                }}
-                className={`flex h-12 items-center justify-center gap-1 rounded-xl text-xs font-bold transition ${
-                  selected ? 'bg-sky-500 text-white' : 'text-slate-400'
-                }`}
-              >
-                <Icon size={15} />
-                <span>{option.label}</span>
-              </button>
-            );
-          })}
+        <div className={`mt-4 rounded-2xl p-4 ${
+          flow === 'income' ? 'bg-emerald-600' : flow === 'expense' ? 'bg-rose-600' : 'bg-sky-600'
+        }`}>
+          <p className="text-xs font-semibold text-white/75">Valor</p>
+          <div className="mt-1 flex items-center gap-3">
+            <CurrencyInput
+              value={amount}
+              onChange={setAmount}
+              className="h-14 border-0 bg-transparent px-0 text-3xl font-sans font-bold focus:border-transparent"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const currentAmount = parseCurrencyInput(amount);
+                setCalculatorExpression(currentAmount > 0 ? String(currentAmount).replace('.', ',') : '');
+                setIsCalculatorOpen(true);
+              }}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-black/15 text-white"
+              title="Abrir calculadora"
+              aria-label="Abrir calculadora"
+            >
+              <Calculator size={22} />
+            </button>
+          </div>
         </div>
 
         {flow === 'expense' && !isInvoiceCredit ? (
@@ -655,11 +755,6 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               {formError}
             </p>
           ) : null}
-
-          <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Valor
-            <CurrencyInput value={amount} onChange={setAmount} />
-          </label>
 
           <label className="grid gap-1 text-xs font-semibold text-slate-400">
             Descrição
@@ -863,11 +958,60 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </label>
         </div>
 
-        <button type="submit" disabled={cannotSubmit} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-50">
+        <button type="submit" disabled={cannotSubmit || isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-50">
           <Check size={18} />
-          Salvar lançamento
+          {isSaving ? 'Salvando...' : 'Salvar lançamento'}
         </button>
       </form>
+
+      {isCalculatorOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
+        <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden border border-white/10 bg-[#0B0E14] text-white shadow-2xl md:h-[860px] md:max-h-[calc(100dvh-3rem)] md:rounded-[34px]">
+          <div className="flex items-center justify-between px-4 py-3">
+            <button type="button" onClick={() => setIsCalculatorOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 text-white">
+              <X size={21} />
+            </button>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Calculadora</p>
+            <div className="h-11 w-11" />
+          </div>
+
+          <div className="mx-auto flex min-h-0 w-full flex-1 flex-col justify-end px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <p className="text-base font-medium text-slate-300">Qual valor da sua {flow === 'income' ? 'receita' : flow === 'expense' ? 'despesa' : 'transferência'}?</p>
+            <p className="mt-2 min-h-9 break-all text-right text-2xl font-semibold text-slate-300">{calculatorExpression || '0,00'}</p>
+            <p className="mt-1 text-right text-4xl font-bold tabular-nums">{calculatorResult === null ? 'R$ 0,00' : formatCurrencyInput(calculatorResult)}</p>
+
+            <div className="mt-5 grid grid-cols-4 gap-2.5">
+              <button type="button" onClick={() => appendCalculatorToken('/')} className="h-14 rounded-2xl bg-[#1A2630] text-xl font-bold">÷</button>
+              <button type="button" onClick={() => appendCalculatorToken('*')} className="h-14 rounded-2xl bg-[#1A2630] text-xl font-bold">×</button>
+              <button type="button" onClick={() => setCalculatorExpression((current) => current.slice(0, -1))} className="col-span-2 flex h-14 items-center justify-center rounded-2xl bg-[#1A2630]">
+                <Delete size={24} />
+              </button>
+
+              {['7', '8', '9'].map((key) => <button key={key} type="button" onClick={() => appendCalculatorToken(key)} className="h-14 rounded-2xl bg-[#121A21] text-xl font-bold">{key}</button>)}
+              <button type="button" onClick={() => appendCalculatorToken('-')} className="h-14 rounded-2xl bg-[#1A2630] text-2xl font-bold">−</button>
+
+              {['4', '5', '6'].map((key) => <button key={key} type="button" onClick={() => appendCalculatorToken(key)} className="h-14 rounded-2xl bg-[#121A21] text-xl font-bold">{key}</button>)}
+              <button type="button" onClick={() => appendCalculatorToken('+')} className="h-14 rounded-2xl bg-[#1A2630] text-2xl font-bold">+</button>
+
+              {['1', '2', '3'].map((key) => <button key={key} type="button" onClick={() => appendCalculatorToken(key)} className="h-14 rounded-2xl bg-[#121A21] text-xl font-bold">{key}</button>)}
+              <button
+                type="button"
+                onClick={applyCalculatorResult}
+                disabled={calculatorResult === null}
+                className={`row-span-2 rounded-2xl text-white disabled:opacity-40 ${
+                  flow === 'income' ? 'bg-emerald-500' : flow === 'expense' ? 'bg-rose-500' : 'bg-sky-500'
+                }`}
+              >
+                <Check size={32} className="mx-auto" />
+              </button>
+
+              <button type="button" onClick={() => setCalculatorExpression('')} className="col-span-2 h-14 rounded-2xl bg-[#1A2630] text-lg font-bold">AC</button>
+              <button type="button" onClick={() => appendCalculatorToken('0')} className="h-14 rounded-2xl bg-[#121A21] text-xl font-bold">0</button>
+            </div>
+          </div>
+        </div>
+        </div>
+      ) : null}
     </div>
   );
 }

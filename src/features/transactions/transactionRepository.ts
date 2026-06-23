@@ -26,7 +26,7 @@ function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'
   };
 }
 
-const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at';
+const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, created_at';
 
 export const transactionRepository = {
   async create(transaction: Omit<Transaction, 'id'>): Promise<Transaction> {
@@ -49,7 +49,8 @@ export const transactionRepository = {
       .from('transactions')
       .insert(transactions.map((transaction) => toTransactionInsert(userId, transaction)))
       .select(transactionSelect)
-      .order('transaction_date', { ascending: true });
+      .order('transaction_date', { ascending: true })
+      .order('created_at', { ascending: true });
 
     if (error) throw error;
     return (data ?? []).map(mapTransaction);

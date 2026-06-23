@@ -25,6 +25,7 @@ import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter
 import { getCurrentMonthKey, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
 import { addMonths } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
+import { getUserFriendlyError } from './lib/utils/userFriendlyError';
 
 const emptyFinanceSnapshot: FinanceSnapshot = {
   accounts: [],
@@ -60,10 +61,26 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(isSupabaseConfigured);
   const [user, setUser] = useState<UserProfile>(mockUser);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+  const [appError, setAppError] = useState('');
 
   async function loadSnapshot() {
-    const loaded = await loadFinanceSnapshot();
-    setSnapshot(loaded);
+    try {
+      const loaded = await loadFinanceSnapshot();
+      setSnapshot(loaded);
+      setAppError('');
+    } catch (error) {
+      setAppError(getUserFriendlyError(error, 'Não foi possível carregar seus dados. Tente novamente.'));
+    }
+  }
+
+  async function runAppAction(action: () => Promise<void>, fallback: string) {
+    try {
+      await action();
+      setAppError('');
+    } catch (error) {
+      setAppError(getUserFriendlyError(error, fallback));
+    }
   }
 
   useEffect(() => {
@@ -72,9 +89,18 @@ export default function App() {
       return;
     }
 
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        setAppError(getUserFriendlyError(error, 'Não foi possível verificar sua sessão. Entre novamente.'));
+        setIsAuthLoading(false);
+        return;
+      }
       const sessionUser = data.session?.user;
-      if (sessionUser) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const queryParams = new URLSearchParams(window.location.search);
+      const isRecoveryUrl = hashParams.get('type') === 'recovery' || queryParams.get('type') === 'recovery';
+
+      if (sessionUser && !isRecoveryUrl) {
         setUser({
           id: sessionUser.id,
           name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
@@ -83,16 +109,43 @@ export default function App() {
         });
         setIsAuthenticated(true);
         loadSnapshot();
+      } else if (sessionUser && isRecoveryUrl) {
+        setUser({
+          id: sessionUser.id,
+          name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuario',
+          email: sessionUser.email ?? '',
+          plan: 'AxisFin',
+        });
+        setIsPasswordRecovery(true);
+        setIsAuthenticated(false);
       }
+      setIsAuthLoading(false);
+    }).catch((error: unknown) => {
+      setAppError(getUserFriendlyError(error, 'Não foi possível verificar sua sessão. Entre novamente.'));
       setIsAuthLoading(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       const sessionUser = session?.user;
+      if (event === 'PASSWORD_RECOVERY') {
+        if (sessionUser) {
+          setUser({
+            id: sessionUser.id,
+            name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuario',
+            email: sessionUser.email ?? '',
+            plan: 'AxisFin',
+          });
+        }
+        setIsPasswordRecovery(true);
+        setIsAuthenticated(false);
+        return;
+      }
+
       setIsAuthenticated(Boolean(sessionUser));
       if (sessionUser) {
+        setIsPasswordRecovery(false);
         setUser({
           id: sessionUser.id,
           name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
@@ -412,9 +465,35 @@ export default function App() {
   }
 
   async function handleReset() {
-    const restored = await resetFinanceSnapshot();
-    setSnapshot(restored);
-    setCurrentView('home');
+    const confirmed = window.confirm(
+      'Restaurar demo vai apagar os dados cadastrados e voltar o app para o estado inicial. Deseja prosseguir?',
+    );
+    if (!confirmed) return;
+
+    try {
+      const restored = await resetFinanceSnapshot();
+      setSnapshot(restored);
+      setCurrentView('home');
+      setAppError('');
+    } catch (error) {
+      setAppError(getUserFriendlyError(error, 'Não foi possível restaurar os dados. Tente novamente.'));
+    }
+  }
+
+  async function handleUpdateProfile(input: { name: string }) {
+    if (supabase) {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          full_name: input.name,
+        },
+      });
+      if (error) throw error;
+    }
+
+    setUser((current) => ({
+      ...current,
+      name: input.name,
+    }));
   }
 
   async function handleDeleteTransaction(transaction: Transaction) {
@@ -470,7 +549,11 @@ export default function App() {
         cards: current.cards.map((card) => card.accountId === account.id ? { ...card, accountId: '' } : card),
       }));
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Não foi possível excluir a conta.');
+      alert(
+        error instanceof Error && error.message.includes('lançamentos vinculados')
+          ? error.message
+          : getUserFriendlyError(error, 'Não foi possível excluir a conta. Tente novamente.'),
+      );
     }
   }
 
@@ -487,7 +570,7 @@ export default function App() {
         transactions: current.transactions.filter((transaction) => transaction.cardId !== card.id),
       }));
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Não foi possível excluir o cartão.');
+      alert(getUserFriendlyError(error, 'Não foi possível excluir o cartão. Tente novamente.'));
     }
   }
 
@@ -502,7 +585,7 @@ export default function App() {
         categories: current.categories.filter((item) => item.id !== category.id),
       }));
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Não foi possível excluir a categoria.');
+      alert(getUserFriendlyError(error, 'Não foi possível excluir a categoria. Tente novamente.'));
     }
   }
 
@@ -512,6 +595,7 @@ export default function App() {
     }
 
     setIsAuthenticated(false);
+    setIsPasswordRecovery(false);
     setUser(mockUser);
     setSnapshot(emptyFinanceSnapshot);
     setCurrentView('home');
@@ -533,8 +617,18 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <AuthView onAuthenticated={loadSnapshot} />;
+  if (!isAuthenticated || isPasswordRecovery) {
+    return (
+      <AuthView
+        isPasswordRecovery={isPasswordRecovery}
+        onAuthenticated={loadSnapshot}
+        onPasswordRecovered={() => {
+          setIsPasswordRecovery(false);
+          setIsAuthenticated(true);
+          loadSnapshot();
+        }}
+      />
+    );
   }
 
   return (
@@ -551,6 +645,19 @@ export default function App() {
         setIsAddOpen(true);
       }}
     >
+      {appError ? (
+        <div role="alert" className="mx-4 mt-4 flex items-center justify-between gap-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100 md:mx-8">
+          <span>{appError}</span>
+          <button
+            type="button"
+            onClick={() => void loadSnapshot()}
+            className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : null}
+
       {currentView === 'home' ? (
         <DashboardView
           userName={user.name}
@@ -569,6 +676,7 @@ export default function App() {
             setEditingTransaction(null);
             setIsAddOpen(true);
           }}
+          onOpenProfile={() => setCurrentView('profile')}
           onAddAccount={() => {
             setEditingAccount(null);
             setIsAddAccountOpen(true);
@@ -637,7 +745,10 @@ export default function App() {
             setEditingTransaction(transaction);
             setIsAddOpen(true);
           }}
-          onDeleteTransaction={handleDeleteTransaction}
+          onDeleteTransaction={(transaction) => runAppAction(
+            () => handleDeleteTransaction(transaction),
+            'Não foi possível excluir o lançamento. Tente novamente.',
+          )}
           onReorderInvoiceTransactions={handleReorderInvoiceTransactions}
           onPayInvoice={handlePayCardInvoice}
           onUpdateCardClosingDay={handleUpdateCardClosingDay}
@@ -658,24 +769,34 @@ export default function App() {
           reimbursementPeople={snapshot.reimbursementPeople}
           activeMonth={activeMonth}
           dashboardFilter={dashboardTransactionFilter}
-          onToggleStatus={handleToggleStatus}
+          onToggleStatus={(transaction) => runAppAction(
+            () => handleToggleStatus(transaction),
+            'Não foi possível atualizar o lançamento. Tente novamente.',
+          )}
           onEdit={(transaction) => {
             setEditingTransaction(transaction);
             setIsAddOpen(true);
           }}
-          onDelete={handleDeleteTransaction}
+          onDelete={(transaction) => runAppAction(
+            () => handleDeleteTransaction(transaction),
+            'Não foi possível excluir o lançamento. Tente novamente.',
+          )}
         />
       ) : null}
 
       {currentView === 'reimbursements' ? (
         <ReimbursementsView
           people={snapshot.reimbursementPeople}
+          cards={snapshot.cards}
           transactions={snapshot.transactions}
           activeMonth={activeMonth}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
           onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
-          onMarkReceived={handleMarkReimbursementReceived}
+          onMarkReceived={(transaction) => runAppAction(
+            () => handleMarkReimbursementReceived(transaction),
+            'Não foi possível atualizar o reembolso. Tente novamente.',
+          )}
           onEditTransaction={(transaction) => {
             setEditingTransaction(transaction);
             setIsAddOpen(true);
@@ -696,9 +817,21 @@ export default function App() {
       {currentView === 'profile' ? (
         <ProfileView
           user={user}
+          accounts={snapshot.accounts}
           cards={snapshot.cards}
           categories={snapshot.categories}
-          onViewReports={() => setCurrentView('reports')}
+          showBalances={showBalances}
+          onToggleBalances={() => setShowBalances((value) => !value)}
+          onUpdateProfile={handleUpdateProfile}
+          onAddAccount={() => {
+            setEditingAccount(null);
+            setIsAddAccountOpen(true);
+          }}
+          onEditAccount={(account) => {
+            setEditingAccount(account);
+            setIsAddAccountOpen(true);
+          }}
+          onDeleteAccount={handleDeleteAccount}
           onAddCard={() => {
             setEditingCard(null);
             setIsAddCardOpen(true);

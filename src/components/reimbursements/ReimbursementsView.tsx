@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound } from 'lucide-react';
-import { ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency, getCurrentMonthKey, getMonthKey } from '../../lib/utils/finance';
+import { Card, ReimbursementPerson, Transaction } from '../../types';
+import { formatCurrency, getCurrentMonthKey, getFinancialMonthKey } from '../../lib/utils/finance';
 import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface ReimbursementsViewProps {
   people: ReimbursementPerson[];
+  cards: Card[];
   transactions: Transaction[];
   activeMonth: string;
   onPreviousMonth: () => void;
@@ -33,6 +34,7 @@ function formatShortDate(date: string) {
 
 export function ReimbursementsView({
   people,
+  cards,
   transactions,
   activeMonth,
   onPreviousMonth,
@@ -59,16 +61,16 @@ export function ReimbursementsView({
   const overduePending = useMemo(() => {
     return allReimbursements
       .filter((transaction) => transaction.reimbursementStatus !== 'received')
-      .filter((transaction) => getMonthKey(transaction.date) < currentMonth)
+      .filter((transaction) => getFinancialMonthKey(transaction, cards) < currentMonth)
       .sort((left, right) => left.date.localeCompare(right.date));
-  }, [allReimbursements, currentMonth]);
+  }, [allReimbursements, cards, currentMonth]);
 
   const reimbursementTransactions = useMemo(() => {
     return allReimbursements
       .filter((transaction) => {
         if (mode === 'all') return true;
         if (mode === 'pending') return transaction.reimbursementStatus !== 'received';
-        return getMonthKey(transaction.date) === activeMonth;
+        return getFinancialMonthKey(transaction, cards) === activeMonth;
       })
       .sort((left, right) => {
         if (left.reimbursementStatus !== right.reimbursementStatus) {
@@ -76,7 +78,7 @@ export function ReimbursementsView({
         }
         return right.date.localeCompare(left.date);
       });
-  }, [activeMonth, allReimbursements, mode]);
+  }, [activeMonth, allReimbursements, cards, mode]);
 
   const personSummaries = useMemo(() => {
     const totals = new Map<string, { name: string; pending: number; received: number; count: number }>();
@@ -194,7 +196,7 @@ export function ReimbursementsView({
           </div>
         ) : reimbursementTransactions.map((transaction) => {
           const received = transaction.reimbursementStatus === 'received';
-          const isOverdue = !received && getMonthKey(transaction.date) < currentMonth;
+          const isOverdue = !received && getFinancialMonthKey(transaction, cards) < currentMonth;
           return (
             <article key={transaction.id} className={`rounded-2xl border px-3 py-2.5 ${isOverdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-white/8 bg-[#101319]'}`}>
               <div className="flex items-start justify-between gap-3">

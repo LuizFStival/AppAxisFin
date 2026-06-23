@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CalendarDays, Check, MoreVertical, Pencil, Trash2, WalletCards, X } from 'lucide-react';
 import { Account, Card, Transaction } from '../../types';
-import { formatCurrency } from '../../lib/utils/finance';
+import { formatCurrency, isCardInvoicePaid } from '../../lib/utils/finance';
 import { formatLocalDate } from '../../lib/utils/date';
 import { DateInput } from '../shared/DateInput';
+import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 
 interface CardInvoiceActionsProps {
   card: Card;
@@ -21,10 +22,6 @@ interface CardInvoiceActionsProps {
   onUpdateClosingDay: (card: Card, closingDay: number) => Promise<void>;
   onEditCard: (card: Card) => void;
   onDeleteCard: (card: Card) => void;
-}
-
-function isInvoicePaid(transactions: Transaction[]) {
-  return transactions.length > 0 && transactions.every((transaction) => transaction.status === 'paid');
 }
 
 export function CardInvoiceActions({
@@ -45,7 +42,7 @@ export function CardInvoiceActions({
   const [closingDay, setClosingDay] = useState(String(card.closingDay));
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const paid = isInvoicePaid(invoiceTransactions);
+  const paid = isCardInvoicePaid(invoiceTransactions);
   const canPay = invoiceTotal > 0 && invoiceTransactions.length > 0 && !paid;
 
   useEffect(() => {
@@ -76,7 +73,7 @@ export function CardInvoiceActions({
       });
       setIsPaymentOpen(false);
     } catch (payError) {
-      setError(payError instanceof Error ? payError.message : 'Nao foi possivel pagar a fatura.');
+      setError(getUserFriendlyError(payError, 'Não foi possível pagar a fatura. Tente novamente.'));
     } finally {
       setIsSaving(false);
     }
@@ -97,7 +94,7 @@ export function CardInvoiceActions({
       await onUpdateClosingDay(card, parsedClosingDay);
       setIsOptionsOpen(false);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Nao foi possivel alterar o fechamento.');
+      setError(getUserFriendlyError(saveError, 'Não foi possível alterar o fechamento. Tente novamente.'));
     } finally {
       setIsSaving(false);
     }
@@ -106,11 +103,7 @@ export function CardInvoiceActions({
   return (
     <>
       <div className="flex items-center gap-2">
-        {paid ? (
-          <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-bold text-emerald-200">
-            Paga
-          </span>
-        ) : (
+        {!paid ? (
           <button
             type="button"
             onClick={(event) => {
@@ -125,7 +118,7 @@ export function CardInvoiceActions({
             <WalletCards size={14} />
             Pagar
           </button>
-        )}
+        ) : null}
 
         <button
           type="button"

@@ -24,18 +24,18 @@ export function StatCard({ label, value, tone, icon: Icon, hint, onClick }: Stat
     <Component
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className="cosmic-card cosmic-card-hover w-full rounded-2xl p-4 text-left"
+      className="cosmic-card cosmic-card-hover w-full rounded-2xl p-3 text-left"
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-          <p className="mt-1 font-display text-lg font-bold text-white">{value}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+          <p className="mt-0.5 font-display text-base font-bold leading-tight text-white">{value}</p>
         </div>
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${toneClasses[tone]}`}>
-          <Icon size={18} />
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClasses[tone]}`}>
+          <Icon size={16} />
         </span>
       </div>
-      {hint ? <p className="mt-2 text-xs text-slate-500">{hint}</p> : null}
+      {hint ? <p className="mt-1.5 text-[10px] leading-snug text-slate-500">{hint}</p> : null}
     </Component>
   );
 }

@@ -5,6 +5,7 @@ import { CurrencyInput } from '../shared/CurrencyInput';
 import { BANK_BRANDS, findBankBrand } from '../shared/BankLogo';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { DuplicateNameError, hasDuplicateName } from '../../lib/utils/validation';
+import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 
 interface AddAccountModalProps {
   isOpen: boolean;
@@ -90,7 +91,7 @@ export function AddAccountModal({ isOpen, accounts, account, onClose, onSave }: 
       if (saveError instanceof DuplicateNameError) {
         setError(saveError.message);
       } else {
-        setError('Não foi possível criar a conta. Tente novamente.');
+        setError(getUserFriendlyError(saveError, `Não foi possível ${account ? 'salvar' : 'criar'} a conta. Tente novamente.`));
       }
     } finally {
       setIsSaving(false);

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Circle, CreditCard, Landmark, Pencil, Search, Trash2, UserRound } from 'lucide-react';
+import { CheckCircle2, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getMonthKey, getPaymentSource, isInvoiceCredit, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, isInvoiceCredit, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
-import { getCardInvoiceClosingMonth } from '../../lib/utils/cardInvoices';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
+import { ExpenseViewFilter, matchesExpenseViewFilter } from '../../lib/utils/expenseFilters';
+import { ExpenseFilterChips } from '../shared/ExpenseFilterChips';
+import { CollapsibleSearch } from '../shared/CollapsibleSearch';
 import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface TransactionsViewProps {
@@ -60,6 +62,7 @@ export function TransactionsView({
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
   const [tab, setTab] = useState<TransactionTab>('general');
   const [search, setSearch] = useState('');
+  const [expenseFilter, setExpenseFilter] = useState<ExpenseViewFilter>('all');
   const isDashboardFiltered = Boolean(dashboardFilter);
 
   useEffect(() => {
@@ -72,22 +75,16 @@ export function TransactionsView({
     return transactions
       .filter((transaction) => {
         if (dashboardFilter) return matchesDashboardFilter(transaction, cards, selectedMonth, dashboardFilter);
-        if (isThirdPartyExpense(transaction)) return false;
 
-        if (tab === 'cards') {
-          if (!transaction.cardId) return false;
-          const card = cards.find((item) => item.id === transaction.cardId);
-          const invoiceMonth = card ? getCardInvoiceClosingMonth(card, transaction.date) : getMonthKey(transaction.date);
-          return invoiceMonth === selectedMonth;
-        }
-
-        if (getMonthKey(transaction.date) !== selectedMonth) return false;
+        if (getFinancialMonthKey(transaction, cards) !== selectedMonth) return false;
+        if (tab === 'cards') return Boolean(transaction.cardId);
         if (tab === 'accounts') return Boolean(transaction.accountId || transaction.fromAccountId || transaction.toAccountId);
         return true;
       })
+      .filter((transaction) => dashboardFilter || matchesExpenseViewFilter(transaction, expenseFilter))
       .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [cards, dashboardFilter, search, selectedMonth, tab, transactions]);
+  }, [cards, dashboardFilter, expenseFilter, search, selectedMonth, tab, transactions]);
   const viewTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, transaction) => {
       if (transaction.flow === 'income') return sum + transaction.amount;
@@ -126,10 +123,21 @@ export function TransactionsView({
         </div>
       ) : null}
 
-      <label className="mt-4 flex h-12 shrink-0 items-center gap-3 rounded-2xl border border-white/10 bg-[#101319] px-4 text-slate-400">
-        <Search size={17} />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar lançamento" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
-      </label>
+      {!isDashboardFiltered ? (
+        <div className="relative mt-3 flex h-10 min-w-0 shrink-0 items-start gap-2">
+          <ExpenseFilterChips value={expenseFilter} onChange={setExpenseFilter} className="min-w-0 flex-1" />
+          <CollapsibleSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="Buscar lançamento"
+            expandedClassName="absolute inset-0 z-10"
+          />
+        </div>
+      ) : (
+        <div className="mt-3 flex shrink-0 justify-end">
+          <CollapsibleSearch value={search} onChange={setSearch} placeholder="Buscar lançamento" />
+        </div>
+      )}
 
       <section className="mt-4 flex shrink-0 items-center justify-between rounded-2xl border border-white/8 bg-[#101319] px-4 py-3">
         <div>
@@ -154,7 +162,12 @@ export function TransactionsView({
       ) : null}
 
       <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-        {filteredTransactions.map((transaction) => {
+        {filteredTransactions.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
+            <p className="text-sm font-bold text-white">Nenhum lançamento neste filtro</p>
+            <p className="mt-1 text-xs text-slate-500">Escolha outro tipo de despesa ou limpe a busca.</p>
+          </div>
+        ) : filteredTransactions.map((transaction) => {
           const isIncome = transaction.flow === 'income';
           const isTransfer = transaction.flow === 'transfer';
           const isCredit = isInvoiceCredit(transaction);
@@ -193,7 +206,9 @@ export function TransactionsView({
                 <p className={`font-mono text-sm font-bold ${isIncome || isCredit ? 'text-emerald-300' : isTransfer ? 'text-sky-300' : 'text-rose-300'}`}>
                   {isIncome || isCredit ? '+' : isTransfer ? '' : '-'}{formatCurrency(transaction.amount)}
                 </p>
-                <p className="mt-1 text-[11px] text-slate-500">{transaction.date.slice(8, 10)}/{transaction.date.slice(5, 7)}</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {transaction.cardId ? 'Compra ' : ''}{transaction.date.slice(8, 10)}/{transaction.date.slice(5, 7)}
+                </p>
                 <div className="mt-2 flex justify-end gap-1">
                   <button
                     type="button"

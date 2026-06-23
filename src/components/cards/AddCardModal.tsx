@@ -4,6 +4,7 @@ import { Account, Card, CardNetwork } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { DuplicateNameError, hasDuplicateName } from '../../lib/utils/validation';
+import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 
 interface AddCardModalProps {
   isOpen: boolean;
@@ -102,7 +103,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
       if (saveError instanceof DuplicateNameError) {
         setError(saveError.message);
       } else {
-        setError('Não foi possível criar o cartão. Tente novamente.');
+        setError(getUserFriendlyError(saveError, `Não foi possível ${card ? 'salvar' : 'criar'} o cartão. Tente novamente.`));
       }
     } finally {
       setIsSaving(false);

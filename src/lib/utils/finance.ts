@@ -35,8 +35,8 @@ export function formatMonthLabel(month: string): string {
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date);
 }
 
-export function getAvailableMonths(transactions: Transaction[]): string[] {
-  return Array.from(new Set(transactions.map((transaction) => getMonthKey(transaction.date))))
+export function getAvailableMonths(transactions: Transaction[], cards: Card[] = []): string[] {
+  return Array.from(new Set(transactions.map((transaction) => getFinancialMonthKey(transaction, cards))))
     .sort()
     .reverse();
 }
@@ -73,6 +73,15 @@ export function isInvoiceCredit(transaction: Transaction): boolean {
 
 export function getExpenseSignedAmount(transaction: Transaction): number {
   return isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
+}
+
+export function isCardInvoicePaid(transactions: Transaction[]): boolean {
+  if (transactions.length === 0) return false;
+
+  return transactions.every((transaction) => {
+    const meta = readTransactionMeta(transaction.notes);
+    return Boolean(meta.paidAt && meta.paidFromAccountId);
+  });
 }
 
 export function summarizeDashboard(accounts: Account[], cards: Card[], transactions: Transaction[], month: string): DashboardSummary {

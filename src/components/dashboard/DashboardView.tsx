@@ -6,14 +6,11 @@ import {
   ArrowRight,
   ArrowUpFromLine,
   Bell,
-  ChevronDown,
   ChevronRight,
   CreditCard,
   Eye,
   EyeOff,
-  HelpCircle,
   Plus,
-  Settings,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
@@ -41,6 +38,7 @@ interface DashboardViewProps {
   onAdd: () => void;
   onAddAccount: () => void;
   onAddCard: () => void;
+  onOpenProfile: () => void;
   onViewAccounts: (accountId?: string) => void;
   onViewCards: (cardId?: string) => void;
   onViewDashboardTransactions: (filter: DashboardTransactionFilter) => void;
@@ -121,6 +119,7 @@ export function DashboardView({
   onToggleBalances,
   onAddAccount,
   onAddCard,
+  onOpenProfile,
   onViewAccounts,
   onViewCards,
   onViewDashboardTransactions,
@@ -167,47 +166,48 @@ export function DashboardView({
   }
 
   return (
-    <div className="flex flex-1 flex-col pb-4 text-white">
-      <header className="flex items-center justify-between px-5 pb-4 pt-6">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-tr from-[#3B82F6] to-[#8B5CF6] font-display text-sm font-bold tracking-wider text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]">
+    <div className="flex flex-1 flex-col pb-3 text-white">
+      <header className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
+        <button
+          type="button"
+          onClick={onOpenProfile}
+          className="group flex min-w-0 items-center gap-3 rounded-2xl pr-2 text-left transition hover:bg-white/[0.03]"
+          aria-label="Abrir perfil"
+        >
+          <span className="relative shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-[#3B82F6] to-[#8B5CF6] font-display text-xs font-bold tracking-wider text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]">
               {getInitials(userName)}
             </div>
             <span className="absolute bottom-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#050608] bg-[#3B82F6]">
               <span className="block h-1 w-1 rounded-full bg-white" />
             </span>
-          </div>
-          <div>
+          </span>
+          <span className="min-w-0">
             <h1 className="font-display text-base font-semibold leading-tight tracking-tight text-white">
               Olá, {firstName}
             </h1>
-            <button className="flex items-center gap-0.5 text-xs font-medium text-gray-400 transition hover:text-white">
-              Perfil Principal <ChevronDown size={12} className="opacity-75" />
-            </button>
-          </div>
-        </div>
+          </span>
+        </button>
 
         <div className="flex items-center gap-2">
-          {[Settings, HelpCircle, Bell].map((Icon, index) => (
-            <button
-              key={index}
-              type="button"
-              className="relative flex h-10 w-10 items-center justify-center rounded-full border border-[#1A1C22] bg-[#0F1116] transition hover:bg-[#141720]"
-            >
-              <Icon size={18} className="text-gray-400" />
-              {index === 2 ? <span className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-[#3B82F6]" /> : null}
-            </button>
-          ))}
+          <button
+            type="button"
+            disabled
+            className="relative flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-white/10 bg-[#0F1116]/35 text-gray-500 opacity-55 backdrop-blur"
+            aria-label="Notificações indisponíveis"
+            title="Notificações em breve"
+          >
+            <Bell size={18} />
+          </button>
         </div>
       </header>
 
-      <section className="px-5 pb-4">
+      <section className="px-4 pb-3">
         <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/8 bg-[#101319] p-2">
           <button
             type="button"
             onClick={onPreviousMonth}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
             title="Mês anterior"
           >
             <ChevronLeft size={18} />
@@ -224,7 +224,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={onNextMonth}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
             title="Próximo mês"
           >
             <ChevronRight size={18} />
@@ -232,29 +232,29 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="px-5 text-center">
-        <div className="cosmic-card relative flex flex-col items-center overflow-hidden rounded-3xl p-6">
+      <section className="px-4 text-center">
+        <div className="cosmic-card relative flex flex-col items-center overflow-hidden rounded-2xl px-5 py-4">
           <div className="absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[#3B82F6]/10 blur-2xl" />
-          <div className="mb-2 flex items-center justify-center gap-2 text-xs font-medium uppercase tracking-wider text-gray-400">
+          <div className="mb-1 flex items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">
             <span>Saldo atual</span>
             <button type="button" onClick={onToggleBalances} className="p-1 text-gray-400 transition hover:text-white">
               {showBalances ? <Eye size={16} /> : <EyeOff size={16} />}
             </button>
           </div>
-          <p className="mb-5 font-display text-3xl font-bold tracking-tight text-white">
+          <p className="mb-3 font-display text-2xl font-bold tracking-tight text-white">
             {hiddenMoney(showBalances, summary.currentBalance)}
           </p>
 
-          <div className="mb-5 h-px w-full bg-[#1A1C22]" />
+          <div className="mb-3 h-px w-full bg-[#1A1C22]" />
 
           <div className="grid w-full grid-cols-2 text-left">
-            <div className="border-r border-[#1A1C22] pr-4">
+            <div className="border-r border-[#1A1C22] pr-3">
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Recebido</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-emerald-400">
                 {hiddenMoney(showBalances, summary.received)}
               </p>
             </div>
-            <div className="pl-6">
+            <div className="pl-4">
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Pago</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-red-400">
                 {hiddenMoney(showBalances, summary.paid)}
@@ -264,15 +264,15 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="mt-5 grid grid-cols-2 gap-3.5 px-5">
+      <section className="mt-3 grid grid-cols-2 gap-2.5 px-4">
         <StatCard label="Receitas" value={hiddenMoney(showBalances, summary.income)} tone="info" icon={TrendingUp} hint={`+${formatCurrency(summary.received)}`} onClick={() => onViewDashboardTransactions('income')} />
         <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint={`Faturas que fecham: ${formatCurrency(cardInvoiceTotal)}`} onClick={() => onViewDashboardTransactions('expenses')} />
         <StatCard label="Recebido" value={hiddenMoney(showBalances, summary.received)} tone="info" icon={ArrowDownToLine} onClick={() => onViewDashboardTransactions('received')} />
         <StatCard label="Pago" value={hiddenMoney(showBalances, summary.paid)} tone="neutral" icon={ArrowUpFromLine} onClick={() => onViewDashboardTransactions('paid')} />
       </section>
 
-      <section className="mt-6 px-5">
-        <div className="mb-3.5 flex items-center justify-between">
+      <section className="mt-4 px-4">
+        <div className="mb-2.5 flex items-center justify-between">
           <h2 className="font-display text-base font-semibold tracking-tight text-white">Minhas Contas</h2>
           <button
             type="button"
@@ -290,7 +290,7 @@ export function DashboardView({
           onPointerMove={handleAccountsPointerMove}
           onPointerUp={handleAccountsPointerEnd}
           onPointerCancel={handleAccountsPointerEnd}
-          className="horizontal-scroll no-scrollbar -mx-5 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-4 pt-1 active:cursor-grabbing"
+          className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-3 pt-1 active:cursor-grabbing"
         >
           {accounts.map((account) => {
             const accountMonth = getAccountMonthSummary(account, transactions, activeMonth);
@@ -299,10 +299,10 @@ export function DashboardView({
                 type="button"
                 key={account.id}
                 onClick={() => onViewAccounts(account.id)}
-                className="cosmic-card cosmic-card-hover flex w-[165px] shrink-0 snap-start cursor-pointer flex-col justify-between rounded-2xl p-4 text-left"
+                className="cosmic-card cosmic-card-hover flex w-[150px] shrink-0 snap-start cursor-pointer flex-col justify-between rounded-2xl p-3 text-left"
               >
                 <div>
-                  <div className="mb-4">
+                  <div className="mb-3">
                     <BankLogo account={account} size="sm" />
                   </div>
                   <p className="mb-0.5 truncate text-xs font-medium text-gray-400">{account.name}</p>

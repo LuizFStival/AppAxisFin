@@ -35,6 +35,8 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
   const selectedValue = value ? parseLocalDate(value) : null;
   const minValue = min ? parseLocalDate(min) : null;
   const days = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
+  const today = useMemo(() => new Date(), []);
+  const todayValue = formatLocalDate(today);
 
   useEffect(() => {
     if (!value) return;
@@ -108,6 +110,7 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
               const dateValue = formatLocalDate(date);
               const isCurrentMonth = date.getMonth() === visibleMonth.getMonth();
               const isSelected = selectedValue ? dateValue === formatLocalDate(selectedValue) : false;
+              const isToday = dateValue === todayValue;
               const isDisabled = Boolean(minValue && date < minValue);
 
               return (
@@ -120,12 +123,15 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
                     handleSelect(date);
                   }}
                   disabled={isDisabled}
-                  className={`flex h-8 items-center justify-center rounded-lg text-xs font-bold transition disabled:cursor-not-allowed disabled:text-slate-300 ${
+                  aria-label={isToday ? `Hoje, dia ${date.getDate()}` : `Dia ${date.getDate()}`}
+                  className={`flex h-8 items-center justify-center rounded-lg border text-xs font-bold transition disabled:cursor-not-allowed disabled:text-slate-300 ${
                     isSelected
-                      ? 'bg-sky-500 text-white'
+                      ? `border-sky-500 bg-sky-500 text-white ${isToday ? 'ring-2 ring-sky-200 ring-offset-1 ring-offset-[#F8FAFC]' : ''}`
+                      : isToday
+                        ? 'border-sky-500 bg-sky-50 text-sky-700 hover:bg-sky-100'
                       : isCurrentMonth
-                        ? 'text-slate-950 hover:bg-sky-100'
-                        : 'text-slate-400 hover:bg-slate-100'
+                        ? 'border-transparent text-slate-950 hover:bg-sky-100'
+                        : 'border-transparent text-slate-400 hover:bg-slate-100'
                   }`}
                 >
                   {date.getDate()}
@@ -134,7 +140,10 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
             })}
           </div>
 
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex items-center justify-between">
+            <button type="button" onClick={() => setVisibleMonth(today)} className="rounded-lg px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200">
+              Hoje
+            </button>
             <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-100">
               Fechar
             </button>

@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, Search, Trash2, UserRound } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, Trash2, UserRound } from 'lucide-react';
 import { Account, Card, Category, ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency, getCategoryName, getExpenseSignedAmount, isInvoiceCredit } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getExpenseSignedAmount, isCardInvoicePaid, isInvoiceCredit } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate, formatShortDatePtBr } from '../../lib/utils/date';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
+import { ExpenseViewFilter, matchesExpenseViewFilter } from '../../lib/utils/expenseFilters';
 import { CardInvoiceActions } from './CardInvoiceActions';
+import { ExpenseFilterChips } from '../shared/ExpenseFilterChips';
+import { CollapsibleSearch } from '../shared/CollapsibleSearch';
 import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface CardsViewProps {
@@ -50,9 +53,7 @@ function getInvoiceStatusLabel(status: 'aberta' | 'fechada' | 'vencida') {
 }
 
 function getInvoiceDisplayStatus(status: 'aberta' | 'fechada' | 'vencida', invoiceTransactions: Transaction[]) {
-  if (status !== 'aberta' && invoiceTransactions.length > 0 && invoiceTransactions.every((transaction) => transaction.status === 'paid')) {
-    return 'Paga';
-  }
+  if (isCardInvoicePaid(invoiceTransactions)) return 'Paga';
 
   return getInvoiceStatusLabel(status);
 }
@@ -93,17 +94,17 @@ function getInvoiceSortOrder(transaction: Transaction) {
 function compareInvoiceTransactions(left: Transaction, right: Transaction) {
   const leftOrder = getInvoiceSortOrder(left);
   const rightOrder = getInvoiceSortOrder(right);
+  const createdOrder = (left.createdAt ?? '').localeCompare(right.createdAt ?? '')
+    || left.id.localeCompare(right.id);
 
   if (leftOrder !== undefined || rightOrder !== undefined) {
     return (leftOrder ?? Number.MAX_SAFE_INTEGER) - (rightOrder ?? Number.MAX_SAFE_INTEGER)
       || left.date.localeCompare(right.date)
-      || left.description.localeCompare(right.description)
-      || left.id.localeCompare(right.id);
+      || createdOrder;
   }
 
   return left.date.localeCompare(right.date)
-    || left.description.localeCompare(right.description)
-    || left.id.localeCompare(right.id);
+    || createdOrder;
 }
 
 export function CardsView({
@@ -127,6 +128,7 @@ export function CardsView({
   onDeleteCard,
 }: CardsViewProps) {
   const [search, setSearch] = useState('');
+  const [expenseFilter, setExpenseFilter] = useState<ExpenseViewFilter>('all');
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null);
   const [dragTargetTransactionId, setDragTargetTransactionId] = useState<string | null>(null);
@@ -173,6 +175,7 @@ export function CardsView({
     ? invoices.find((item) => item.card.id === selectedCard.id)
     : null;
   const visibleTransactions = (selectedInvoice?.transactions ?? [])
+    .filter((transaction) => matchesExpenseViewFilter(transaction, expenseFilter))
     .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()));
   const totalAllCards = invoices.reduce((sum, item) => sum + item.total, 0);
 
@@ -444,13 +447,23 @@ export function CardsView({
             ) : null}
           </section>
 
-          <label className="mt-3 flex h-10 shrink-0 items-center gap-3 rounded-2xl border border-white/10 bg-[#101319] px-3 text-slate-400">
-            <Search size={15} />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar na fatura" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
-          </label>
+          <div className="relative mt-3 flex h-10 min-w-0 shrink-0 items-start gap-2">
+            <ExpenseFilterChips value={expenseFilter} onChange={setExpenseFilter} className="min-w-0 flex-1" />
+            <CollapsibleSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Buscar na fatura"
+              expandedClassName="absolute inset-0 z-10"
+            />
+          </div>
 
           <section className="no-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
-            {visibleTransactions.map((transaction) => {
+            {visibleTransactions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
+                <p className="text-sm font-bold text-white">Nenhuma despesa neste filtro</p>
+                <p className="mt-1 text-xs text-slate-500">Escolha outro tipo ou limpe a busca da fatura.</p>
+              </div>
+            ) : visibleTransactions.map((transaction) => {
               const meta = readTransactionMeta(transaction.notes);
               const isCredit = isInvoiceCredit(transaction);
               const expenseNeedLabel = transaction.isReimbursable ? '' : getExpenseNeedLabel(meta.expenseNeed);

@@ -3,12 +3,15 @@ import {
   expensesByCategory,
   formatMonthLabel,
   getAvailableMonths,
+  getFinancialMonthKey,
+  isCardInvoicePaid,
   getPaymentSource,
   shiftMonthKey,
   summarizeDashboard,
 } from './finance';
 import { getCardInvoiceClosingMonth, getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth, getCardInvoiceInfoForPeriod } from './cardInvoices';
 import { writeTransactionNotes } from './transactionMeta';
+import { matchesExpenseViewFilter } from './expenseFilters';
 import { Account, Card, Category, Transaction } from '../../types';
 
 const accounts: Account[] = [
@@ -147,7 +150,7 @@ assert.deepEqual(summary, {
   reimbursementsReceived: 0,
 });
 
-assert.deepEqual(getAvailableMonths(transactions), ['2026-06', '2026-05']);
+assert.deepEqual(getAvailableMonths(transactions, cards), ['2026-07', '2026-06']);
 assert.equal(shiftMonthKey('2026-01', -1), '2025-12');
 assert.equal(shiftMonthKey('2026-12', 1), '2027-01');
 assert.equal(formatMonthLabel('2026-06'), 'junho de 2026');
@@ -173,17 +176,17 @@ const closesOnTwentySix: Card = {
 };
 
 assert.deepEqual(getCardInvoiceInfo(closesOnTwentySix, '2026-05-26', '2026-06-12'), {
-  period: '2026-07',
-  label: 'Fatura julho de 2026',
+  period: '2026-06',
+  label: 'Fatura junho de 2026',
   startDate: '2026-05-26',
   endDate: '2026-06-26',
   dueDate: '2026-07-02',
   status: 'aberta',
 });
 
-assert.deepEqual(getCardInvoiceInfoForPeriod(closesOnTwentySix, '2026-07', '2026-06-12'), {
-  period: '2026-07',
-  label: 'Fatura julho de 2026',
+assert.deepEqual(getCardInvoiceInfoForPeriod(closesOnTwentySix, '2026-06', '2026-06-12'), {
+  period: '2026-06',
+  label: 'Fatura junho de 2026',
   startDate: '2026-05-26',
   endDate: '2026-06-26',
   dueDate: '2026-07-02',
@@ -191,8 +194,8 @@ assert.deepEqual(getCardInvoiceInfoForPeriod(closesOnTwentySix, '2026-07', '2026
 });
 
 assert.deepEqual(getCardInvoiceInfoForClosingMonth(closesOnTwentySix, '2026-06', '2026-06-12'), {
-  period: '2026-07',
-  label: 'Fatura julho de 2026',
+  period: '2026-06',
+  label: 'Fatura junho de 2026',
   startDate: '2026-05-26',
   endDate: '2026-06-26',
   dueDate: '2026-07-02',
@@ -200,3 +203,68 @@ assert.deepEqual(getCardInvoiceInfoForClosingMonth(closesOnTwentySix, '2026-06',
 });
 
 assert.equal(getCardInvoiceClosingMonth(closesOnTwentySix, '2026-05-26'), '2026-06');
+assert.equal(getFinancialMonthKey({
+  id: 'tx-cycle-boundary',
+  description: 'Compra no fechamento',
+  amount: 100,
+  flow: 'expense',
+  status: 'paid',
+  date: '2026-05-26',
+  cardId: closesOnTwentySix.id,
+}, [closesOnTwentySix]), '2026-06');
+
+const unpaidCardTransactions: Transaction[] = [{
+  id: 'invoice-unpaid',
+  description: 'Compra no cartão',
+  amount: 100,
+  flow: 'expense',
+  status: 'paid',
+  date: '2026-05-26',
+  cardId: closesOnTwentySix.id,
+}];
+
+assert.equal(isCardInvoicePaid(unpaidCardTransactions), false);
+assert.equal(isCardInvoicePaid(unpaidCardTransactions.map((transaction) => ({
+  ...transaction,
+  notes: writeTransactionNotes(undefined, {
+    paidAt: '2026-07-02',
+    paidFromAccountId: 'acc-main',
+  }),
+}))), true);
+
+const filterTransactions: Transaction[] = [
+  {
+    id: 'filter-variable',
+    description: 'Mercado',
+    amount: 120,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-10',
+    notes: writeTransactionNotes(undefined, { entryMode: 'variable', expenseNeed: 'essential' }),
+  },
+  {
+    id: 'filter-installment',
+    description: 'Roupa',
+    amount: 80,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-11',
+    notes: writeTransactionNotes(undefined, { entryMode: 'installment', expenseNeed: 'superfluous' }),
+  },
+  {
+    id: 'filter-others',
+    description: 'Compra para terceiro',
+    amount: 60,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-12',
+    isReimbursable: true,
+  },
+];
+
+assert.equal(matchesExpenseViewFilter(filterTransactions[0], 'variable'), true);
+assert.equal(matchesExpenseViewFilter(filterTransactions[0], 'essential'), true);
+assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'installment'), true);
+assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'superfluous'), true);
+assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'others'), true);
+assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'personal'), false);

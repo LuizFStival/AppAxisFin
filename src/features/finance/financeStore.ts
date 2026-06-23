@@ -63,6 +63,7 @@ type TransactionRow = {
   reimbursement_person_id?: string | null;
   reimbursement_status?: Transaction['reimbursementStatus'] | null;
   reimbursement_received_at?: string | null;
+  created_at?: string | null;
 };
 
 type ReimbursementPersonRow = {
@@ -145,6 +146,7 @@ export function mapTransaction(row: TransactionRow): Transaction {
     reimbursementPersonId: row.reimbursement_person_id ?? undefined,
     reimbursementStatus: row.reimbursement_status ?? undefined,
     reimbursementReceivedAt: row.reimbursement_received_at ?? undefined,
+    createdAt: row.created_at ?? undefined,
   };
 }
 
@@ -242,7 +244,8 @@ export async function getCurrentUserId() {
   if (!supabase) return null;
 
   const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) return null;
+  if (error) throw error;
+  if (!data.user) return null;
 
   return data.user.id;
 }
@@ -250,7 +253,9 @@ export async function getCurrentUserId() {
 export async function assertCurrentUserId() {
   const userId = await getCurrentUserId();
   if (!userId) {
-    throw new Error('Entre no AxisFin para salvar seus dados com seguranca no banco.');
+    const error = new Error('Entre no AxisFin novamente para salvar seus dados com segurança.');
+    error.name = 'UserFacingError';
+    throw error;
   }
 
   return userId;
@@ -352,7 +357,7 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
       .order('start_date', { ascending: false }),
     client
       .from('transactions')
-      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at')
+      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, created_at')
       .eq('user_id', userId)
       .order('transaction_date', { ascending: false })
       .order('created_at', { ascending: false }),
