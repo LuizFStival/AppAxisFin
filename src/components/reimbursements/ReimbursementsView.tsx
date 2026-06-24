@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
 import { Card, ReimbursementPerson, Transaction } from '../../types';
 import { formatCurrency, getCurrentMonthKey, getFinancialMonthKey } from '../../lib/utils/finance';
 import { MonthNavigator } from '../shared/MonthNavigator';
@@ -45,6 +45,7 @@ export function ReimbursementsView({
 }: ReimbursementsViewProps) {
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState<ReimbursementViewMode>('month');
+  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const currentMonth = getCurrentMonthKey();
 
   const allReimbursements = useMemo(() => {
@@ -65,7 +66,7 @@ export function ReimbursementsView({
       .sort((left, right) => left.date.localeCompare(right.date));
   }, [allReimbursements, cards, currentMonth]);
 
-  const reimbursementTransactions = useMemo(() => {
+  const modeTransactions = useMemo(() => {
     return allReimbursements
       .filter((transaction) => {
         if (mode === 'all') return true;
@@ -81,10 +82,11 @@ export function ReimbursementsView({
   }, [activeMonth, allReimbursements, cards, mode]);
 
   const personSummaries = useMemo(() => {
-    const totals = new Map<string, { name: string; pending: number; received: number; count: number }>();
-    reimbursementTransactions.forEach((transaction) => {
+    const totals = new Map<string, { id: string; name: string; pending: number; received: number; count: number }>();
+    modeTransactions.forEach((transaction) => {
       const key = transaction.reimbursementPersonId ?? 'unknown';
       const current = totals.get(key) ?? {
+        id: key,
         name: getPersonName(people, transaction.reimbursementPersonId),
         pending: 0,
         received: 0,
@@ -99,7 +101,12 @@ export function ReimbursementsView({
       totals.set(key, current);
     });
     return Array.from(totals.values()).sort((left, right) => right.pending - left.pending);
-  }, [people, reimbursementTransactions]);
+  }, [modeTransactions, people]);
+
+  const reimbursementTransactions = useMemo(() => {
+    if (!selectedPersonId) return modeTransactions;
+    return modeTransactions.filter((transaction) => (transaction.reimbursementPersonId ?? 'unknown') === selectedPersonId);
+  }, [modeTransactions, selectedPersonId]);
 
   const pendingTotal = reimbursementTransactions
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
@@ -126,7 +133,10 @@ export function ReimbursementsView({
           <button
             key={item.id}
             type="button"
-            onClick={() => setMode(item.id)}
+            onClick={() => {
+              setMode(item.id);
+              setSelectedPersonId(null);
+            }}
             className={`h-10 rounded-xl text-sm font-bold transition ${mode === item.id ? 'bg-amber-400 text-slate-950' : 'text-slate-400'}`}
           >
             {item.label}
@@ -141,7 +151,10 @@ export function ReimbursementsView({
       {overduePending.length > 0 ? (
         <button
           type="button"
-          onClick={() => setMode('pending')}
+          onClick={() => {
+            setMode('pending');
+            setSelectedPersonId(null);
+          }}
           className="mt-3 flex shrink-0 items-center gap-2 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-3 py-2.5 text-left"
         >
           <AlertTriangle size={16} className="shrink-0 text-rose-200" />
@@ -169,17 +182,44 @@ export function ReimbursementsView({
         <section className="mt-3 shrink-0">
           <div className="no-scrollbar -mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1">
             {personSummaries.map((person) => (
-              <article key={person.name} className="w-[112px] shrink-0 snap-start rounded-2xl border border-white/8 bg-[#101319] p-3">
+              <button
+                key={person.id}
+                type="button"
+                onClick={() => setSelectedPersonId((current) => current === person.id ? null : person.id)}
+                aria-pressed={selectedPersonId === person.id}
+                className={`w-[112px] shrink-0 snap-start rounded-2xl border p-3 text-left transition ${
+                  selectedPersonId === person.id
+                    ? 'border-amber-300/60 bg-amber-400/15 ring-1 ring-amber-300/20'
+                    : 'border-white/8 bg-[#101319] hover:border-amber-300/30'
+                }`}
+              >
                 <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200">
                   <UserRound size={14} />
                 </div>
                 <p className="truncate text-xs font-bold text-white">{person.name}</p>
                 <p className="mt-0.5 text-[10px] text-slate-500">{person.count} item{person.count === 1 ? '' : 's'}</p>
                 <p className="mt-1.5 truncate font-mono text-[11px] font-bold text-amber-200">{formatCurrency(person.pending)}</p>
-              </article>
+              </button>
             ))}
           </div>
         </section>
+      ) : null}
+
+      {selectedPersonId ? (
+        <div className="mt-3 flex shrink-0 items-center justify-between rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2">
+          <p className="truncate text-xs font-bold text-amber-100">
+            Despesas de {selectedPersonId === 'unknown' ? 'Pessoa removida' : getPersonName(people, selectedPersonId)}
+          </p>
+          <button
+            type="button"
+            onClick={() => setSelectedPersonId(null)}
+            className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-amber-100 hover:bg-white/10"
+            title="Limpar filtro de pessoa"
+            aria-label="Limpar filtro de pessoa"
+          >
+            <X size={14} />
+          </button>
+        </div>
       ) : null}
 
       <label className="mt-3 flex h-10 shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-[#101319] px-3 text-slate-400">
@@ -201,8 +241,14 @@ export function ReimbursementsView({
             <article key={transaction.id} className={`rounded-2xl border px-3 py-2.5 ${isOverdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-white/8 bg-[#101319]'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{getPersonName(people, transaction.reimbursementPersonId)} - {formatShortDate(transaction.date)}</p>
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
+                    <span className="inline-flex max-w-[120px] shrink-0 items-center gap-1 rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                      <UserRound size={10} />
+                      <span className="truncate">{getPersonName(people, transaction.reimbursementPersonId)}</span>
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500">{formatShortDate(transaction.date)}</p>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${received ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' : 'border-amber-400/20 bg-amber-500/15 text-amber-100'}`}>
                       {received ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
