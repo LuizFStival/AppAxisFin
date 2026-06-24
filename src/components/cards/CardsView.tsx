@@ -132,7 +132,6 @@ export function CardsView({
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null);
   const [dragTargetTransactionId, setDragTargetTransactionId] = useState<string | null>(null);
-  const [isPointerDragging, setIsPointerDragging] = useState(false);
   const pointerDragRef = useRef({
     transactionId: '',
     pointerId: -1,
@@ -186,7 +185,6 @@ export function CardsView({
   function resetDragState() {
     setDraggedTransactionId(null);
     setDragTargetTransactionId(null);
-    setIsPointerDragging(false);
     pointerDragRef.current = {
       transactionId: '',
       pointerId: -1,
@@ -236,10 +234,8 @@ export function CardsView({
     return closest?.id ?? null;
   }
 
-  function handlePointerDown(event: React.PointerEvent<HTMLElement>, transaction: Transaction) {
+  function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, transaction: Transaction) {
     if (transaction.isProjected || event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest('button, input, select, textarea, a')) return;
 
     pointerDragRef.current = {
       transactionId: transaction.id,
@@ -256,7 +252,7 @@ export function CardsView({
     }
   }
 
-  function handlePointerMove(event: React.PointerEvent<HTMLElement>) {
+  function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     const dragState = pointerDragRef.current;
     if (!dragState.transactionId || dragState.pointerId !== event.pointerId) return;
 
@@ -265,13 +261,12 @@ export function CardsView({
     if (!dragState.hasMoved && Math.max(deltaX, deltaY) < 10) return;
 
     dragState.hasMoved = true;
-    setIsPointerDragging(true);
     setDraggedTransactionId(dragState.transactionId);
     setDragTargetTransactionId(getTransactionIdFromPoint(event.clientX, event.clientY, dragState.transactionId));
     event.preventDefault();
   }
 
-  async function handlePointerUp(event: React.PointerEvent<HTMLElement>) {
+  async function handlePointerUp(event: React.PointerEvent<HTMLButtonElement>) {
     const dragState = pointerDragRef.current;
     if (!dragState.transactionId || dragState.pointerId !== event.pointerId) return;
 
@@ -448,7 +443,7 @@ export function CardsView({
           </section>
 
           <div className="relative mt-3 flex h-10 min-w-0 shrink-0 items-start gap-2">
-            <ExpenseFilterChips value={expenseFilter} onChange={setExpenseFilter} className="min-w-0 flex-1" />
+            <ExpenseFilterChips value={expenseFilter} onChange={setExpenseFilter} className="w-0 flex-1" />
             <CollapsibleSearch
               value={search}
               onChange={setSearch}
@@ -457,7 +452,7 @@ export function CardsView({
             />
           </div>
 
-          <section className="no-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
+          <section className="no-scrollbar mt-3 min-h-0 flex-1 touch-pan-y space-y-2 overflow-y-auto overscroll-y-contain pb-4">
             {visibleTransactions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
                 <p className="text-sm font-bold text-white">Nenhuma despesa neste filtro</p>
@@ -474,24 +469,36 @@ export function CardsView({
                 <article
                   key={transaction.id}
                   data-invoice-transaction-id={transaction.id}
-                  onPointerDown={(event) => handlePointerDown(event, transaction)}
-                  onPointerMove={handlePointerMove}
-                  onPointerUp={(event) => void handlePointerUp(event)}
-                  onPointerCancel={handlePointerCancel}
-                  className={`flex touch-none items-center gap-3 rounded-2xl border px-3 py-2.5 transition ${
+                  className={`flex touch-pan-y items-center gap-2 rounded-2xl border px-3 py-2.5 transition ${
                     isDropTarget
                       ? 'border-sky-300 bg-sky-500/15'
                       : isDragging
                         ? 'border-violet-300/50 bg-violet-500/10 opacity-70'
                         : 'border-white/8 bg-[#101319]'
-                  } ${transaction.isProjected ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                  }`}
                 >
+                  <button
+                    type="button"
+                    disabled={transaction.isProjected}
+                    onPointerDown={(event) => handlePointerDown(event, transaction)}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={(event) => void handlePointerUp(event)}
+                    onPointerCancel={handlePointerCancel}
+                    className={`flex h-9 w-5 shrink-0 touch-none items-center justify-center rounded-lg text-slate-600 ${
+                      transaction.isProjected
+                        ? 'cursor-not-allowed opacity-30'
+                        : 'cursor-grab hover:bg-white/5 hover:text-slate-300 active:cursor-grabbing'
+                    }`}
+                    title={transaction.isProjected ? 'Ocorrências projetadas não podem ser reordenadas' : 'Arraste para reordenar'}
+                    aria-label={`Reordenar ${transaction.description}`}
+                  >
+                    <GripVertical size={16} />
+                  </button>
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
                     <CreditCard size={16} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <GripVertical size={14} className="shrink-0 text-slate-600" />
                       <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
                     </div>
                     <p className="mt-0.5 truncate text-xs text-slate-500">

@@ -10,7 +10,7 @@ interface ExpenseFilterChipsProps {
 export function ExpenseFilterChips({ value, onChange, className = '' }: ExpenseFilterChipsProps) {
   return (
     <div
-      className={`no-scrollbar flex shrink-0 gap-2 overflow-x-auto pb-1 ${className}`}
+      className={`horizontal-scroll no-scrollbar flex min-w-0 touch-pan-x gap-2 overflow-x-auto pb-1 ${className}`}
       role="group"
       aria-label="Filtrar despesas"
     >

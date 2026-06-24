@@ -47,6 +47,31 @@ function getReimbursementPersonName(people: ReimbursementPerson[], personId?: st
   return people.find((person) => person.id === personId)?.name ?? 'Pessoa removida';
 }
 
+function matchesTransactionSource(transaction: Transaction, tab: TransactionTab) {
+  const hasAccount = Boolean(transaction.accountId || transaction.fromAccountId || transaction.toAccountId);
+  if (tab === 'cards') return Boolean(transaction.cardId);
+  if (tab === 'accounts') return hasAccount;
+  return true;
+}
+
+function getEntryModeLabel(transaction: Transaction) {
+  const meta = readTransactionMeta(transaction.notes);
+  if (meta.entryMode === 'fixed') return 'Fixa';
+  if (meta.entryMode === 'installment') {
+    return meta.installmentNumber && meta.totalInstallments
+      ? `Parcela ${meta.installmentNumber}/${meta.totalInstallments}`
+      : 'Parcelada';
+  }
+  return 'Variável';
+}
+
+function getEntryModeTagClass(transaction: Transaction) {
+  const entryMode = readTransactionMeta(transaction.notes).entryMode ?? 'variable';
+  if (entryMode === 'fixed') return 'border-amber-400/20 bg-amber-500/15 text-amber-100';
+  if (entryMode === 'installment') return 'border-violet-400/20 bg-violet-500/15 text-violet-100';
+  return 'border-sky-400/20 bg-sky-500/15 text-sky-100';
+}
+
 export function TransactionsView({
   transactions,
   accounts,
@@ -69,22 +94,24 @@ export function TransactionsView({
     if (!dashboardFilter) return;
     setSelectedMonth(activeMonth);
     setTab('general');
+    setExpenseFilter('all');
   }, [activeMonth, dashboardFilter]);
 
-  const filteredTransactions = useMemo(() => {
+  const sourceTransactions = useMemo(() => {
     return transactions
       .filter((transaction) => {
-        if (dashboardFilter) return matchesDashboardFilter(transaction, cards, selectedMonth, dashboardFilter);
-
-        if (getFinancialMonthKey(transaction, cards) !== selectedMonth) return false;
-        if (tab === 'cards') return Boolean(transaction.cardId);
-        if (tab === 'accounts') return Boolean(transaction.accountId || transaction.fromAccountId || transaction.toAccountId);
-        return true;
+        const matchesView = dashboardFilter
+          ? matchesDashboardFilter(transaction, cards, selectedMonth, dashboardFilter)
+          : getFinancialMonthKey(transaction, cards) === selectedMonth;
+        return matchesView && matchesTransactionSource(transaction, tab);
       })
-      .filter((transaction) => dashboardFilter || matchesExpenseViewFilter(transaction, expenseFilter))
       .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [cards, dashboardFilter, expenseFilter, search, selectedMonth, tab, transactions]);
+  }, [cards, dashboardFilter, search, selectedMonth, tab, transactions]);
+  const filteredTransactions = useMemo(
+    () => sourceTransactions.filter((transaction) => matchesExpenseViewFilter(transaction, expenseFilter)),
+    [expenseFilter, sourceTransactions],
+  );
   const viewTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, transaction) => {
       if (transaction.flow === 'income') return sum + transaction.amount;
@@ -93,7 +120,7 @@ export function TransactionsView({
       return sum;
     }, 0);
   }, [filteredTransactions]);
-  const expenseBreakdown = useMemo(() => summarizeExpenseBreakdown(filteredTransactions), [filteredTransactions]);
+  const expenseBreakdown = useMemo(() => summarizeExpenseBreakdown(sourceTransactions), [sourceTransactions]);
   const hasExpenseBreakdown = expenseBreakdown.some((item) => item.count > 0);
 
   return (
@@ -113,19 +140,17 @@ export function TransactionsView({
         className="mt-4 shrink-0"
       />
 
-      {!isDashboardFiltered ? (
-        <div className="mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl bg-white/5 p-1">
-          {tabs.map((item) => (
-            <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`h-11 rounded-xl text-sm font-bold transition ${tab === item.id ? 'bg-sky-500 text-white' : 'text-slate-400'}`}>
-              {item.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <div className="mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl bg-white/5 p-1">
+        {tabs.map((item) => (
+          <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`h-11 rounded-xl text-xs font-bold transition sm:text-sm ${tab === item.id ? 'bg-sky-500 text-white' : 'text-slate-400'}`}>
+            {item.label}
+          </button>
+        ))}
+      </div>
 
       {!isDashboardFiltered ? (
         <div className="relative mt-3 flex h-10 min-w-0 shrink-0 items-start gap-2">
-          <ExpenseFilterChips value={expenseFilter} onChange={setExpenseFilter} className="min-w-0 flex-1" />
+          <ExpenseFilterChips value={expenseFilter} onChange={setExpenseFilter} className="w-0 flex-1" />
           <CollapsibleSearch
             value={search}
             onChange={setSearch}
@@ -152,11 +177,19 @@ export function TransactionsView({
       {hasExpenseBreakdown ? (
         <section className="mt-3 grid shrink-0 grid-cols-3 gap-2">
           {expenseBreakdown.map((item) => (
-            <div key={item.key} className={`rounded-2xl border px-3 py-3 ${item.className}`}>
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setExpenseFilter((current) => current === item.key ? 'all' : item.key)}
+              aria-pressed={expenseFilter === item.key}
+              className={`rounded-2xl border px-3 py-3 text-left transition ${item.className} ${
+                expenseFilter === item.key ? 'ring-2 ring-white/25' : 'hover:border-white/25'
+              }`}
+            >
               <p className="text-[10px] font-semibold uppercase tracking-widest opacity-80">{item.shortLabel}</p>
               <p className="mt-1 font-mono text-sm font-bold">{formatCurrency(item.total)}</p>
               <p className="mt-0.5 text-[10px] opacity-70">{item.count} lançamento{item.count === 1 ? '' : 's'}</p>
-            </div>
+            </button>
           ))}
         </section>
       ) : null}
@@ -194,6 +227,11 @@ export function TransactionsView({
                   <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-400/20 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-100">
                     <UserRound size={11} />
                     Reembolso - {getReimbursementPersonName(reimbursementPeople, transaction.reimbursementPersonId)}
+                  </span>
+                ) : null}
+                {transaction.flow === 'expense' && !isCredit ? (
+                  <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${getEntryModeTagClass(transaction)}`}>
+                    {getEntryModeLabel(transaction)}
                   </span>
                 ) : null}
                 {isCredit ? (
