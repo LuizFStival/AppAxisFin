@@ -15,9 +15,9 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction } from '../../types';
-import { formatCurrency, formatMonthLabel, getCurrentMonthKey, getExpenseSignedAmount, getMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getMonthKey } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
-import { formatLocalDate } from '../../lib/utils/date';
+import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { StatCard } from '../shared/StatCard';
 import { BankLogo } from '../shared/BankLogo';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
@@ -85,18 +85,9 @@ function getInvoiceSummary(card: Card, transactions: Transaction[], closingMonth
 
 function getAccountMonthSummary(account: Account, transactions: Transaction[], month: string) {
   const monthTransactions = transactions.filter((transaction) => getMonthKey(transaction.date) === month);
-  const inflow = monthTransactions
-    .filter((transaction) =>
-      (transaction.flow === 'income' && transaction.accountId === account.id) ||
-      (transaction.flow === 'transfer' && transaction.toAccountId === account.id)
-    )
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const outflow = monthTransactions
-    .filter((transaction) =>
-      (transaction.flow === 'expense' && transaction.accountId === account.id) ||
-      (transaction.flow === 'transfer' && transaction.fromAccountId === account.id)
-    )
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const signedAmounts = monthTransactions.map((transaction) => getAccountSignedAmount(transaction, account.id));
+  const inflow = signedAmounts.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
+  const outflow = Math.abs(signedAmounts.reduce((sum, amount) => amount < 0 ? sum + amount : sum, 0));
 
   return {
     inflow,
@@ -132,7 +123,7 @@ export function DashboardView({
   const isCurrentMonth = activeMonth === getCurrentMonthKey();
   const accountsScrollerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0 });
-  const cardInvoiceTotal = cards.reduce((sum, card) => sum + getInvoiceSummary(card, transactions, activeMonth).total, 0);
+  const upcomingInvoiceTotal = cards.reduce((sum, card) => sum + getInvoiceSummary(card, transactions, activeMonth).total, 0);
 
   function handleAccountsPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest('button')) return;
@@ -266,7 +257,7 @@ export function DashboardView({
 
       <section className="mt-3 grid grid-cols-2 gap-2.5 px-4">
         <StatCard label="Receitas" value={hiddenMoney(showBalances, summary.income)} tone="info" icon={TrendingUp} hint={`+${formatCurrency(summary.received)}`} onClick={() => onViewDashboardTransactions('income')} />
-        <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint={`Faturas que fecham: ${formatCurrency(cardInvoiceTotal)}`} onClick={() => onViewDashboardTransactions('expenses')} />
+        <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint="Débito + crédito pela data da compra" onClick={() => onViewDashboardTransactions('expenses')} />
         <StatCard label="Recebido" value={hiddenMoney(showBalances, summary.received)} tone="info" icon={ArrowDownToLine} onClick={() => onViewDashboardTransactions('received')} />
         <StatCard label="Pago" value={hiddenMoney(showBalances, summary.paid)} tone="neutral" icon={ArrowUpFromLine} onClick={() => onViewDashboardTransactions('paid')} />
       </section>
@@ -331,9 +322,14 @@ export function DashboardView({
 
       <section className="px-5">
         <div className="mb-3.5 flex items-center justify-between">
-          <button type="button" onClick={() => onViewCards()} className="font-display text-base font-semibold tracking-tight text-white">
-            Meus Cartões
-          </button>
+          <div>
+            <button type="button" onClick={() => onViewCards()} className="font-display text-base font-semibold tracking-tight text-white">
+              Próximas Faturas
+            </button>
+            <p className="mt-0.5 text-[10px] text-gray-500">
+              {hiddenMoney(showBalances, upcomingInvoiceTotal)} para pagamento
+            </p>
+          </div>
           <button
             type="button"
             onClick={onAddCard}
@@ -362,7 +358,7 @@ export function DashboardView({
                     <p className="mt-1 text-[10px] font-semibold capitalize text-sky-200">
                       {invoice.label} {invoice.status}
                     </p>
-                    <p className="mt-1 text-[10px] text-gray-500">Fecha dia {card.closingDay} - vence dia {card.dueDay}</p>
+                    <p className="mt-1 text-[10px] text-gray-500">Vence em {formatDatePtBr(invoice.dueDate)}</p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
                     <CreditCard size={20} style={{ color: card.color }} />
@@ -387,7 +383,7 @@ export function DashboardView({
                   <span>limite {hiddenMoney(showBalances, card.limit)}</span>
                 </div>
                 <p className="mt-2 text-[10px] text-gray-500">
-                  {invoice.transactionCount} lançamento{invoice.transactionCount === 1 ? '' : 's'} de {invoice.startDate} a {invoice.endDate}
+                  {invoice.transactionCount} lançamento{invoice.transactionCount === 1 ? '' : 's'} no ciclo de {formatDatePtBr(invoice.startDate)} a {formatDatePtBr(invoice.endDate)}
                 </p>
               </article>
             );

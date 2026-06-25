@@ -63,6 +63,7 @@ type TransactionRow = {
   reimbursement_person_id?: string | null;
   reimbursement_status?: Transaction['reimbursementStatus'] | null;
   reimbursement_received_at?: string | null;
+  reimbursement_received_account_id?: string | null;
   created_at?: string | null;
 };
 
@@ -146,6 +147,7 @@ export function mapTransaction(row: TransactionRow): Transaction {
     reimbursementPersonId: row.reimbursement_person_id ?? undefined,
     reimbursementStatus: row.reimbursement_status ?? undefined,
     reimbursementReceivedAt: row.reimbursement_received_at ?? undefined,
+    reimbursementReceivedAccountId: row.reimbursement_received_account_id ?? undefined,
     createdAt: row.created_at ?? undefined,
   };
 }
@@ -357,7 +359,7 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
       .order('start_date', { ascending: false }),
     client
       .from('transactions')
-      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, created_at')
+      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at')
       .eq('user_id', userId)
       .order('transaction_date', { ascending: false })
       .order('created_at', { ascending: false }),

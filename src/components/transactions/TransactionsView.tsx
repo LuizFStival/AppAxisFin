@@ -35,8 +35,8 @@ const dashboardFilterLabels: Record<DashboardTransactionFilter, string> = {
   paid: 'Pago',
 };
 
-function matchesDashboardFilter(transaction: Transaction, cards: Card[], selectedMonth: string, filter: DashboardTransactionFilter) {
-  if (getFinancialMonthKey(transaction, cards) !== selectedMonth) return false;
+function matchesDashboardFilter(transaction: Transaction, selectedMonth: string, filter: DashboardTransactionFilter) {
+  if (getFinancialMonthKey(transaction) !== selectedMonth) return false;
   if (filter === 'income') return transaction.flow === 'income';
   if (filter === 'expenses') return transaction.flow === 'expense' && !isThirdPartyExpense(transaction);
   if (filter === 'received') return transaction.flow === 'income' && transaction.status === 'paid';
@@ -101,8 +101,8 @@ export function TransactionsView({
     return transactions
       .filter((transaction) => {
         const matchesView = dashboardFilter
-          ? matchesDashboardFilter(transaction, cards, selectedMonth, dashboardFilter)
-          : getFinancialMonthKey(transaction, cards) === selectedMonth;
+          ? matchesDashboardFilter(transaction, selectedMonth, dashboardFilter)
+          : getFinancialMonthKey(transaction) === selectedMonth;
         return matchesView && matchesTransactionSource(transaction, tab);
       })
       .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()))
@@ -114,14 +114,52 @@ export function TransactionsView({
   );
   const viewTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, transaction) => {
+      if (expenseFilter === 'all' && isThirdPartyExpense(transaction)) return sum;
       if (transaction.flow === 'income') return sum + transaction.amount;
       if (isInvoiceCredit(transaction)) return sum + transaction.amount;
       if (transaction.flow === 'expense') return sum - transaction.amount;
       return sum;
     }, 0);
-  }, [filteredTransactions]);
-  const expenseBreakdown = useMemo(() => summarizeExpenseBreakdown(sourceTransactions), [sourceTransactions]);
+  }, [expenseFilter, filteredTransactions]);
+  const realizedPersonalResult = useMemo(() => {
+    return sourceTransactions.reduce((sum, transaction) => {
+      if (transaction.isProjected || isThirdPartyExpense(transaction) || transaction.status !== 'paid') return sum;
+      if (transaction.flow === 'income') return sum + transaction.amount;
+      if (isInvoiceCredit(transaction)) return sum + transaction.amount;
+      if (transaction.flow === 'expense') return sum - transaction.amount;
+      return sum;
+    }, 0);
+  }, [sourceTransactions]);
+  const advancedToOthers = useMemo(() => {
+    return sourceTransactions
+      .filter(isThirdPartyExpense)
+      .filter((transaction) => !transaction.isProjected && transaction.status === 'paid')
+      .filter((transaction) => transaction.reimbursementStatus !== 'received')
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+  }, [sourceTransactions]);
+  const personalExpenseTransactions = useMemo(
+    () => sourceTransactions.filter((transaction) => !isThirdPartyExpense(transaction)),
+    [sourceTransactions],
+  );
+  const expenseBreakdown = useMemo(
+    () => summarizeExpenseBreakdown(personalExpenseTransactions),
+    [personalExpenseTransactions],
+  );
   const hasExpenseBreakdown = expenseBreakdown.some((item) => item.count > 0);
+  const totalLabel = dashboardFilter === 'expenses'
+    ? 'Despesas pessoais do mês'
+    : expenseFilter === 'all'
+      ? 'Resultado projetado'
+    : expenseFilter === 'personal'
+      ? 'Meu gasto'
+      : expenseFilter === 'others'
+        ? 'Dos outros'
+        : 'Total filtrado';
+  const totalHint = dashboardFilter === 'expenses'
+    ? 'Consumo pessoal; gastos de terceiros ficam separados'
+    : expenseFilter === 'all'
+      ? 'Inclui valores recebidos e ainda previstos'
+    : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col px-4 pt-7 md:px-8 md:pt-8">
@@ -164,15 +202,35 @@ export function TransactionsView({
         </div>
       )}
 
-      <section className="mt-4 flex shrink-0 items-center justify-between rounded-2xl border border-white/8 bg-[#101319] px-4 py-3">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Meu total</p>
+      <section className="mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{totalLabel}</p>
           <p className="mt-0.5 text-xs text-slate-500">{filteredTransactions.length} lançamento{filteredTransactions.length === 1 ? '' : 's'}</p>
+          {totalHint ? <p className="mt-1 truncate text-[10px] text-slate-600">{totalHint}</p> : null}
         </div>
-        <p className={`font-mono text-base font-bold ${viewTotal >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+        <p className={`whitespace-nowrap text-right font-mono text-base font-bold tracking-tight ${viewTotal >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
           {viewTotal >= 0 ? '+' : '-'}{formatCurrency(Math.abs(viewTotal))}
         </p>
       </section>
+
+      {!dashboardFilter && expenseFilter === 'all' ? (
+        <section className="mt-2 grid shrink-0 grid-cols-2 gap-2">
+          <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/10 px-3 py-2.5">
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-emerald-200">Resultado realizado</p>
+            <p className={`mt-1 font-mono text-xs font-bold ${realizedPersonalResult >= 0 ? 'text-emerald-200' : 'text-rose-200'}`}>
+              {realizedPersonalResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(realizedPersonalResult))}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExpenseFilter('others')}
+            className="rounded-2xl border border-amber-400/15 bg-amber-500/10 px-3 py-2.5 text-left"
+          >
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-amber-200">Adiantado a terceiros</p>
+            <p className="mt-1 font-mono text-xs font-bold text-amber-100">{formatCurrency(advancedToOthers)}</p>
+          </button>
+        </section>
+      ) : null}
 
       {hasExpenseBreakdown ? (
         <section className="mt-3 grid shrink-0 grid-cols-3 gap-2">

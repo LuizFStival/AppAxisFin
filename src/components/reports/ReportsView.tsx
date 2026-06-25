@@ -1,27 +1,26 @@
 import React from 'react';
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { BarChart3, PieChart as PieChartIcon, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
-import { Card, Category, DashboardSummary, Transaction } from '../../types';
+import { Category, DashboardSummary, Transaction } from '../../types';
 import { expensesByCategory, formatCurrency, getFinancialMonthKey } from '../../lib/utils/finance';
 import { StatCard } from '../shared/StatCard';
 
 interface ReportsViewProps {
   month: string;
   transactions: Transaction[];
-  cards: Card[];
   categories: Category[];
   summary: DashboardSummary;
 }
 
-export function ReportsView({ month, transactions, cards, categories, summary }: ReportsViewProps) {
-  const categoryData = expensesByCategory(transactions, cards, categories, month);
+export function ReportsView({ month, transactions, categories, summary }: ReportsViewProps) {
+  const categoryData = expensesByCategory(transactions, categories, month);
   const chartData = [
     { name: 'Receitas', value: summary.income, fill: '#10B981' },
     { name: 'Despesas', value: summary.expenses, fill: '#F43F5E' },
     { name: 'Recebido', value: summary.received, fill: '#38BDF8' },
     { name: 'Pago', value: summary.paid, fill: '#8B5CF6' },
   ];
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction, cards) === month);
+  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
   const net = summary.income - summary.expenses;
 
   return (

@@ -74,6 +74,11 @@ export default function App() {
     }
   }
 
+  async function refreshAccounts() {
+    const accounts = await accountRepository.list();
+    setSnapshot((current) => ({ ...current, accounts }));
+  }
+
   async function runAppAction(action: () => Promise<void>, fallback: string) {
     try {
       await action();
@@ -160,8 +165,8 @@ export default function App() {
   }, []);
 
   const summary = useMemo(
-    () => summarizeDashboard(snapshot.accounts, snapshot.cards, snapshot.transactions, activeMonth),
-    [activeMonth, snapshot.accounts, snapshot.cards, snapshot.transactions],
+    () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth),
+    [activeMonth, snapshot.accounts, snapshot.transactions],
   );
 
   async function handleSaveAccount(input: {
@@ -221,6 +226,7 @@ export default function App() {
         ...current,
         transactions: [...saved, ...current.transactions].sort((left, right) => right.date.localeCompare(left.date)),
       }));
+      await refreshAccounts();
       return;
     }
 
@@ -232,6 +238,7 @@ export default function App() {
           transactions: [saved, ...current.transactions.filter((item) => item.id !== editingTransaction.id)]
             .sort((left, right) => right.date.localeCompare(left.date)),
         }));
+        await refreshAccounts();
         setEditingTransaction(null);
         return;
       }
@@ -265,6 +272,7 @@ export default function App() {
             .map((item) => savedById.get(item.id) ?? item)
             .sort((left, right) => right.date.localeCompare(left.date)),
         }));
+        await refreshAccounts();
         setEditingTransaction(null);
         return;
       }
@@ -274,6 +282,7 @@ export default function App() {
         ...current,
         transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
       }));
+      await refreshAccounts();
       setEditingTransaction(null);
       return;
     }
@@ -283,6 +292,7 @@ export default function App() {
       ...current,
       transactions: [saved, ...current.transactions],
     }));
+    await refreshAccounts();
   }
 
   async function handleCreateRecurring(transaction: Omit<Transaction, 'id'>, endDate?: string) {
@@ -335,6 +345,7 @@ export default function App() {
         ...current,
         transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
       }));
+      await refreshAccounts();
       return;
     }
 
@@ -345,9 +356,10 @@ export default function App() {
         item.id === transaction.id ? { ...item, status: nextStatus } : item,
       ),
     }));
+    await refreshAccounts();
   }
 
-  async function handleMarkReimbursementReceived(transaction: Transaction) {
+  async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string) {
     if (transaction.isProjected) {
       const { id: _id, isProjected: _isProjected, ...input } = transaction;
       const saved = await transactionRepository.create({
@@ -355,11 +367,13 @@ export default function App() {
         isReimbursable: true,
         reimbursementStatus: 'received',
         reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
+        reimbursementReceivedAccountId: accountId,
       });
       setSnapshot((current) => ({
         ...current,
         transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
       }));
+      await refreshAccounts();
       return;
     }
 
@@ -368,11 +382,13 @@ export default function App() {
       isReimbursable: true,
       reimbursementStatus: 'received',
       reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
+      reimbursementReceivedAccountId: accountId,
     });
     setSnapshot((current) => ({
       ...current,
       transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
     }));
+    await refreshAccounts();
   }
 
   async function handlePayCardInvoice(input: {
@@ -521,6 +537,7 @@ export default function App() {
           ...current,
           transactions: current.transactions.filter((item) => !ids.includes(item.id)),
         }));
+        await refreshAccounts();
         return;
       }
 
@@ -535,6 +552,7 @@ export default function App() {
       ...current,
       transactions: current.transactions.filter((item) => item.id !== transaction.id),
     }));
+    await refreshAccounts();
   }
 
   async function handleDeleteAccount(account: FinanceSnapshot['accounts'][number]) {
@@ -787,14 +805,15 @@ export default function App() {
       {currentView === 'reimbursements' ? (
         <ReimbursementsView
           people={snapshot.reimbursementPeople}
+          accounts={snapshot.accounts}
           cards={snapshot.cards}
           transactions={snapshot.transactions}
           activeMonth={activeMonth}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
           onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
-          onMarkReceived={(transaction) => runAppAction(
-            () => handleMarkReimbursementReceived(transaction),
+          onMarkReceived={(transaction, accountId) => runAppAction(
+            () => handleMarkReimbursementReceived(transaction, accountId),
             'Não foi possível atualizar o reembolso. Tente novamente.',
           )}
           onEditTransaction={(transaction) => {
@@ -808,7 +827,6 @@ export default function App() {
         <ReportsView
           month={activeMonth}
           transactions={snapshot.transactions}
-          cards={snapshot.cards}
           categories={snapshot.categories}
           summary={summary}
         />

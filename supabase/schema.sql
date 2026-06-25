@@ -110,6 +110,7 @@ create table if not exists public.transactions (
   reimbursement_person_id uuid references public.reimbursement_people(id) on delete set null,
   reimbursement_status text check (reimbursement_status in ('pending', 'received')),
   reimbursement_received_at date,
+  reimbursement_received_account_id uuid references public.accounts(id) on delete set null,
   attachment_path text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -137,6 +138,7 @@ create table if not exists public.transactions (
       and reimbursement_person_id is null
       and reimbursement_status is null
       and reimbursement_received_at is null
+      and reimbursement_received_account_id is null
     )
     or
     (
@@ -144,7 +146,18 @@ create table if not exists public.transactions (
       and flow = 'expense'
       and reimbursement_person_id is not null
       and reimbursement_status in ('pending', 'received')
-      and (reimbursement_status = 'received' or reimbursement_received_at is null)
+      and (
+        (
+          reimbursement_status = 'pending'
+          and reimbursement_received_at is null
+          and reimbursement_received_account_id is null
+        )
+        or
+        (
+          reimbursement_status = 'received'
+          and reimbursement_received_at is not null
+        )
+      )
     )
   )
 );
@@ -278,6 +291,7 @@ create index if not exists transactions_from_account_id_idx on public.transactio
 create index if not exists transactions_to_account_id_idx on public.transactions(to_account_id);
 create index if not exists transactions_reimbursement_person_id_idx on public.transactions(reimbursement_person_id);
 create index if not exists transactions_user_reimbursement_idx on public.transactions(user_id, is_reimbursable, reimbursement_status);
+create index if not exists transactions_reimbursement_received_account_id_idx on public.transactions(reimbursement_received_account_id);
 create index if not exists recurring_transactions_user_id_idx on public.recurring_transactions(user_id);
 create index if not exists recurring_transactions_user_active_start_idx on public.recurring_transactions(user_id, is_active, start_date);
 create index if not exists recurring_transactions_category_id_idx on public.recurring_transactions(category_id);
@@ -323,6 +337,65 @@ drop trigger if exists transactions_set_updated_at on public.transactions;
 create trigger transactions_set_updated_at
 before update on public.transactions
 for each row execute function public.set_updated_at();
+
+create or replace function public.sync_account_balance_from_transaction()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if tg_op in ('UPDATE', 'DELETE') and old.status = 'paid' then
+    if old.flow = 'income' and old.account_id is not null then
+      update public.accounts set balance = balance - old.amount where id = old.account_id and user_id = old.user_id;
+    elsif old.flow = 'expense' and old.account_id is not null then
+      update public.accounts set balance = balance + old.amount where id = old.account_id and user_id = old.user_id;
+    elsif old.flow = 'transfer' then
+      update public.accounts set balance = balance + old.amount where id = old.from_account_id and user_id = old.user_id;
+      update public.accounts set balance = balance - old.amount where id = old.to_account_id and user_id = old.user_id;
+    end if;
+  end if;
+
+  if tg_op in ('UPDATE', 'DELETE')
+    and old.is_reimbursable
+    and old.reimbursement_status = 'received'
+    and old.reimbursement_received_account_id is not null then
+    update public.accounts
+    set balance = balance - old.amount
+    where id = old.reimbursement_received_account_id and user_id = old.user_id;
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE') and new.status = 'paid' then
+    if new.flow = 'income' and new.account_id is not null then
+      update public.accounts set balance = balance + new.amount where id = new.account_id and user_id = new.user_id;
+    elsif new.flow = 'expense' and new.account_id is not null then
+      update public.accounts set balance = balance - new.amount where id = new.account_id and user_id = new.user_id;
+    elsif new.flow = 'transfer' then
+      update public.accounts set balance = balance - new.amount where id = new.from_account_id and user_id = new.user_id;
+      update public.accounts set balance = balance + new.amount where id = new.to_account_id and user_id = new.user_id;
+    end if;
+  end if;
+
+  if tg_op in ('INSERT', 'UPDATE')
+    and new.is_reimbursable
+    and new.reimbursement_status = 'received'
+    and new.reimbursement_received_account_id is not null then
+    update public.accounts
+    set balance = balance + new.amount
+    where id = new.reimbursement_received_account_id and user_id = new.user_id;
+  end if;
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists transactions_sync_account_balance on public.transactions;
+create trigger transactions_sync_account_balance
+after insert or update or delete on public.transactions
+for each row execute function public.sync_account_balance_from_transaction();
 
 drop trigger if exists recurring_transactions_set_updated_at on public.recurring_transactions;
 create trigger recurring_transactions_set_updated_at
@@ -807,6 +880,7 @@ begin
   perform public.assert_owned_account(new.account_id, new.user_id);
   perform public.assert_owned_account(new.from_account_id, new.user_id);
   perform public.assert_owned_account(new.to_account_id, new.user_id);
+  perform public.assert_owned_account(new.reimbursement_received_account_id, new.user_id);
   perform public.assert_owned_card(new.card_id, new.user_id);
   perform public.assert_owned_category(new.category_id, new.user_id);
   perform public.assert_owned_reimbursement_person(new.reimbursement_person_id, new.user_id);

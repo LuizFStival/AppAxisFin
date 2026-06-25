@@ -1,18 +1,21 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
-import { Card, ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency, getCurrentMonthKey, getFinancialMonthKey } from '../../lib/utils/finance';
+import { Account, Card, ReimbursementPerson, Transaction } from '../../types';
+import { formatCurrency } from '../../lib/utils/finance';
+import { formatLocalDate } from '../../lib/utils/date';
+import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
 import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface ReimbursementsViewProps {
   people: ReimbursementPerson[];
+  accounts: Account[];
   cards: Card[];
   transactions: Transaction[];
   activeMonth: string;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   onCurrentMonth: () => void;
-  onMarkReceived: (transaction: Transaction) => void | Promise<void>;
+  onMarkReceived: (transaction: Transaction, accountId: string) => void | Promise<void>;
   onEditTransaction: (transaction: Transaction) => void;
 }
 
@@ -34,6 +37,7 @@ function formatShortDate(date: string) {
 
 export function ReimbursementsView({
   people,
+  accounts,
   cards,
   transactions,
   activeMonth,
@@ -46,7 +50,9 @@ export function ReimbursementsView({
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState<ReimbursementViewMode>('month');
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
-  const currentMonth = getCurrentMonthKey();
+  const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
+  const [receivingAccountId, setReceivingAccountId] = useState('');
+  const today = formatLocalDate(new Date());
 
   const allReimbursements = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -61,17 +67,16 @@ export function ReimbursementsView({
 
   const overduePending = useMemo(() => {
     return allReimbursements
-      .filter((transaction) => transaction.reimbursementStatus !== 'received')
-      .filter((transaction) => getFinancialMonthKey(transaction, cards) < currentMonth)
+      .filter((transaction) => isReimbursementOverdue(transaction, cards, today))
       .sort((left, right) => left.date.localeCompare(right.date));
-  }, [allReimbursements, cards, currentMonth]);
+  }, [allReimbursements, cards, today]);
 
   const modeTransactions = useMemo(() => {
     return allReimbursements
       .filter((transaction) => {
         if (mode === 'all') return true;
         if (mode === 'pending') return transaction.reimbursementStatus !== 'received';
-        return getFinancialMonthKey(transaction, cards) === activeMonth;
+        return getReimbursementMonthKey(transaction, cards) === activeMonth;
       })
       .sort((left, right) => {
         if (left.reimbursementStatus !== right.reimbursementStatus) {
@@ -160,7 +165,7 @@ export function ReimbursementsView({
           <AlertTriangle size={16} className="shrink-0 text-rose-200" />
           <span className="min-w-0">
             <span className="block text-xs font-bold leading-snug text-rose-100">
-              {overduePending.length} pendente{overduePending.length === 1 ? '' : 's'} de meses anteriores
+              {overduePending.length} reembolso{overduePending.length === 1 ? '' : 's'} vencido{overduePending.length === 1 ? '' : 's'}
             </span>
             <span className="block text-[11px] font-semibold text-rose-200">{formatCurrency(overdueTotal)} em aberto</span>
           </span>
@@ -236,7 +241,8 @@ export function ReimbursementsView({
           </div>
         ) : reimbursementTransactions.map((transaction) => {
           const received = transaction.reimbursementStatus === 'received';
-          const isOverdue = !received && getFinancialMonthKey(transaction, cards) < currentMonth;
+          const isOverdue = isReimbursementOverdue(transaction, cards, today);
+          const dueDate = getReimbursementDueDate(transaction, cards);
           return (
             <article key={transaction.id} className={`rounded-2xl border px-3 py-2.5 ${isOverdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-white/8 bg-[#101319]'}`}>
               <div className="flex items-start justify-between gap-3">
@@ -248,7 +254,10 @@ export function ReimbursementsView({
                       <span className="truncate">{getPersonName(people, transaction.reimbursementPersonId)}</span>
                     </span>
                   </div>
-                  <p className="mt-0.5 text-xs text-slate-500">{formatShortDate(transaction.date)}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Compra {formatShortDate(transaction.date)}
+                    {dueDate ? ` · fatura vence ${formatShortDate(dueDate)}` : ''}
+                  </p>
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${received ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' : 'border-amber-400/20 bg-amber-500/15 text-amber-100'}`}>
                       {received ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
@@ -266,7 +275,15 @@ export function ReimbursementsView({
                   <p className="font-mono text-sm font-bold text-white">{formatCurrency(transaction.amount)}</p>
                   <div className="mt-1.5 flex justify-end gap-1">
                     {!received ? (
-                      <button type="button" onClick={() => onMarkReceived(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-200" title="Marcar recebido">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReceivingTransaction(transaction);
+                          setReceivingAccountId(transaction.accountId ?? accounts[0]?.id ?? '');
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-200"
+                        title="Marcar recebido"
+                      >
                         <CheckCircle2 size={14} />
                       </button>
                     ) : null}
@@ -280,6 +297,48 @@ export function ReimbursementsView({
           );
         })}
       </section>
+
+      {receivingTransaction ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="w-full rounded-t-[28px] border border-white/10 bg-[#101319] p-5 sm:max-w-sm sm:rounded-[28px]">
+            <h2 className="font-display text-lg font-bold text-white">Registrar reembolso</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {receivingTransaction.description} · {formatCurrency(receivingTransaction.amount)}
+            </p>
+            <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
+              Conta onde o dinheiro entrou
+              <select
+                value={receivingAccountId}
+                onChange={(event) => setReceivingAccountId(event.target.value)}
+                className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-emerald-300"
+              >
+                <option value="">Selecione uma conta</option>
+                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+              </select>
+            </label>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setReceivingTransaction(null)}
+                className="h-11 rounded-xl bg-white/5 text-sm font-bold text-slate-300"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!receivingAccountId}
+                onClick={async () => {
+                  await onMarkReceived(receivingTransaction, receivingAccountId);
+                  setReceivingTransaction(null);
+                }}
+                className="h-11 rounded-xl bg-emerald-500 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { Account, Card, Category, Transaction } from '../../types';
-import { formatCurrency, getCategoryName, getPaymentSource, getMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, getAccountSignedAmount, getCategoryName, getPaymentSource, getMonthKey } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
 
 interface AccountsViewProps {
@@ -28,14 +28,6 @@ function isAccountTransaction(transaction: Transaction, accountId: string) {
   return transaction.accountId === accountId || transaction.fromAccountId === accountId || transaction.toAccountId === accountId;
 }
 
-function getSignedAccountAmount(transaction: Transaction, accountId: string) {
-  if (transaction.flow === 'income' && transaction.accountId === accountId) return transaction.amount;
-  if (transaction.flow === 'expense' && transaction.accountId === accountId) return -transaction.amount;
-  if (transaction.flow === 'transfer' && transaction.toAccountId === accountId) return transaction.amount;
-  if (transaction.flow === 'transfer' && transaction.fromAccountId === accountId) return -transaction.amount;
-  return 0;
-}
-
 export function AccountsView({
   accounts,
   cards,
@@ -54,14 +46,15 @@ export function AccountsView({
     if (!selectedAccount) return [];
     return transactions
       .filter((transaction) => getMonthKey(transaction.date) === activeMonth && isAccountTransaction(transaction, selectedAccount.id))
+      .filter((transaction) => getAccountSignedAmount(transaction, selectedAccount.id) !== 0)
       .sort((left, right) => right.date.localeCompare(left.date));
   }, [activeMonth, selectedAccount, transactions]);
   const inflow = selectedTransactions.reduce((sum, transaction) => {
-    const signedAmount = getSignedAccountAmount(transaction, selectedAccount?.id ?? '');
+    const signedAmount = getAccountSignedAmount(transaction, selectedAccount?.id ?? '');
     return signedAmount > 0 ? sum + signedAmount : sum;
   }, 0);
   const outflow = Math.abs(selectedTransactions.reduce((sum, transaction) => {
-    const signedAmount = getSignedAccountAmount(transaction, selectedAccount?.id ?? '');
+    const signedAmount = getAccountSignedAmount(transaction, selectedAccount?.id ?? '');
     return signedAmount < 0 ? sum + signedAmount : sum;
   }, 0));
 
@@ -190,7 +183,7 @@ export function AccountsView({
               </div>
             ) : (
               selectedTransactions.map((transaction) => {
-                const signedAmount = getSignedAccountAmount(transaction, selectedAccount.id);
+                const signedAmount = getAccountSignedAmount(transaction, selectedAccount.id);
                 return (
                   <article key={transaction.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] p-4">
                     <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${signedAmount >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>

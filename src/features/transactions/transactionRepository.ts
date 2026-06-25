@@ -23,10 +23,11 @@ function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'
     reimbursement_person_id: transaction.isReimbursable ? transaction.reimbursementPersonId ?? null : null,
     reimbursement_status: transaction.isReimbursable ? transaction.reimbursementStatus ?? 'pending' : null,
     reimbursement_received_at: transaction.isReimbursable ? transaction.reimbursementReceivedAt ?? null : null,
+    reimbursement_received_account_id: transaction.isReimbursable ? transaction.reimbursementReceivedAccountId ?? null : null,
   };
 }
 
-const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, created_at';
+const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at';
 
 export const transactionRepository = {
   async create(transaction: Omit<Transaction, 'id'>): Promise<Transaction> {

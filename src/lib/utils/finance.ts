@@ -1,5 +1,4 @@
 import { Account, Card, Category, DashboardSummary, Transaction } from '../../types';
-import { getCardInvoiceClosingMonth } from './cardInvoices';
 import { readTransactionMeta } from './transactionMeta';
 
 export const currency = new Intl.NumberFormat('pt-BR', {
@@ -35,16 +34,14 @@ export function formatMonthLabel(month: string): string {
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date);
 }
 
-export function getAvailableMonths(transactions: Transaction[], cards: Card[] = []): string[] {
-  return Array.from(new Set(transactions.map((transaction) => getFinancialMonthKey(transaction, cards))))
+export function getAvailableMonths(transactions: Transaction[]): string[] {
+  return Array.from(new Set(transactions.map(getFinancialMonthKey)))
     .sort()
     .reverse();
 }
 
-export function getFinancialMonthKey(transaction: Transaction, cards: Card[]): string {
-  if (!transaction.cardId) return getMonthKey(transaction.date);
-  const card = cards.find((item) => item.id === transaction.cardId);
-  return card ? getCardInvoiceClosingMonth(card, transaction.date) : getMonthKey(transaction.date);
+export function getFinancialMonthKey(transaction: Transaction): string {
+  return getMonthKey(transaction.date);
 }
 
 export function getCategoryName(categories: Category[], categoryId?: string): string {
@@ -61,6 +58,15 @@ export function getPaymentSource(accounts: Account[], cards: Card[], transaction
     return `${from} -> ${to}`;
   }
   return 'Sem origem';
+}
+
+export function getAccountSignedAmount(transaction: Transaction, accountId: string): number {
+  if (transaction.status !== 'paid') return 0;
+  if (transaction.flow === 'income' && transaction.accountId === accountId) return transaction.amount;
+  if (transaction.flow === 'expense' && transaction.accountId === accountId) return -transaction.amount;
+  if (transaction.flow === 'transfer' && transaction.toAccountId === accountId) return transaction.amount;
+  if (transaction.flow === 'transfer' && transaction.fromAccountId === accountId) return -transaction.amount;
+  return 0;
 }
 
 export function isThirdPartyExpense(transaction: Transaction): boolean {
@@ -84,8 +90,8 @@ export function isCardInvoicePaid(transactions: Transaction[]): boolean {
   });
 }
 
-export function summarizeDashboard(accounts: Account[], cards: Card[], transactions: Transaction[], month: string): DashboardSummary {
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction, cards) === month);
+export function summarizeDashboard(accounts: Account[], transactions: Transaction[], month: string): DashboardSummary {
+  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
   const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
   const expenseTransactions = monthTransactions.filter((transaction) => transaction.flow === 'expense' && !isThirdPartyExpense(transaction));
   const reimbursementTransactions = monthTransactions.filter(isThirdPartyExpense);
@@ -116,11 +122,11 @@ export function summarizeDashboard(accounts: Account[], cards: Card[], transacti
   };
 }
 
-export function expensesByCategory(transactions: Transaction[], cards: Card[], categories: Category[], month: string) {
+export function expensesByCategory(transactions: Transaction[], categories: Category[], month: string) {
   const totals = new Map<string, { name: string; value: number; color: string }>();
 
   transactions
-    .filter((transaction) => transaction.flow === 'expense' && getFinancialMonthKey(transaction, cards) === month)
+    .filter((transaction) => transaction.flow === 'expense' && getFinancialMonthKey(transaction) === month)
     .filter((transaction) => !isThirdPartyExpense(transaction))
     .forEach((transaction) => {
       const category = categories.find((item) => item.id === transaction.categoryId);

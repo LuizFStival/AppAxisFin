@@ -117,6 +117,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   const [isInvoiceCredit, setIsInvoiceCredit] = useState(false);
   const [reimbursementPersonId, setReimbursementPersonId] = useState('');
   const [reimbursementStatus, setReimbursementStatus] = useState<'pending' | 'received'>('pending');
+  const [reimbursementReceivedAccountId, setReimbursementReceivedAccountId] = useState('');
   const [newPersonName, setNewPersonName] = useState('');
   const [personError, setPersonError] = useState('');
   const [isCreatingPerson, setIsCreatingPerson] = useState(false);
@@ -168,6 +169,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setIsInvoiceCredit(transactionMeta.invoiceAdjustment === 'credit');
     setReimbursementPersonId(transaction?.reimbursementPersonId ?? reimbursementPeople[0]?.id ?? '');
     setReimbursementStatus(transaction?.reimbursementStatus ?? 'pending');
+    setReimbursementReceivedAccountId(transaction?.reimbursementReceivedAccountId ?? transaction?.accountId ?? accounts[0]?.id ?? '');
     setNewPersonName('');
     setPersonError('');
     setHasFixedEndDate(Boolean(transactionMeta.generatedUntil));
@@ -420,6 +422,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       reimbursementPersonId: shouldMarkReimbursement ? reimbursementPersonId : undefined,
       reimbursementStatus: shouldMarkReimbursement ? reimbursementStatus : undefined,
       reimbursementReceivedAt: shouldMarkReimbursement && reimbursementStatus === 'received' ? dateValue : undefined,
+      reimbursementReceivedAccountId: shouldMarkReimbursement && reimbursementStatus === 'received'
+        ? reimbursementReceivedAccountId || undefined
+        : undefined,
     };
   }
 
@@ -446,6 +451,10 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     }
     if (flow === 'expense' && isReimbursable && !isInvoiceCredit && !reimbursementPersonId) {
       setFormError('Selecione quem deve esse reembolso.');
+      return;
+    }
+    if (flow === 'expense' && isReimbursable && reimbursementStatus === 'received' && !reimbursementReceivedAccountId) {
+      setFormError('Selecione a conta onde o reembolso entrou.');
       return;
     }
     if (flow === 'expense' && sourceType === 'account' && !accountId) {
@@ -702,12 +711,35 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                   </label>
                   <label className="grid gap-1 text-xs font-semibold text-slate-400">
                     Status
-                    <select value={reimbursementStatus} onChange={(event) => setReimbursementStatus(event.target.value as 'pending' | 'received')} className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300">
+                    <select
+                      value={reimbursementStatus}
+                      onChange={(event) => {
+                        const nextStatus = event.target.value as 'pending' | 'received';
+                        setReimbursementStatus(nextStatus);
+                        if (nextStatus === 'received' && !reimbursementReceivedAccountId) {
+                          setReimbursementReceivedAccountId(accountId || accounts[0]?.id || '');
+                        }
+                      }}
+                      className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300"
+                    >
                       <option value="pending">A receber</option>
                       <option value="received">Recebido</option>
                     </select>
                   </label>
                 </div>
+                {reimbursementStatus === 'received' ? (
+                  <label className="grid gap-1 text-xs font-semibold text-slate-400">
+                    Conta onde o dinheiro entrou
+                    <select
+                      value={reimbursementReceivedAccountId}
+                      onChange={(event) => setReimbursementReceivedAccountId(event.target.value)}
+                      className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-emerald-300"
+                    >
+                      <option value="">Selecione</option>
+                      {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                    </select>
+                  </label>
+                ) : null}
                 <div className="flex gap-2">
                   <input
                     value={newPersonName}

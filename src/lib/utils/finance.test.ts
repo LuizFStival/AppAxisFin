@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   expensesByCategory,
   formatMonthLabel,
+  getAccountSignedAmount,
   getAvailableMonths,
   getFinancialMonthKey,
   isCardInvoicePaid,
@@ -12,6 +13,8 @@ import {
 import { getCardInvoiceClosingMonth, getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth, getCardInvoiceInfoForPeriod } from './cardInvoices';
 import { writeTransactionNotes } from './transactionMeta';
 import { matchesExpenseViewFilter } from './expenseFilters';
+import { summarizeExpenseBreakdown } from './expenseBreakdown';
+import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from './reimbursements';
 import { Account, Card, Category, Transaction } from '../../types';
 
 const accounts: Account[] = [
@@ -136,31 +139,35 @@ const transactions: Transaction[] = [
   },
 ];
 
-const summary = summarizeDashboard(accounts, cards, transactions, '2026-06');
+const summary = summarizeDashboard(accounts, transactions, '2026-06');
 
 assert.deepEqual(summary, {
   currentBalance: 1500,
   income: 5800,
-  expenses: 1574.53,
+  expenses: 1682.64,
   received: 5000,
   paid: 350,
   pendingIncome: 800,
-  pendingExpenses: 1224.53,
-  reimbursementsPending: 90,
+  pendingExpenses: 1332.64,
+  reimbursementsPending: 0,
   reimbursementsReceived: 0,
 });
 
-assert.deepEqual(getAvailableMonths(transactions, cards), ['2026-07', '2026-06']);
+assert.deepEqual(getAvailableMonths(transactions), ['2026-06', '2026-05']);
 assert.equal(shiftMonthKey('2026-01', -1), '2025-12');
 assert.equal(shiftMonthKey('2026-12', 1), '2027-01');
 assert.equal(formatMonthLabel('2026-06'), 'junho de 2026');
 assert.equal(getPaymentSource(accounts, cards, transactions[2]), 'Principal');
 assert.equal(getPaymentSource(accounts, cards, transactions[4]), 'Principal -> Reserva');
 assert.equal(getPaymentSource(accounts, cards, transactions[5]), 'Credito');
+assert.equal(getAccountSignedAmount(transactions[0], 'acc-main'), 5000);
+assert.equal(getAccountSignedAmount(transactions[1], 'acc-main'), 0);
+assert.equal(getAccountSignedAmount(transactions[2], 'acc-main'), -350);
+assert.equal(getAccountSignedAmount(transactions[3], 'acc-main'), 0);
 
-assert.deepEqual(expensesByCategory(transactions, cards, categories, '2026-06'), [
+assert.deepEqual(expensesByCategory(transactions, categories, '2026-06'), [
   { name: 'Moradia', value: 1200, color: '#6366F1' },
-  { name: 'Alimentacao', value: 374.53, color: '#EF4444' },
+  { name: 'Alimentacao', value: 482.64, color: '#EF4444' },
 ]);
 
 const closesOnTwentySix: Card = {
@@ -211,7 +218,34 @@ assert.equal(getFinancialMonthKey({
   status: 'paid',
   date: '2026-05-26',
   cardId: closesOnTwentySix.id,
-}, [closesOnTwentySix]), '2026-06');
+}), '2026-05');
+
+assert.equal(getFinancialMonthKey({
+  id: 'tx-june-purchase-july-due',
+  description: 'Compra antes do vencimento de julho',
+  amount: 100,
+  flow: 'expense',
+  status: 'paid',
+  date: '2026-06-23',
+  cardId: closesOnTwentySix.id,
+}), '2026-06');
+
+assert.equal(getCardInvoiceInfo(closesOnTwentySix, '2026-06-23', '2026-06-24').dueDate, '2026-07-02');
+const pendingMayCardReimbursement: Transaction = {
+  id: 'reimbursement-card-may',
+  description: 'Compra para terceiro',
+  amount: 100,
+  flow: 'expense',
+  status: 'paid',
+  date: '2026-05-26',
+  cardId: closesOnTwentySix.id,
+  isReimbursable: true,
+  reimbursementStatus: 'pending',
+};
+assert.equal(getReimbursementDueDate(pendingMayCardReimbursement, [closesOnTwentySix]), '2026-07-02');
+assert.equal(getReimbursementMonthKey(pendingMayCardReimbursement, [closesOnTwentySix]), '2026-06');
+assert.equal(isReimbursementOverdue(pendingMayCardReimbursement, [closesOnTwentySix], '2026-06-25'), false);
+assert.equal(isReimbursementOverdue(pendingMayCardReimbursement, [closesOnTwentySix], '2026-07-03'), true);
 
 const unpaidCardTransactions: Transaction[] = [{
   id: 'invoice-unpaid',
@@ -268,3 +302,12 @@ assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'installment'), tru
 assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'superfluous'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'others'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'personal'), false);
+assert.deepEqual(
+  summarizeExpenseBreakdown(filterTransactions.filter((transaction) => !transaction.isReimbursable))
+    .map(({ key, total, count }) => ({ key, total, count })),
+  [
+    { key: 'installment', total: 80, count: 1 },
+    { key: 'fixed', total: 0, count: 0 },
+    { key: 'variable', total: 120, count: 1 },
+  ],
+);

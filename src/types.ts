@@ -64,6 +64,7 @@ export interface Transaction {
   reimbursementPersonId?: string;
   reimbursementStatus?: ReimbursementStatus;
   reimbursementReceivedAt?: string;
+  reimbursementReceivedAccountId?: string;
   recurringTransactionId?: string;
   recurringOccurrenceDate?: string;
   createdAt?: string;
@@ -86,6 +87,7 @@ export interface RecurringTransaction {
   isReimbursable?: boolean;
   reimbursementPersonId?: string;
   reimbursementStatus?: ReimbursementStatus;
+  reimbursementReceivedAccountId?: string;
   isActive: boolean;
 }
 
