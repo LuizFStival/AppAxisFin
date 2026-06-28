@@ -105,6 +105,7 @@ export interface TransactionMeta {
   invoiceSortOrder?: number;
   recurringTransactionId?: string;
   recurringOccurrenceDate?: string;
+  recurringExcludedDates?: string[];
 }
 
 export interface FinanceSnapshot {

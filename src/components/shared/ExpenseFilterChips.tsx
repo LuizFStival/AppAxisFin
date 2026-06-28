@@ -5,10 +5,11 @@ import { ExpenseViewFilter, expenseViewFilterOptions } from '../../lib/utils/exp
 interface ExpenseFilterChipsProps {
   value: ExpenseViewFilter;
   onChange: (value: ExpenseViewFilter) => void;
+  options?: typeof expenseViewFilterOptions;
   className?: string;
 }
 
-export function ExpenseFilterChips({ value, onChange, className = '' }: ExpenseFilterChipsProps) {
+export function ExpenseFilterChips({ value, onChange, options = expenseViewFilterOptions, className = '' }: ExpenseFilterChipsProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -47,7 +48,7 @@ export function ExpenseFilterChips({ value, onChange, className = '' }: ExpenseF
         role="group"
         aria-label="Filtrar despesas"
       >
-        {expenseViewFilterOptions.map((option) => {
+        {options.map((option) => {
           const selected = value === option.id;
           return (
             <button

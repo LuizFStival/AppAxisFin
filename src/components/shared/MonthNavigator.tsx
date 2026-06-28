@@ -18,7 +18,7 @@ export function MonthNavigator({ month, onPreviousMonth, onNextMonth, onCurrentM
         type="button"
         onClick={onPreviousMonth}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
-        title="Mes anterior"
+        title="Mês anterior"
       >
         <ChevronLeft size={18} />
       </button>
@@ -26,7 +26,7 @@ export function MonthNavigator({ month, onPreviousMonth, onNextMonth, onCurrentM
         type="button"
         onClick={onCurrentMonth}
         className="min-w-0 flex flex-1 items-center justify-center gap-2 rounded-xl px-2 py-2 text-center transition hover:bg-white/5"
-        title="Voltar para o mes atual"
+        title="Voltar para o mês atual"
       >
         <CalendarDays size={16} className={isCurrentMonth ? 'text-sky-300' : 'text-slate-500'} />
         <span className="truncate text-sm font-bold capitalize text-white">{formatMonthLabel(month)}</span>
@@ -35,7 +35,7 @@ export function MonthNavigator({ month, onPreviousMonth, onNextMonth, onCurrentM
         type="button"
         onClick={onNextMonth}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
-        title="Proximo mes"
+        title="Próximo mês"
       >
         <ChevronRight size={18} />
       </button>

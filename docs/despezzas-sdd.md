@@ -4,6 +4,35 @@ Versao: 1.1
 Status: documento vivo do produto  
 Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel  
 
+## Status de Atualizacao - 2026-06-28
+
+Checkpoint aplicado antes da reformulacao da tela de Relatorios.
+
+Estado funcional consolidado:
+
+- A tela de Transacoes exibe receitas, despesas e transferencias do mes e separa os escopos `Todas`, `Meus gastos` e `Dos outros`.
+- Em `Meus gastos`, os filtros variavel, fixa, parcelada, essencial e superflua consideram somente consumo pessoal.
+- Em `Dos outros`, os filtros variavel, fixa e parcelada consideram somente despesas reembolsaveis.
+- O balanco mensal explicita total de entradas, total de gastos e sua composicao. Reembolsos ficam discriminados entre pendentes e concluidos.
+- Despesas de terceiros permanecem visiveis na fatura, mas nao inflam o consumo pessoal.
+- Reembolsos possuem pessoa, status, data e conta de recebimento persistidos no Supabase.
+- Despesas fixas sao regras recorrentes persistidas; ocorrencias futuras nascem pendentes.
+- Edicao de uma ocorrencia fixa pode converte-la em variavel sem alterar indevidamente toda a serie.
+- Exclusao recorrente permite escolher entre somente a ocorrencia atual e esta mais as futuras.
+- A ordenacao manual de lancamentos da fatura permanece imediata na interface e e persistida ao sair da tela de Cartoes.
+- Cartoes possuem bandeira e cor configuraveis; a cor salva e usada nos cards e indicadores da fatura.
+- Categorias no Perfil sao separadas entre Entradas e Despesas, incluindo o contexto correto ao criar uma nova categoria.
+- A navegacao mobile mantem quatro atalhos principais e concentra destinos secundarios em `Mais`.
+
+Regras financeiras reafirmadas:
+
+- Supabase continua sendo a fonte de verdade para regras recorrentes, reembolsos e demais dados financeiros.
+- `Total de entradas = receitas + reembolsos esperados`.
+- `Total de gastos = gastos pessoais + valores adiantados a terceiros`.
+- `Balanco do mes = total de entradas - total de gastos`.
+- Reembolso pendente compoe a previsao, mas nao deve ser confundido com dinheiro ja recebido em conta.
+- Reembolso concluido deve identificar a conta de recebimento.
+
 ## Status de Atualizacao - 2026-06-15
 
 Atualizacao aplicada apos melhorias de contas, cartoes, faturas, categorias e navegacao do dashboard.

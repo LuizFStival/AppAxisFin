@@ -194,44 +194,39 @@ export function CardsView({
     };
   }
 
-  async function reorderInvoiceTransaction(draggedId: string, targetId: string) {
-    if (!selectedInvoice || draggedId === targetId) return;
+  async function reorderInvoiceTransaction(draggedId: string, dropIndex: number) {
+    if (!selectedInvoice) return;
 
-    const currentIndex = selectedInvoice.transactions.findIndex((item) => item.id === draggedId);
-    const targetIndex = selectedInvoice.transactions.findIndex((item) => item.id === targetId);
-    if (currentIndex < 0 || targetIndex < 0) return;
+    const dragged = visibleTransactions.find((item) => item.id === draggedId);
+    if (!dragged) return;
 
-    const reordered = [...selectedInvoice.transactions];
-    const [moved] = reordered.splice(currentIndex, 1);
-    reordered.splice(targetIndex, 0, moved);
-    await onReorderInvoiceTransactions(reordered);
-  }
+    const reorderedVisible = visibleTransactions.filter((item) => item.id !== draggedId);
+    const boundedDropIndex = Math.max(0, Math.min(dropIndex, reorderedVisible.length));
+    reorderedVisible.splice(boundedDropIndex, 0, dragged);
 
-  function getTransactionIdFromPoint(clientX: number, clientY: number, ignoredId?: string) {
-    const element = document.elementFromPoint(clientX, clientY);
-    const directTargetId = element?.closest<HTMLElement>('[data-invoice-transaction-id]')?.dataset.invoiceTransactionId;
-    if (directTargetId && directTargetId !== ignoredId) return directTargetId;
-
-    const candidates = Array.from(document.querySelectorAll<HTMLElement>('[data-invoice-transaction-id]'));
-    const target = candidates.find((candidate) => {
-      if (candidate.dataset.invoiceTransactionId === ignoredId) return false;
-      const rect = candidate.getBoundingClientRect();
-      return clientY >= rect.top && clientY <= rect.bottom;
+    const visibleIds = new Set(visibleTransactions.map((item) => item.id));
+    let visibleIndex = 0;
+    const reorderedInvoice = selectedInvoice.transactions.map((transaction) => {
+      if (!visibleIds.has(transaction.id)) return transaction;
+      return reorderedVisible[visibleIndex++] ?? transaction;
     });
 
-    if (target?.dataset.invoiceTransactionId) return target.dataset.invoiceTransactionId;
+    await onReorderInvoiceTransactions(reorderedInvoice);
+  }
 
-    const closest = candidates
-      .filter((candidate) => candidate.dataset.invoiceTransactionId !== ignoredId)
-      .map((candidate) => {
-        const rect = candidate.getBoundingClientRect();
-        const centerY = rect.top + rect.height / 2;
-        return { id: candidate.dataset.invoiceTransactionId, distance: Math.abs(clientY - centerY) };
-      })
-      .filter((item): item is { id: string; distance: number } => Boolean(item.id))
-      .sort((left, right) => left.distance - right.distance)[0];
+  function getDropPosition(clientY: number, ignoredId: string) {
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>('[data-invoice-transaction-id]'))
+      .filter((candidate) => candidate.dataset.invoiceTransactionId !== ignoredId);
+    const dropIndex = candidates.findIndex((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return clientY < rect.top + rect.height / 2;
+    });
+    const boundedIndex = dropIndex < 0 ? candidates.length : dropIndex;
 
-    return closest?.id ?? null;
+    return {
+      dropIndex: boundedIndex,
+      targetId: candidates[boundedIndex]?.dataset.invoiceTransactionId ?? null,
+    };
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, transaction: Transaction) {
@@ -261,8 +256,9 @@ export function CardsView({
     if (!dragState.hasMoved && Math.max(deltaX, deltaY) < 10) return;
 
     dragState.hasMoved = true;
+    const dropPosition = getDropPosition(event.clientY, dragState.transactionId);
     setDraggedTransactionId(dragState.transactionId);
-    setDragTargetTransactionId(getTransactionIdFromPoint(event.clientX, event.clientY, dragState.transactionId));
+    setDragTargetTransactionId(dropPosition.targetId);
     event.preventDefault();
   }
 
@@ -271,9 +267,11 @@ export function CardsView({
     if (!dragState.transactionId || dragState.pointerId !== event.pointerId) return;
 
     const draggedId = dragState.transactionId;
-    const targetId = dragState.hasMoved ? getTransactionIdFromPoint(event.clientX, event.clientY, draggedId) : null;
+    const dropIndex = dragState.hasMoved
+      ? getDropPosition(event.clientY, draggedId).dropIndex
+      : -1;
     resetDragState();
-    if (targetId) await reorderInvoiceTransaction(draggedId, targetId);
+    if (dropIndex >= 0) await reorderInvoiceTransaction(draggedId, dropIndex);
   }
 
   function handlePointerCancel() {
@@ -315,7 +313,14 @@ export function CardsView({
             {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, invoiceCreditTotal }) => {
               const progress = card.limit > 0 ? Math.max(0, Math.min(100, (total / card.limit) * 100)) : 0;
               return (
-                <article key={card.id} className="rounded-2xl border border-white/8 bg-[#101319] p-4">
+                <article
+                  key={card.id}
+                  className="rounded-2xl border bg-[#101319] p-4"
+                  style={{
+                    borderColor: `${card.color}55`,
+                    backgroundImage: `linear-gradient(135deg, ${card.color}18, transparent 55%)`,
+                  }}
+                >
                   <button type="button" onClick={() => onSelectCard(card.id)} className="w-full text-left">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -326,7 +331,7 @@ export function CardsView({
                       <CreditCard size={20} style={{ color: card.color }} />
                     </div>
                     <div className="mt-4 h-2 rounded-full bg-white/8">
-                      <div className="h-full rounded-full bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6]" style={{ width: `${progress}%` }} />
+                      <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: card.color }} />
                     </div>
                     <div className="mt-2 flex justify-between text-xs">
                       <span className="font-mono font-bold text-white">{formatCurrency(total)}</span>

@@ -17,7 +17,7 @@ const primaryItems = [
 const moreItems = [
   { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
   { id: 'accounts' as const, label: 'Contas', icon: Wallet },
-  { id: 'reports' as const, label: 'Relatorios', icon: BarChart3 },
+  { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
   { id: 'profile' as const, label: 'Perfil', icon: User },
 ];
 
@@ -81,7 +81,7 @@ export function BottomNavigation({ currentView, onNavigate, onAdd }: BottomNavig
             onAdd();
           }}
           className="mx-auto flex h-14 w-14 -translate-y-4 items-center justify-center rounded-full bg-gradient-to-tr from-[#3B82F6] to-[#8B5CF6] text-white shadow-lg shadow-[#3B82F6]/30 transition hover:rotate-90 hover:scale-105 active:scale-95"
-          aria-label="Adicionar lancamento"
+          aria-label="Adicionar lançamento"
         >
           <Plus size={28} strokeWidth={2.5} />
         </button>
@@ -111,8 +111,8 @@ export function BottomNavigation({ currentView, onNavigate, onAdd }: BottomNavig
           className={`flex h-12 flex-col items-center justify-center rounded-full transition ${
             isMoreActive || isMoreOpen ? 'text-[#3B82F6]' : 'text-gray-500 hover:text-gray-300'
           }`}
-          title="Mais opcoes"
-          aria-label="Mais opcoes"
+          title="Mais opções"
+          aria-label="Mais opções"
           aria-expanded={isMoreOpen}
         >
           <MoreHorizontal size={22} strokeWidth={isMoreActive || isMoreOpen ? 2.5 : 2} />

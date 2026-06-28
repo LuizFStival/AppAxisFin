@@ -351,7 +351,15 @@ export function DashboardView({
             const invoice = getInvoiceSummary(card, transactions, activeMonth);
             const progress = card.limit > 0 ? Math.min(100, (invoice.total / card.limit) * 100) : 0;
             return (
-              <article key={card.id} className="cosmic-card cursor-pointer rounded-2xl p-4" onClick={() => onViewCards(card.id)}>
+              <article
+                key={card.id}
+                className="cosmic-card cursor-pointer rounded-2xl p-4"
+                style={{
+                  borderColor: `${card.color}55`,
+                  backgroundImage: `linear-gradient(135deg, ${card.color}18, transparent 55%)`,
+                }}
+                onClick={() => onViewCards(card.id)}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-white">{card.name}</p>
@@ -376,7 +384,7 @@ export function DashboardView({
                   </div>
                 </div>
                 <div className="mt-4 h-2 rounded-full bg-white/8">
-                  <div className="h-full rounded-full bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6]" style={{ width: `${progress}%` }} />
+                  <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: card.color }} />
                 </div>
                 <div className="mt-2 flex justify-between text-[10px] text-gray-400">
                   <span>{hiddenMoney(showBalances, invoice.total)}</span>

@@ -4,7 +4,7 @@ import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { DateInput } from '../shared/DateInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
-import { addMonths, formatDatePtBr } from '../../lib/utils/date';
+import { addMonths, formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { createSeriesId, getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { hasDuplicateName } from '../../lib/utils/validation';
@@ -134,9 +134,14 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [isPreparingReimbursementCategory, setIsPreparingReimbursementCategory] = useState(false);
   const initializedFormKeyRef = useRef<string | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   const transactionMeta = useMemo(() => readTransactionMeta(transaction?.notes), [transaction]);
   const isGroupedTransaction = Boolean(transactionMeta.seriesId);
+  const isRecurringOccurrence = Boolean(
+    transaction?.recurringTransactionId
+    || transactionMeta.recurringTransactionId,
+  );
   const reimbursementCategory = useMemo(() => categories.find(isReimbursementCategory), [categories]);
   const invoiceAdjustmentCategory = useMemo(() => categories.find(isInvoiceAdjustmentCategory), [categories]);
 
@@ -382,7 +387,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     }
 
     if (hasDuplicateName(name, reimbursementPeople.map((person) => person.name))) {
-      setPersonError('Ja existe uma pessoa com esse nome.');
+      setPersonError('Já existe uma pessoa com esse nome.');
       return;
     }
 
@@ -432,45 +437,70 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     event.preventDefault();
     setFormError('');
     const parsedAmount = parseCurrencyInput(amount);
-    if (!description.trim() || parsedAmount <= 0) return;
+    const reportMissingField = (message: string) => {
+      setFormError(message);
+      window.requestAnimationFrame(() => {
+        formRef.current?.scrollTo({ top: 150, behavior: 'smooth' });
+      });
+    };
+    if (parsedAmount <= 0) {
+      reportMissingField('Informe um valor maior que zero para salvar o lançamento.');
+      return;
+    }
+    if (!description.trim()) {
+      reportMissingField('Informe um título para identificar o lançamento.');
+      return;
+    }
+    if (!date) {
+      reportMissingField('Selecione a data do lançamento.');
+      return;
+    }
     if (isInvoiceCredit && !invoiceAdjustmentCategory && !categoryId) {
-      setFormError('Crie ou mantenha a categoria Ajustes de fatura para salvar descontos da fatura.');
+      reportMissingField('Crie ou mantenha a categoria Ajustes de fatura para salvar descontos da fatura.');
       return;
     }
     if (flow === 'expense' && isReimbursable && !reimbursementCategory && !categoryId) {
-      setFormError('Crie ou mantenha a categoria Reembolsos para salvar despesas de terceiros.');
+      reportMissingField('Crie ou mantenha a categoria Reembolsos para salvar despesas de terceiros.');
       return;
     }
     if (flow !== 'transfer' && !categoryId) {
-      setFormError('Selecione uma categoria para salvar o lançamento.');
+      reportMissingField('Selecione uma categoria para salvar o lançamento.');
       return;
     }
     if (flow === 'expense' && !isReimbursable && !isInvoiceCredit && !expenseNeed) {
-      setFormError('Selecione se a despesa é essencial ou supérflua.');
+      reportMissingField('Selecione se a despesa é essencial ou supérflua.');
       return;
     }
     if (flow === 'expense' && isReimbursable && !isInvoiceCredit && !reimbursementPersonId) {
-      setFormError('Selecione quem deve esse reembolso.');
+      reportMissingField('Selecione quem deve esse reembolso.');
       return;
     }
     if (flow === 'expense' && isReimbursable && reimbursementStatus === 'received' && !reimbursementReceivedAccountId) {
-      setFormError('Selecione a conta onde o reembolso entrou.');
+      reportMissingField('Selecione a conta onde o reembolso entrou.');
       return;
     }
     if (flow === 'expense' && sourceType === 'account' && !accountId) {
-      setFormError('Selecione uma conta para salvar a despesa.');
+      reportMissingField('Selecione uma conta para salvar a despesa.');
       return;
     }
     if (flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && !cardId) {
-      setFormError('Selecione um cartão para salvar a despesa.');
+      reportMissingField('Selecione um cartão para salvar a despesa.');
       return;
     }
     if (flow === 'expense' && expenseMode === 'fixed' && !transaction && hasFixedEndDate && fixedDates.length === 0) {
-      setFormError('A data final precisa ser igual ou posterior à data inicial.');
+      reportMissingField('A data final precisa ser igual ou posterior à data inicial.');
       return;
     }
     if (flow === 'income' && !accountId) {
-      setFormError('Selecione uma conta para salvar a receita.');
+      reportMissingField('Selecione uma conta para salvar a receita.');
+      return;
+    }
+    if (flow === 'transfer' && (!fromAccountId || !toAccountId)) {
+      reportMissingField('Selecione as contas de origem e destino da transferência.');
+      return;
+    }
+    if (flow === 'transfer' && fromAccountId === toAccountId) {
+      reportMissingField('As contas de origem e destino precisam ser diferentes.');
       return;
     }
 
@@ -573,36 +603,44 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   }
 
   const calculatorResult = evaluateExpression(calculatorExpression);
+  const todayValue = formatLocalDate(new Date());
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayValue = formatLocalDate(yesterday);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/70 p-0 backdrop-blur-sm md:p-6">
-      <form onSubmit={handleSubmit} className="h-[100dvh] max-h-[100dvh] w-full max-w-[430px] overflow-y-auto rounded-none border border-white/10 bg-[#0B0E14] p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl md:h-[860px] md:max-h-[calc(100dvh-3rem)] md:rounded-[34px] md:p-5">
-        <div className="flex items-center justify-between">
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className={`h-[100dvh] max-h-[100dvh] w-full max-w-[430px] overflow-y-auto rounded-none shadow-2xl md:h-[860px] md:max-h-[calc(100dvh-3rem)] md:rounded-[34px] ${
+          flow === 'income' ? 'bg-[#07975f]' : flow === 'expense' ? 'bg-[#6b2424]' : 'bg-[#3b4b62]'
+        }`}
+      >
+        <div className="flex items-center justify-between px-4 pb-5 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6 md:pt-5">
           <button
             type="button"
             onClick={() => transaction ? onClose() : setEntryStep('picker')}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-300"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-black/10"
             title={transaction ? 'Fechar' : 'Voltar'}
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={26} />
           </button>
-          <h2 className="font-display text-lg font-bold text-white">
+          <h2 className="rounded-full bg-[#111820] px-6 py-3 font-display text-base font-bold text-white shadow-lg">
             {transaction ? 'Editar lançamento' : flow === 'income' ? 'Receita' : flow === 'expense' ? 'Despesa' : 'Transferência'}
           </h2>
-          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">
-            <X size={18} />
+          <button type="submit" disabled={cannotSubmit || isSaving} className="min-w-16 px-1 py-2 text-sm font-bold text-white disabled:opacity-50">
+            {isSaving ? 'Salvando' : 'Aplicar'}
           </button>
         </div>
 
-        <div className={`mt-4 rounded-2xl p-4 ${
-          flow === 'income' ? 'bg-emerald-600' : flow === 'expense' ? 'bg-rose-600' : 'bg-sky-600'
-        }`}>
-          <p className="text-xs font-semibold text-white/75">Valor</p>
+        <div className="px-6 pb-8 pt-2">
+          <p className="text-base font-semibold text-white">Valor</p>
           <div className="mt-1 flex items-center gap-3">
             <CurrencyInput
               value={amount}
               onChange={setAmount}
-              className="h-14 border-0 bg-transparent px-0 text-3xl font-sans font-bold focus:border-transparent"
+              className="h-16 border-0 bg-transparent px-0 text-4xl font-sans font-medium text-white focus:border-transparent"
             />
             <button
               type="button"
@@ -611,7 +649,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 setCalculatorExpression(currentAmount > 0 ? String(currentAmount).replace('.', ',') : '');
                 setIsCalculatorOpen(true);
               }}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-black/15 text-white"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white transition hover:bg-black/10"
               title="Abrir calculadora"
               aria-label="Abrir calculadora"
             >
@@ -620,8 +658,10 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </div>
         </div>
 
+        <div className="flex min-h-[calc(100%-12rem)] flex-col rounded-t-[32px] bg-[#0B1017] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:px-5">
         {flow === 'expense' && !isInvoiceCredit ? (
-          <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
+          <div className="order-1 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
+            <p className="col-span-3 px-2 pb-1 pt-2 text-sm font-semibold text-slate-200">Tipo de lançamento</p>
             {expenseModes.map((option) => {
               const Icon = option.icon;
               const selected = expenseMode === option.id;
@@ -633,7 +673,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                     setExpenseMode(option.id);
                     if (option.id === 'installment' && cards[0] && !cardId) setCardId(cards[0].id);
                   }}
-                  disabled={Boolean(transaction)}
+                  disabled={Boolean(transaction) && (!isRecurringOccurrence || option.id === 'installment')}
                   className={`flex h-11 items-center justify-center gap-1 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                     selected ? 'bg-violet-500 text-white' : 'text-slate-400'
                   }`}
@@ -647,7 +687,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         ) : null}
 
         {flow === 'expense' ? (
-          <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
+          <div className="order-4 mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
             <label className="flex items-center justify-between gap-3 text-xs font-semibold text-emerald-100">
               <span>Desconto/estorno na fatura</span>
               <input
@@ -660,13 +700,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               />
             </label>
             {isInvoiceCredit ? (
-              <p className="mt-2 text-[11px] font-medium text-emerald-100/80">Use para devolucoes e creditos do cartao. O valor reduz a fatura e nao vira receita.</p>
+              <p className="mt-2 text-[11px] font-medium text-emerald-100/80">Use para devoluções e créditos do cartão. O valor reduz a fatura e não vira receita.</p>
             ) : null}
           </div>
         ) : null}
 
         {flow === 'expense' && !isReimbursable && !isInvoiceCredit ? (
-          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
+          <div className="order-3 mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
             {expenseNeedOptions.map((option) => (
               <button
                 key={option.id}
@@ -684,7 +724,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         ) : null}
 
         {flow === 'expense' && !isInvoiceCredit ? (
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="order-5 mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-3">
             <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300">
               <span className="flex items-center gap-2">
                 <UserRound size={15} className="text-amber-200" />
@@ -701,7 +741,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
             </label>
             {isReimbursable ? (
               <div className="mt-3 grid gap-3">
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3">
                   <label className="grid gap-1 text-xs font-semibold text-slate-400">
                     Quem deve
                     <select value={reimbursementPersonId} onChange={(event) => setReimbursementPersonId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300">
@@ -770,7 +810,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         ) : null}
 
         {transaction && isGroupedTransaction ? (
-          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2">
+          <div className="order-6 mt-4 grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2">
             <button type="button" onClick={() => setEditScope('single')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'single' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
               Apenas esta
             </button>
@@ -780,7 +820,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-4">
+        <div className="order-2 mt-5 grid gap-5">
           {formError ? (
             <p className="flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               <AlertCircle size={16} />
@@ -788,19 +828,48 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
             </p>
           ) : null}
 
-          <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Descrição
-            <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Ex: mercado, salário, pix reserva" className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400" />
+          <label className="grid gap-2 text-sm font-semibold text-slate-200">
+            Título
+            <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-14 rounded-[22px] border border-white/15 bg-white/[0.035] px-4 text-base text-white outline-none transition focus:border-sky-400" />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="grid gap-1 text-xs font-semibold text-slate-400">
+          <label className="grid gap-2 text-sm font-semibold text-slate-200">
+            Descrição
+            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Adicione uma descrição" className="min-h-14 resize-none rounded-[22px] border border-white/15 bg-white/[0.035] px-4 py-4 text-base text-white outline-none transition focus:border-sky-400" />
+          </label>
+
+          <div className="grid gap-3">
+            <label className="grid gap-2 text-sm font-semibold text-slate-200">
               Data
-              <DateInput value={date} onChange={setDate} />
+              <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDate(todayValue)}
+                  className={`h-12 rounded-full border px-4 text-sm font-bold ${
+                    date === todayValue
+                      ? 'border-emerald-400 text-emerald-300'
+                      : 'border-white/15 text-slate-400'
+                  }`}
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDate(yesterdayValue)}
+                  className={`h-12 rounded-full border px-4 text-sm font-medium ${
+                    date === yesterdayValue
+                      ? 'border-emerald-400 text-emerald-300'
+                      : 'border-white/15 text-slate-400'
+                  }`}
+                >
+                  Ontem
+                </button>
+                <DateInput value={date} onChange={setDate} />
+              </div>
             </label>
-            <label className="grid gap-1 text-xs font-semibold text-slate-400">
+            <label className="grid gap-2 text-sm font-semibold text-slate-200">
               Estado
-              <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+              <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
                 <option value="paid">Confirmado</option>
                 <option value="pending">Pendente</option>
               </select>
@@ -808,49 +877,49 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </div>
 
           {flow === 'transfer' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                Origem
-                <select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+            <div className="grid gap-5">
+              <label className="grid gap-2 text-sm font-semibold text-slate-200">
+                Conta origem
+                <select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
                   {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </select>
               </label>
-              <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                Destino
-                <select value={toAccountId} onChange={(event) => setToAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+              <label className="grid gap-2 text-sm font-semibold text-slate-200">
+                Conta destino
+                <select value={toAccountId} onChange={(event) => setToAccountId(event.target.value)} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
                   {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                 </select>
               </label>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-5">
               {flow === 'expense' && isInvoiceCredit ? (
-                <div className="grid gap-1 text-xs font-semibold text-slate-400">
+                <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                   Categoria
-                  <div className="flex h-12 items-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 text-sm font-bold text-emerald-100">
+                  <div className="flex h-14 min-w-0 items-center rounded-[22px] border border-emerald-400/20 bg-emerald-500/10 px-4 text-sm font-bold text-emerald-100">
                     {isCreatingCategory ? 'Preparando Ajustes...' : invoiceAdjustmentCategory?.name ?? INVOICE_ADJUSTMENT_CATEGORY_NAME}
                   </div>
                 </div>
               ) : flow === 'expense' && isReimbursable ? (
-                <div className="grid gap-1 text-xs font-semibold text-slate-400">
+                <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                   Categoria
-                  <div className="flex h-12 items-center rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 text-sm font-bold text-amber-100">
+                  <div className="flex h-14 min-w-0 items-center rounded-[22px] border border-amber-400/20 bg-amber-500/10 px-4 text-sm font-bold text-amber-100">
                     {isPreparingReimbursementCategory ? 'Preparando Reembolsos...' : reimbursementCategory?.name ?? REIMBURSEMENT_CATEGORY_NAME}
                   </div>
                 </div>
               ) : (
-                <label className="grid gap-1 text-xs font-semibold text-slate-400">
+                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                   Categoria
-                  <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+                  <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-14 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
                     <option value="">Selecione</option>
                     {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                   </select>
                 </label>
               )}
               {flow === 'expense' ? (
-                <div className="grid gap-1 text-xs font-semibold text-slate-400 sm:col-span-2">
+                <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                   Origem
-                  <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
+                  <div className="grid min-w-0 grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
                     <button
                       type="button"
                       onClick={() => setSourceType('account')}
@@ -868,18 +937,18 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                     </button>
                   </div>
                   {sourceType === 'account' ? (
-                    <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+                    <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-14 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
                       {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                     </select>
                   ) : (
-                    <select value={cardId} onChange={(event) => setCardId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+                    <select value={cardId} onChange={(event) => setCardId(event.target.value)} className="h-14 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
                       <option value="">Selecione</option>
                       {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
                     </select>
                   )}
                 </div>
               ) : (
-                <label className="grid gap-1 text-xs font-semibold text-slate-400 sm:col-span-2">
+                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                   Conta
                   <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
                     {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
@@ -939,8 +1008,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               ) : null}
               <span className="text-[11px] font-medium text-slate-500">
                 {hasFixedEndDate && fixedEndDate
-                  ? `${fixedDates.length} ocorrencia${fixedDates.length === 1 ? '' : 's'} ser${fixedDates.length === 1 ? 'a' : 'ao'} projetada${fixedDates.length === 1 ? '' : 's'} pela regra.`
-                  : 'A regra sera salva no banco e projetada nos proximos 12 meses.'}
+                  ? `${fixedDates.length} ocorrência${fixedDates.length === 1 ? '' : 's'} ser${fixedDates.length === 1 ? 'á' : 'ão'} projetada${fixedDates.length === 1 ? '' : 's'} pela regra.`
+                  : 'A regra será salva no banco e projetada nos próximos 12 meses.'}
               </span>
             </div>
           ) : null}
@@ -984,16 +1053,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
             </p>
           ) : null}
 
-          <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Observações
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-20 rounded-2xl border border-white/10 bg-white/5 p-4 text-white outline-none focus:border-sky-400" />
-          </label>
         </div>
 
-        <button type="submit" disabled={cannotSubmit || isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-50">
+        <button type="submit" disabled={cannotSubmit || isSaving} className="order-10 mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-50">
           <Check size={18} />
           {isSaving ? 'Salvando...' : 'Salvar lançamento'}
         </button>
+        </div>
       </form>
 
       {isCalculatorOpen ? (

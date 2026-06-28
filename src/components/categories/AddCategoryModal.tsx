@@ -20,6 +20,7 @@ interface AddCategoryModalProps {
   isOpen: boolean;
   categories: Category[];
   category?: Category | null;
+  defaultFlow?: Category['flow'];
   onClose: () => void;
   onSave: (input: Omit<Category, 'id' | 'isSystem'>) => Promise<void>;
 }
@@ -36,7 +37,7 @@ const categoryIcons = [
   { id: 'MoreHorizontal', label: 'Outros', Icon: MoreHorizontal },
 ];
 
-export function AddCategoryModal({ isOpen, categories, category, onClose, onSave }: AddCategoryModalProps) {
+export function AddCategoryModal({ isOpen, categories, category, defaultFlow = 'expense', onClose, onSave }: AddCategoryModalProps) {
   const [name, setName] = useState('');
   const [flow, setFlow] = useState<Category['flow']>('expense');
   const [icon, setIcon] = useState('MoreHorizontal');
@@ -47,12 +48,12 @@ export function AddCategoryModal({ isOpen, categories, category, onClose, onSave
   useEffect(() => {
     if (!isOpen) return;
     setName(category?.name ?? '');
-    setFlow(category?.flow ?? 'expense');
+    setFlow(category?.flow ?? defaultFlow);
     setIcon(category?.icon ?? 'MoreHorizontal');
     setColor(category?.color ?? '#F43F5E');
     setError('');
     setIsSaving(false);
-  }, [category, isOpen]);
+  }, [category, defaultFlow, isOpen]);
 
   if (!isOpen) return null;
 
