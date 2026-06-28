@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { ArrowLeftRight, BarChart3, CreditCard, HandCoins, Home, MoreHorizontal, Plus, User, Wallet } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CreditCard, HandCoins, Home, MoreHorizontal, Plus, Target, User, Wallet } from 'lucide-react';
 import { AppView } from '../../types';
 
 interface BottomNavigationProps {
   currentView: AppView;
+  reimbursementsEnabled: boolean;
   onNavigate: (view: AppView) => void;
   onAdd: () => void;
 }
@@ -17,13 +18,17 @@ const primaryItems = [
 const moreItems = [
   { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
   { id: 'accounts' as const, label: 'Contas', icon: Wallet },
+  { id: 'goals' as const, label: 'Metas', icon: Target },
   { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
   { id: 'profile' as const, label: 'Perfil', icon: User },
 ];
 
-export function BottomNavigation({ currentView, onNavigate, onAdd }: BottomNavigationProps) {
+export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigate, onAdd }: BottomNavigationProps) {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  const isMoreActive = moreItems.some((item) => item.id === currentView);
+  const visibleMoreItems = reimbursementsEnabled
+    ? moreItems
+    : moreItems.filter((item) => item.id !== 'reimbursements');
+  const isMoreActive = visibleMoreItems.some((item) => item.id === currentView);
 
   function handleNavigate(view: AppView) {
     setIsMoreOpen(false);
@@ -34,7 +39,7 @@ export function BottomNavigation({ currentView, onNavigate, onAdd }: BottomNavig
     <nav className="fixed inset-x-0 bottom-0 z-40 h-[72px] border-t border-[#1A1C22] bg-[#0A0B0E]/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:absolute md:rounded-b-[34px]">
       {isMoreOpen ? (
         <div className="absolute bottom-[76px] right-4 w-56 rounded-2xl border border-white/10 bg-[#101319] p-2 shadow-2xl shadow-black/50">
-          {moreItems.map((item) => {
+          {visibleMoreItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentView === item.id;
             return (

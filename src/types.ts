@@ -6,7 +6,7 @@ export type ExpenseNeed = 'essential' | 'superfluous';
 export type ReimbursementStatus = 'pending' | 'received';
 export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
 export type CardNetwork = 'mastercard' | 'visa' | 'elo' | 'other';
-export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'reports' | 'profile';
+export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'goals' | 'reports' | 'profile';
 export type TransactionTab = 'general' | 'cards' | 'accounts';
 export type DashboardTransactionFilter = 'income' | 'expenses' | 'received' | 'paid';
 
@@ -45,6 +45,19 @@ export interface ReimbursementPerson {
   name: string;
   phone?: string;
   notes?: string;
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate?: string;
+  categoryId?: string;
+  imagePath?: string;
+  imageUrl?: string;
+  color: string;
+  status: 'active' | 'completed' | 'archived';
 }
 
 export interface Transaction {
@@ -122,6 +135,7 @@ export interface UserProfile {
   name: string;
   email: string;
   plan: string;
+  reimbursementsEnabled: boolean;
 }
 
 export interface DashboardSummary {

@@ -16,6 +16,7 @@ interface AddEntryModalProps {
   cards: Card[];
   categories: Category[];
   reimbursementPeople: ReimbursementPerson[];
+  reimbursementsEnabled: boolean;
   transaction?: Transaction | null;
   onCreateCategory: (input: Omit<Category, 'id' | 'isSystem'>) => Promise<Category>;
   onCreateReimbursementPerson: (input: Omit<ReimbursementPerson, 'id'>) => Promise<ReimbursementPerson>;
@@ -97,7 +98,8 @@ function evaluateExpression(rawValue: string): number | null {
   }
 }
 
-export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, transaction, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onClose, onSave }: AddEntryModalProps) {
+export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, reimbursementsEnabled, transaction, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onClose, onSave }: AddEntryModalProps) {
+  const canUseReimbursements = reimbursementsEnabled || Boolean(transaction?.isReimbursable);
   const [entryStep, setEntryStep] = useState<'picker' | 'form'>('picker');
   const [flow, setFlow] = useState<MoneyFlow>('expense');
   const [expenseMode, setExpenseMode] = useState<ExpenseEntryMode>('variable');
@@ -659,7 +661,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         </div>
 
         <div className="flex min-h-[calc(100%-12rem)] flex-col rounded-t-[32px] bg-[#0B1017] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:px-5">
-        {flow === 'expense' && !isInvoiceCredit ? (
+        {flow === 'expense' && !isInvoiceCredit && canUseReimbursements ? (
           <div className="order-1 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
             <p className="col-span-3 px-2 pb-1 pt-2 text-sm font-semibold text-slate-200">Tipo de lançamento</p>
             {expenseModes.map((option) => {
@@ -717,9 +719,6 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 {option.label}
               </button>
             ))}
-            {!expenseNeed && !isReimbursable ? (
-              <p className="col-span-2 px-2 pb-1 text-[11px] font-medium text-slate-500">Escolha uma classificação para evitar lançamentos marcados por engano.</p>
-            ) : null}
           </div>
         ) : null}
 

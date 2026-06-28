@@ -4,13 +4,14 @@ import { BottomNavigation } from './BottomNavigation';
 
 interface AppShellProps {
   currentView: AppView;
+  reimbursementsEnabled: boolean;
   onNavigate: (view: AppView) => void;
   onAdd: () => void;
   children: React.ReactNode;
 }
 
-export function AppShell({ currentView, onNavigate, onAdd, children }: AppShellProps) {
-  const contentScrollClass = currentView === 'transactions' || currentView === 'cards' || currentView === 'reimbursements' ? 'overflow-hidden' : 'overflow-y-auto';
+export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd, children }: AppShellProps) {
+  const contentScrollClass = currentView === 'transactions' || currentView === 'cards' || currentView === 'reimbursements' || currentView === 'goals' ? 'overflow-hidden' : 'overflow-y-auto';
 
   return (
     <main className="h-screen overflow-hidden bg-[#050608] text-[#E0E0E0] selection:bg-[#3B82F6] selection:text-white md:flex md:items-center md:justify-center md:p-6">
@@ -18,7 +19,7 @@ export function AppShell({ currentView, onNavigate, onAdd, children }: AppShellP
         <div className={`relative mx-auto flex h-full min-h-0 w-full flex-col pb-24 ${contentScrollClass}`}>
           {children}
         </div>
-        <BottomNavigation currentView={currentView} onNavigate={onNavigate} onAdd={onAdd} />
+        <BottomNavigation currentView={currentView} reimbursementsEnabled={reimbursementsEnabled} onNavigate={onNavigate} onAdd={onAdd} />
       </div>
     </main>
   );
