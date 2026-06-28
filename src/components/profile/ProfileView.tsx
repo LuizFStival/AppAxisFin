@@ -17,7 +17,7 @@ interface ProfileViewProps {
   onAddCard: () => void;
   onEditCard: (card: Card) => void;
   onDeleteCard: (card: Card) => void;
-  onAddCategory: () => void;
+  onAddCategory: (flow: Category['flow']) => void;
   onEditCategory: (category: Category) => void;
   onDeleteCategory: (category: Category) => void;
   onReset: () => void;
@@ -58,6 +58,10 @@ export function ProfileView({
   const [profileName, setProfileName] = useState(user.name);
   const [profileMessage, setProfileMessage] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [categoryFlow, setCategoryFlow] = useState<Category['flow']>('expense');
+  const visibleCategories = categories.filter((category) => category.flow === categoryFlow);
+  const incomeCategoryCount = categories.filter((category) => category.flow === 'income').length;
+  const expenseCategoryCount = categories.filter((category) => category.flow === 'expense').length;
 
   async function handleSaveProfile(event: React.FormEvent) {
     event.preventDefault();
@@ -165,7 +169,7 @@ export function ProfileView({
 
       <section className="mt-5 rounded-[24px] border border-white/8 bg-[#101319] p-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Preferencias</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Preferências</p>
           <h2 className="font-display text-lg font-bold text-white">Uso do app</h2>
         </div>
         <div className="mt-4 grid gap-2">
@@ -254,7 +258,7 @@ export function ProfileView({
             type="button"
             onClick={onAddCard}
             className="flex h-10 w-10 items-center justify-center rounded-2xl border border-violet-400/20 bg-violet-500/10 text-violet-300 transition hover:bg-violet-500/20"
-            aria-label="Adicionar cartao"
+            aria-label="Adicionar cartão"
           >
             <Plus size={18} />
           </button>
@@ -263,7 +267,7 @@ export function ProfileView({
         <div className="mt-4 grid gap-2">
           {cards.length === 0 ? (
             <p className="rounded-2xl border border-white/8 bg-white/[0.03] p-3 text-sm text-slate-500">
-              Nenhum cartao cadastrado.
+              Nenhum cartão cadastrado.
             </p>
           ) : null}
 
@@ -283,7 +287,7 @@ export function ProfileView({
                   type="button"
                   onClick={() => onEditCard(card)}
                   className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 hover:bg-white/5 hover:text-white"
-                  aria-label={`Editar cartao ${card.name}`}
+                  aria-label={`Editar cartão ${card.name}`}
                 >
                   <Pencil size={16} />
                 </button>
@@ -291,7 +295,7 @@ export function ProfileView({
                   type="button"
                   onClick={() => onDeleteCard(card)}
                   className="flex h-9 w-9 items-center justify-center rounded-xl text-rose-300 hover:bg-rose-500/10"
-                  aria-label={`Excluir cartao ${card.name}`}
+                  aria-label={`Excluir cartão ${card.name}`}
                 >
                   <Trash2 size={16} />
                 </button>
@@ -309,7 +313,7 @@ export function ProfileView({
           </div>
           <button
             type="button"
-            onClick={onAddCategory}
+            onClick={() => onAddCategory(categoryFlow)}
             className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-400/20 bg-sky-500/10 text-sky-300 transition hover:bg-sky-500/20"
             aria-label="Adicionar categoria"
           >
@@ -317,8 +321,43 @@ export function ProfileView({
           </button>
         </div>
 
+        <div className="mt-4 grid grid-cols-2 rounded-2xl border border-white/8 bg-black/20 p-1" role="tablist" aria-label="Tipo de categoria">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={categoryFlow === 'income'}
+            onClick={() => setCategoryFlow('income')}
+            className={`rounded-xl px-3 py-2.5 text-sm font-bold transition ${
+              categoryFlow === 'income'
+                ? 'bg-emerald-500/15 text-emerald-200 shadow-sm'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Entradas <span className="ml-1 text-xs opacity-70">{incomeCategoryCount}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={categoryFlow === 'expense'}
+            onClick={() => setCategoryFlow('expense')}
+            className={`rounded-xl px-3 py-2.5 text-sm font-bold transition ${
+              categoryFlow === 'expense'
+                ? 'bg-rose-500/15 text-rose-200 shadow-sm'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Despesas <span className="ml-1 text-xs opacity-70">{expenseCategoryCount}</span>
+          </button>
+        </div>
+
         <div className="mt-4 grid gap-2">
-          {categories.map((category) => (
+          {visibleCategories.length === 0 ? (
+            <p className="rounded-2xl border border-white/8 bg-white/[0.03] p-3 text-sm text-slate-500">
+              Nenhuma categoria de {categoryFlow === 'income' ? 'entrada' : 'despesa'} cadastrada.
+            </p>
+          ) : null}
+
+          {visibleCategories.map((category) => (
             <div key={category.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: category.color }}>

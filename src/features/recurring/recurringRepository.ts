@@ -1,4 +1,6 @@
 import { assertSupabaseConfigured } from '../../lib/supabase/supabaseClient';
+import { addMonths } from '../../lib/utils/date';
+import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { RecurringTransaction, Transaction } from '../../types';
 import { assertCurrentUserId, mapRecurringTransaction } from '../finance/financeStore';
 
@@ -38,5 +40,53 @@ export const recurringRepository = {
 
     if (error) throw error;
     return mapRecurringTransaction(data);
+  },
+
+  async excludeOccurrence(rule: RecurringTransaction, occurrenceDate: string): Promise<void> {
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const meta = readTransactionMeta(rule.notes);
+    const excludedDates = Array.from(new Set([
+      ...(meta.recurringExcludedDates ?? []),
+      occurrenceDate,
+    ])).sort();
+    const notes = writeTransactionNotes(getVisibleNotes(rule.notes), {
+      ...meta,
+      recurringExcludedDates: excludedDates,
+    });
+    const { error } = await client
+      .from('recurring_transactions')
+      .update({ notes: notes ?? null })
+      .eq('id', rule.id)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+  },
+
+  async stopFrom(rule: RecurringTransaction, occurrenceDate: string): Promise<void> {
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+
+    if (occurrenceDate <= rule.startDate) {
+      const { error } = await client
+        .from('recurring_transactions')
+        .delete()
+        .eq('id', rule.id)
+        .eq('user_id', userId);
+      if (error) throw error;
+      return;
+    }
+
+    const previousOccurrenceDate = addMonths(occurrenceDate, -rule.intervalMonths);
+    const endDate = rule.endDate && rule.endDate < previousOccurrenceDate
+      ? rule.endDate
+      : previousOccurrenceDate;
+    const { error } = await client
+      .from('recurring_transactions')
+      .update({ end_date: endDate })
+      .eq('id', rule.id)
+      .eq('user_id', userId);
+
+    if (error) throw error;
   },
 };

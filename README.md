@@ -37,8 +37,13 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 - Cards de resumo do dashboard abrem a lista de transações filtrada.
 - Contas com visão geral e detalhe por conta, incluindo entradas, saídas e transações do mês.
 - Cartões com fatura por ciclo de fechamento, valor atual, status, pagamento de fatura e ações de edição/exclusão.
-- Lançamentos de receita, despesa, transferência, despesa fixa e despesa parcelada.
-- Categorias com ícones visuais, cores, criação, edição e exclusão.
+- Cartões com bandeira e cor personalizáveis, refletidas nos resumos e faturas.
+- Lançamentos de receita, despesa, transferência, despesa fixa recorrente e despesa parcelada.
+- Despesas fixas recorrentes com projeções pendentes, edição de tipo e exclusão somente da ocorrência ou desta em diante.
+- Reembolsos vinculados a pessoas, com estados pendente/recebido e conta de recebimento.
+- Transações mensais separadas entre todas, gastos pessoais e gastos de terceiros, com filtros por tipo e balanço auditável.
+- Balanço mensal com receitas, reembolsos, gastos pessoais e valores de terceiros discriminados.
+- Categorias com ícones, cores, criação, edição, exclusão e separação entre entradas e despesas.
 - Relatórios com gráficos e agrupamentos por categoria.
 - Perfil com atalhos operacionais, cartões e categorias.
 
@@ -53,6 +58,7 @@ src/
     dashboard/
     layout/
     profile/
+    reimbursements/
     reports/
     shared/
     transactions/
@@ -61,6 +67,8 @@ src/
     cards/cardRepository.ts
     categories/categoryRepository.ts
     finance/financeStore.ts
+    recurring/recurringRepository.ts
+    reimbursements/reimbursementRepository.ts
     transactions/transactionRepository.ts
   lib/
     supabase/supabaseClient.ts
@@ -98,6 +106,10 @@ Migrations importantes:
 - `20260609120000_unique_account_card_names_ci.sql`: nomes únicos para contas/cartões por usuário, ignorando caixa e espaços.
 - `20260611195552_enforce_user_owned_finance_refs.sql`: triggers para impedir vínculos financeiros entre usuários diferentes.
 - `20260612022118_unique_category_names_ci.sql`: nomes únicos para categorias por usuário e fluxo.
+- `20260617000546_reimbursements.sql`: pessoas e estados de reembolso vinculados aos lançamentos.
+- `20260617022502_recurring_transactions.sql`: regras persistentes para despesas fixas recorrentes.
+- `20260625010452_sync_account_balances_from_transactions.sql`: sincronização segura de saldos a partir dos lançamentos.
+- `20260625012331_reimbursement_received_account.sql`: conta que recebeu o reembolso.
 
 ## Segurança
 

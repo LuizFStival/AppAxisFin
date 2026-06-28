@@ -30,6 +30,17 @@ const networks: { id: CardNetwork; label: string }[] = [
   { id: 'other', label: 'Outro' },
 ];
 
+const CARD_COLORS = [
+  '#EC7000',
+  '#8A05BE',
+  '#FF7A00',
+  '#CC092F',
+  '#005CA9',
+  '#3B82F6',
+  '#8B5CF6',
+  '#111827',
+];
+
 export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }: AddCardModalProps) {
   const [name, setName] = useState('');
   const [accountId, setAccountId] = useState('');
@@ -37,6 +48,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
   const [closingDay, setClosingDay] = useState('1');
   const [dueDay, setDueDay] = useState('10');
   const [network, setNetwork] = useState<CardNetwork>('mastercard');
+  const [color, setColor] = useState('#8B5CF6');
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -48,6 +60,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
     setClosingDay(String(card?.closingDay ?? 1));
     setDueDay(String(card?.dueDay ?? 10));
     setNetwork(card?.network ?? 'mastercard');
+    setColor(card?.color ?? '#8B5CF6');
     setError('');
     setIsSaving(false);
   }, [accounts, card, isOpen]);
@@ -95,7 +108,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
         limit: parsedLimit,
         closingDay: parsedClosingDay,
         dueDay: parsedDueDay,
-        color: '#8B5CF6',
+        color,
         network,
       });
       onClose();
@@ -184,20 +197,58 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
             </label>
           </div>
 
-          <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Bandeira
-            <select
-              value={network}
-              onChange={(event) => setNetwork(event.target.value as CardNetwork)}
-              className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400"
-            >
+          <fieldset className="grid gap-2">
+            <legend className="text-xs font-semibold text-slate-400">Bandeira</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {networks.map((option) => (
-                <option key={option.id} value={option.id}>
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setNetwork(option.id)}
+                  aria-pressed={network === option.id}
+                  className={`h-11 rounded-xl border text-xs font-bold transition ${
+                    network === option.id
+                      ? 'border-sky-400 bg-sky-400/15 text-sky-100'
+                      : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20'
+                  }`}
+                >
                   {option.label}
-                </option>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </fieldset>
+
+          <fieldset className="grid gap-2">
+            <legend className="text-xs font-semibold text-slate-400">Cor do cartão</legend>
+            <div className="flex flex-wrap items-center gap-2">
+              {CARD_COLORS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setColor(option)}
+                  aria-label={`Selecionar cor ${option}`}
+                  aria-pressed={color === option}
+                  className={`h-9 w-9 rounded-full border-2 transition ${
+                    color === option ? 'scale-110 border-white' : 'border-white/10'
+                  }`}
+                  style={{ backgroundColor: option }}
+                />
+              ))}
+              <label className="relative h-9 w-9 cursor-pointer overflow-hidden rounded-full border-2 border-white/20">
+                <span
+                  className="absolute inset-0"
+                  style={{ background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)' }}
+                />
+                <span className="sr-only">Escolher uma cor personalizada</span>
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(event) => setColor(event.target.value)}
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                />
+              </label>
+            </div>
+          </fieldset>
         </div>
 
         <button

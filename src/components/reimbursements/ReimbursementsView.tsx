@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
 import { Account, Card, ReimbursementPerson, Transaction } from '../../types';
 import { formatCurrency } from '../../lib/utils/finance';
@@ -22,7 +22,7 @@ interface ReimbursementsViewProps {
 type ReimbursementViewMode = 'month' | 'pending' | 'all';
 
 const modeOptions: { id: ReimbursementViewMode; label: string }[] = [
-  { id: 'month', label: 'Mes' },
+  { id: 'month', label: 'Mês' },
   { id: 'pending', label: 'Pendentes' },
   { id: 'all', label: 'Geral' },
 ];
@@ -52,7 +52,41 @@ export function ReimbursementsView({
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
   const [receivingAccountId, setReceivingAccountId] = useState('');
+  const peopleScrollerRef = useRef<HTMLDivElement | null>(null);
+  const peopleDragRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0, didMove: false });
   const today = formatLocalDate(new Date());
+
+  function handlePeoplePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== 'mouse') return;
+    const scroller = peopleScrollerRef.current;
+    if (!scroller) return;
+
+    peopleDragRef.current = {
+      isDragging: true,
+      startX: event.clientX,
+      scrollLeft: scroller.scrollLeft,
+      didMove: false,
+    };
+    scroller.setPointerCapture(event.pointerId);
+  }
+
+  function handlePeoplePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const scroller = peopleScrollerRef.current;
+    const drag = peopleDragRef.current;
+    if (!scroller || !drag.isDragging) return;
+
+    const distance = event.clientX - drag.startX;
+    if (Math.abs(distance) > 4) drag.didMove = true;
+    scroller.scrollLeft = drag.scrollLeft - distance;
+  }
+
+  function handlePeoplePointerEnd(event: React.PointerEvent<HTMLDivElement>) {
+    const scroller = peopleScrollerRef.current;
+    peopleDragRef.current.isDragging = false;
+    if (scroller?.hasPointerCapture(event.pointerId)) {
+      scroller.releasePointerCapture(event.pointerId);
+    }
+  }
 
   const allReimbursements = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -121,7 +155,7 @@ export function ReimbursementsView({
     .reduce((sum, transaction) => sum + transaction.amount, 0);
   const overdueTotal = overduePending.reduce((sum, transaction) => sum + transaction.amount, 0);
   const emptyMessage = mode === 'month'
-    ? 'Nenhum reembolso neste mes'
+    ? 'Nenhum reembolso neste mês'
     : mode === 'pending'
       ? 'Nenhum reembolso pendente'
       : 'Nenhum reembolso registrado';
@@ -185,12 +219,25 @@ export function ReimbursementsView({
 
       {personSummaries.length > 0 ? (
         <section className="mt-3 shrink-0">
-          <div className="no-scrollbar -mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1">
+          <div
+            ref={peopleScrollerRef}
+            onPointerDown={handlePeoplePointerDown}
+            onPointerMove={handlePeoplePointerMove}
+            onPointerUp={handlePeoplePointerEnd}
+            onPointerCancel={handlePeoplePointerEnd}
+            className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-2 active:cursor-grabbing"
+          >
             {personSummaries.map((person) => (
               <button
                 key={person.id}
                 type="button"
-                onClick={() => setSelectedPersonId((current) => current === person.id ? null : person.id)}
+                onClick={() => {
+                  if (peopleDragRef.current.didMove) {
+                    peopleDragRef.current.didMove = false;
+                    return;
+                  }
+                  setSelectedPersonId((current) => current === person.id ? null : person.id);
+                }}
                 aria-pressed={selectedPersonId === person.id}
                 className={`w-[112px] shrink-0 snap-start rounded-2xl border p-3 text-left transition ${
                   selectedPersonId === person.id
@@ -202,7 +249,7 @@ export function ReimbursementsView({
                   <UserRound size={14} />
                 </div>
                 <p className="truncate text-xs font-bold text-white">{person.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{person.count} item{person.count === 1 ? '' : 's'}</p>
+                <p className="mt-0.5 text-[10px] text-slate-500">{person.count} {person.count === 1 ? 'item' : 'itens'}</p>
                 <p className="mt-1.5 truncate font-mono text-[11px] font-bold text-amber-200">{formatCurrency(person.pending)}</p>
               </button>
             ))}
@@ -229,7 +276,7 @@ export function ReimbursementsView({
 
       <label className="mt-3 flex h-10 shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-[#101319] px-3 text-slate-400">
         <Search size={15} />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar pessoa ou lancamento" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar pessoa ou lançamento" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
       </label>
 
       <section className="no-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
@@ -237,7 +284,7 @@ export function ReimbursementsView({
           <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
             <UserRound size={24} className="mx-auto text-slate-500" />
             <p className="mt-3 text-sm font-bold text-white">{emptyMessage}</p>
-            <p className="mt-1 text-xs text-slate-500">Marque uma despesa como reembolso no lancamento.</p>
+            <p className="mt-1 text-xs text-slate-500">Marque uma despesa como reembolso no lançamento.</p>
           </div>
         ) : reimbursementTransactions.map((transaction) => {
           const received = transaction.reimbursementStatus === 'received';
@@ -287,7 +334,7 @@ export function ReimbursementsView({
                         <CheckCircle2 size={14} />
                       </button>
                     ) : null}
-                    <button type="button" onClick={() => onEditTransaction(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-slate-300" title="Editar lancamento">
+                    <button type="button" onClick={() => onEditTransaction(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-slate-300" title="Editar lançamento">
                       <Pencil size={14} />
                     </button>
                   </div>

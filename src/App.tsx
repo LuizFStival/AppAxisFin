@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from './components/layout/AppShell';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { TransactionsView } from './components/transactions/TransactionsView';
@@ -42,6 +42,22 @@ function formatDescriptionForTransactionMeta(description: string, transaction: T
   return `${description.replace(/\s\(\d+\/\d+\)$/, '')} (${meta.installmentNumber}/${meta.totalInstallments})`;
 }
 
+function withoutRecurringOccurrenceMeta(transaction: Omit<Transaction, 'id'>): Omit<Transaction, 'id'> {
+  const {
+    recurringTransactionId: _recurringTransactionId,
+    recurringOccurrenceDate: _recurringOccurrenceDate,
+    recurringExcludedDates: _recurringExcludedDates,
+    ...meta
+  } = readTransactionMeta(transaction.notes);
+
+  return {
+    ...transaction,
+    recurringTransactionId: undefined,
+    recurringOccurrenceDate: undefined,
+    notes: writeTransactionNotes(getVisibleNotes(transaction.notes), meta),
+  };
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('home');
   const [snapshot, setSnapshot] = useState<FinanceSnapshot>(emptyFinanceSnapshot);
@@ -53,6 +69,7 @@ export default function App() {
   const [editingAccount, setEditingAccount] = useState<FinanceSnapshot['accounts'][number] | null>(null);
   const [editingCard, setEditingCard] = useState<FinanceSnapshot['cards'][number] | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [newCategoryFlow, setNewCategoryFlow] = useState<Category['flow']>('expense');
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [selectedCardId, setSelectedCardId] = useState('');
   const [dashboardTransactionFilter, setDashboardTransactionFilter] = useState<DashboardTransactionFilter | null>(null);
@@ -63,6 +80,8 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [appError, setAppError] = useState('');
+  const pendingInvoiceOrderNotesRef = useRef(new Map<string, string | undefined>());
+  const previousViewRef = useRef<AppView>(currentView);
 
   async function loadSnapshot() {
     try {
@@ -87,6 +106,42 @@ export default function App() {
       setAppError(getUserFriendlyError(error, fallback));
     }
   }
+
+  async function flushPendingInvoiceOrder() {
+    const pendingNotes = new Map(pendingInvoiceOrderNotesRef.current);
+    if (pendingNotes.size === 0) return;
+
+    const pendingTransactions = snapshot.transactions.filter((transaction) =>
+      pendingNotes.has(transaction.id) && !transaction.isProjected,
+    );
+    const savedTransactions = await transactionRepository.updateMany(pendingTransactions);
+    const savedById = new Map(savedTransactions.map((transaction) => [transaction.id, transaction]));
+
+    pendingNotes.forEach((notes, id) => {
+      if (pendingInvoiceOrderNotesRef.current.get(id) === notes) {
+        pendingInvoiceOrderNotesRef.current.delete(id);
+      }
+    });
+    setSnapshot((current) => ({
+      ...current,
+      transactions: current.transactions.map((transaction) =>
+        pendingInvoiceOrderNotesRef.current.has(transaction.id)
+          ? transaction
+          : savedById.get(transaction.id) ?? transaction,
+      ),
+    }));
+  }
+
+  useEffect(() => {
+    const previousView = previousViewRef.current;
+    previousViewRef.current = currentView;
+    if (previousView !== 'cards' || currentView === 'cards') return;
+
+    void runAppAction(
+      flushPendingInvoiceOrder,
+      'A nova ordem da fatura ficou nesta tela, mas ainda não foi salva. Entre na fatura e tente sair novamente.',
+    );
+  }, [currentView]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -117,7 +172,7 @@ export default function App() {
       } else if (sessionUser && isRecoveryUrl) {
         setUser({
           id: sessionUser.id,
-          name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuario',
+          name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
           email: sessionUser.email ?? '',
           plan: 'AxisFin',
         });
@@ -138,7 +193,7 @@ export default function App() {
         if (sessionUser) {
           setUser({
             id: sessionUser.id,
-            name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuario',
+            name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
             email: sessionUser.email ?? '',
             plan: 'AxisFin',
           });
@@ -231,6 +286,34 @@ export default function App() {
     }
 
     if (editingTransaction) {
+      const editingMeta = readTransactionMeta(editingTransaction.notes);
+      const recurringTransactionId = editingTransaction.recurringTransactionId ?? editingMeta.recurringTransactionId;
+      const recurringOccurrenceDate = editingTransaction.recurringOccurrenceDate ?? editingMeta.recurringOccurrenceDate;
+      const recurringRule = recurringTransactionId
+        ? snapshot.recurringTransactions.find((rule) => rule.id === recurringTransactionId)
+        : undefined;
+      const nextMeta = readTransactionMeta(transaction.notes);
+
+      if (recurringRule && recurringOccurrenceDate && nextMeta.entryMode === 'variable') {
+        const variableTransaction = withoutRecurringOccurrenceMeta(transaction);
+        if (editingTransaction.isProjected) {
+          const saved = await transactionRepository.create(variableTransaction);
+          try {
+            await recurringRepository.excludeOccurrence(recurringRule, recurringOccurrenceDate);
+          } catch (error) {
+            await transactionRepository.remove(saved.id);
+            throw error;
+          }
+        } else {
+          await recurringRepository.excludeOccurrence(recurringRule, recurringOccurrenceDate);
+          await transactionRepository.update(editingTransaction.id, variableTransaction);
+        }
+        await loadSnapshot();
+        await refreshAccounts();
+        setEditingTransaction(null);
+        return;
+      }
+
       if (editingTransaction.isProjected) {
         const saved = await transactionRepository.create(transaction);
         setSnapshot((current) => ({
@@ -401,7 +484,7 @@ export default function App() {
     const account = snapshot.accounts.find((item) => item.id === input.accountId);
     if (!account) throw new Error('Selecione uma conta valida para pagar a fatura.');
     if (!input.paymentDate) throw new Error('Selecione a data do pagamento.');
-    if (input.amount <= 0 || input.transactions.length === 0) throw new Error('Esta fatura nao tem valor para pagamento.');
+    if (input.amount <= 0 || input.transactions.length === 0) throw new Error('Esta fatura não tem valor para pagamento.');
 
     const updatedAccount = await accountRepository.updateBalance(input.accountId, account.balance - input.amount);
     const paidTransactions = input.transactions.map((transaction) => ({
@@ -433,8 +516,10 @@ export default function App() {
         invoiceSortOrder: (index + 1) * 1000,
       }),
     }));
-    const previousTransactions = snapshot.transactions;
     const optimisticById = new Map(reorderedTransactions.map((transaction) => [transaction.id, transaction]));
+    reorderedTransactions.forEach((transaction) => {
+      if (!transaction.isProjected) pendingInvoiceOrderNotesRef.current.set(transaction.id, transaction.notes);
+    });
 
     setSnapshot((current) => ({
       ...current,
@@ -442,24 +527,6 @@ export default function App() {
         optimisticById.get(transaction.id) ?? transaction,
       ),
     }));
-
-    try {
-      const savedTransactions = await transactionRepository.updateMany(reorderedTransactions);
-      const savedById = new Map(savedTransactions.map((transaction) => [transaction.id, transaction]));
-
-      setSnapshot((current) => ({
-        ...current,
-        transactions: current.transactions.map((transaction) =>
-          savedById.get(transaction.id) ?? transaction,
-        ),
-      }));
-    } catch (error) {
-      setSnapshot((current) => ({
-        ...current,
-        transactions: previousTransactions,
-      }));
-      throw error;
-    }
   }
 
   async function handleUpdateCardClosingDay(card: FinanceSnapshot['cards'][number], closingDay: number) {
@@ -513,12 +580,56 @@ export default function App() {
   }
 
   async function handleDeleteTransaction(transaction: Transaction) {
-    if (transaction.isProjected) {
-      alert('Esta e uma ocorrencia projetada por uma regra fixa. Para remover, edite ou encerre a regra recorrente.');
+    const meta = readTransactionMeta(transaction.notes);
+    const recurringTransactionId = transaction.recurringTransactionId ?? meta.recurringTransactionId;
+    const recurringOccurrenceDate = transaction.recurringOccurrenceDate ?? meta.recurringOccurrenceDate;
+    const recurringRule = recurringTransactionId
+      ? snapshot.recurringTransactions.find((rule) => rule.id === recurringTransactionId)
+      : undefined;
+
+    if (recurringRule && recurringOccurrenceDate) {
+      const choice = window.prompt(
+        `Excluir "${transaction.description}"?\n\nDigite 1 para excluir somente esta ocorrência.\nDigite 2 para excluir esta e todas as próximas ocorrências da despesa fixa.`,
+      );
+      if (choice === null) return;
+
+      if (choice.trim() === '1') {
+        await recurringRepository.excludeOccurrence(recurringRule, recurringOccurrenceDate);
+        if (!transaction.isProjected) {
+          await transactionRepository.remove(transaction.id);
+        }
+        await loadSnapshot();
+        await refreshAccounts();
+        return;
+      }
+
+      if (choice.trim() === '2') {
+        await recurringRepository.stopFrom(recurringRule, recurringOccurrenceDate);
+        const forwardMaterializedIds = snapshot.transactions
+          .filter((item) => !item.isProjected)
+          .filter((item) => {
+            const itemMeta = readTransactionMeta(item.notes);
+            const itemRecurringId = item.recurringTransactionId ?? itemMeta.recurringTransactionId;
+            const itemOccurrenceDate = item.recurringOccurrenceDate ?? itemMeta.recurringOccurrenceDate;
+            return itemRecurringId === recurringRule.id
+              && Boolean(itemOccurrenceDate)
+              && itemOccurrenceDate! >= recurringOccurrenceDate;
+          })
+          .map((item) => item.id);
+        await transactionRepository.removeMany(forwardMaterializedIds);
+        await loadSnapshot();
+        await refreshAccounts();
+        return;
+      }
+
       return;
     }
 
-    const meta = readTransactionMeta(transaction.notes);
+    if (transaction.isProjected) {
+      alert('Não foi possível localizar a regra desta ocorrência fixa. Recarregue o aplicativo e tente novamente.');
+      return;
+    }
+
     const groupedTransactions = meta.seriesId
       ? snapshot.transactions.filter((item) => readTransactionMeta(item.notes).seriesId === meta.seriesId)
       : [];
@@ -577,7 +688,7 @@ export default function App() {
 
   async function handleDeleteCard(card: FinanceSnapshot['cards'][number]) {
     const linkedTransactions = snapshot.transactions.filter((transaction) => transaction.cardId === card.id).length;
-    const confirmed = window.confirm(`Excluir o cartao "${card.name}"? Esta acao apaga o cartao e ${linkedTransactions} lancamento(s) das faturas vinculadas. Nao pode ser desfeita.`);
+    const confirmed = window.confirm(`Excluir o cartão "${card.name}"? Esta ação apaga o cartão e ${linkedTransactions} lançamento(s) das faturas vinculadas. Não pode ser desfeita.`);
     if (!confirmed) return;
 
     try {
@@ -859,8 +970,9 @@ export default function App() {
             setIsAddCardOpen(true);
           }}
           onDeleteCard={handleDeleteCard}
-          onAddCategory={() => {
+          onAddCategory={(flow) => {
             setEditingCategory(null);
+            setNewCategoryFlow(flow);
             setIsAddCategoryOpen(true);
           }}
           onEditCategory={(category) => {
@@ -917,6 +1029,7 @@ export default function App() {
         isOpen={isAddCategoryOpen}
         categories={snapshot.categories}
         category={editingCategory}
+        defaultFlow={newCategoryFlow}
         onClose={() => {
           setIsAddCategoryOpen(false);
           setEditingCategory(null);

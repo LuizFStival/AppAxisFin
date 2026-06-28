@@ -36,7 +36,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
         const { error } = await client.auth.updateUser({ password });
         if (error) throw error;
         setPassword('');
-        setMessage('Senha atualizada. Voce ja pode continuar no app.');
+        setMessage('Senha atualizada. Você já pode continuar no app.');
         onPasswordRecovered?.();
         return;
       }
@@ -44,7 +44,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
       if (mode === 'recover') {
         if (isRecoveryCodeSent) {
           if (password !== confirmPassword) {
-            throw new Error('As senhas nao conferem.');
+            throw new Error('As senhas não conferem.');
           }
 
           const { error: verifyError } = await client.auth.verifyOtp({
@@ -60,7 +60,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
           setPassword('');
           setConfirmPassword('');
           setRecoveryCode('');
-          setMessage('Senha atualizada. Voce ja pode continuar no app.');
+          setMessage('Senha atualizada. Você já pode continuar no app.');
           onPasswordRecovered?.();
           return;
         }
@@ -71,13 +71,13 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
 
         if (error) throw error;
         setIsRecoveryCodeSent(true);
-        setMessage('Enviamos um codigo de recuperacao para o seu email.');
+        setMessage('Enviamos um código de recuperação para o seu e-mail.');
         return;
       }
 
       if (mode === 'signup') {
         if (password !== confirmPassword) {
-          throw new Error('As senhas nao conferem.');
+          throw new Error('As senhas não conferem.');
         }
 
         const { error } = await client.auth.signUp({
@@ -91,7 +91,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
         });
 
         if (error) throw error;
-        setMessage('Cadastro criado. Se o Supabase pedir confirmacao por email, confirme antes de entrar.');
+        setMessage('Cadastro criado. Se o Supabase pedir confirmação por e-mail, confirme antes de entrar.');
       } else {
         const { error } = await client.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -191,7 +191,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
 
               {!isPasswordRecovery && mode === 'recover' && isRecoveryCodeSent ? (
                 <label className="block text-xs font-semibold text-gray-400">
-                  Codigo recebido
+                  Código recebido
                   <input
                     value={recoveryCode}
                     onChange={(event) => setRecoveryCode(event.target.value.trim())}
@@ -199,7 +199,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     className="mt-1 h-12 w-full rounded-2xl border border-[#1A1C22] bg-[#0A0B0E] px-4 text-sm text-white outline-none focus:border-[#3B82F6]"
-                    placeholder="Digite o codigo"
+                    placeholder="Digite o código"
                   />
                 </label>
               ) : null}

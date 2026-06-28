@@ -128,7 +128,7 @@ export function CardInvoiceActions({
             setIsOptionsOpen(true);
           }}
           className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
-          title="Mais opcoes"
+          title="Mais opções"
         >
           <MoreVertical size={16} />
         </button>
@@ -190,7 +190,7 @@ export function CardInvoiceActions({
           <form onSubmit={handleClosingSubmit} className="w-full max-w-md rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="font-display text-lg font-bold text-white">Mais opcoes</h2>
+                <h2 className="font-display text-lg font-bold text-white">Mais opções</h2>
                 <p className="mt-1 text-xs text-slate-500">{card.name}</p>
               </div>
               <button type="button" onClick={() => setIsOptionsOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">
@@ -225,7 +225,7 @@ export function CardInvoiceActions({
                 className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-white/5 font-bold text-white transition hover:bg-white/10"
               >
                 <Pencil size={17} />
-                Editar cartao
+                Editar cartão
               </button>
               <button
                 type="button"
@@ -236,7 +236,7 @@ export function CardInvoiceActions({
                 className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 font-bold text-rose-200 transition hover:bg-rose-500/20"
               >
                 <Trash2 size={17} />
-                Excluir cartao
+                Excluir cartão
               </button>
             </div>
           </form>

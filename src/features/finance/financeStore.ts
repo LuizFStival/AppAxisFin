@@ -201,11 +201,12 @@ function expandRecurringTransactions(rules: RecurringTransaction[], transactions
   return rules.flatMap((rule) => {
     if (!rule.isActive) return [];
     const occurrences: Transaction[] = [];
+    const excludedDates = new Set(readTransactionMeta(rule.notes).recurringExcludedDates ?? []);
     let occurrenceDate = rule.startDate;
     const lastDate = rule.endDate && rule.endDate < endDate ? rule.endDate : endDate;
 
     while (occurrenceDate <= lastDate) {
-      if (occurrenceDate >= startDate) {
+      if (occurrenceDate >= startDate && !excludedDates.has(occurrenceDate)) {
         const occurrenceKey = `${rule.id}:${occurrenceDate}`;
         if (!materializedOccurrences.has(occurrenceKey)) {
           occurrences.push({
