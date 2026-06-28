@@ -41,11 +41,14 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 - Lançamentos de receita, despesa, transferência, despesa fixa recorrente e despesa parcelada.
 - Despesas fixas recorrentes com projeções pendentes, edição de tipo e exclusão somente da ocorrência ou desta em diante.
 - Reembolsos vinculados a pessoas, com estados pendente/recebido e conta de recebimento.
+- Reembolsos são um recurso opcional por usuário, habilitado nas configurações do Perfil.
 - Transações mensais separadas entre todas, gastos pessoais e gastos de terceiros, com filtros por tipo e balanço auditável.
 - Balanço mensal com receitas, reembolsos, gastos pessoais e valores de terceiros discriminados.
 - Categorias com ícones, cores, criação, edição, exclusão e separação entre entradas e despesas.
-- Relatórios com gráficos e agrupamentos por categoria.
+- Relatório detalhado mensal com visão Geral/Apenas meu, totais de entradas e saídas, comparação, balanço, reembolsos, evolução diária e gastos por categoria.
 - Perfil com atalhos operacionais, cartões e categorias.
+- Exportação mensal ou anual de lançamentos em CSV compatível com Excel.
+- Metas financeiras ativas/concluídas com imagem, valor-alvo, categoria/data opcionais e aportes ou retiradas auditáveis.
 
 ## Arquitetura
 
@@ -110,6 +113,8 @@ Migrations importantes:
 - `20260617022502_recurring_transactions.sql`: regras persistentes para despesas fixas recorrentes.
 - `20260625010452_sync_account_balances_from_transactions.sql`: sincronização segura de saldos a partir dos lançamentos.
 - `20260625012331_reimbursement_received_account.sql`: conta que recebeu o reembolso.
+- `20260628223048_add_reimbursements_feature_flag.sql`: preferência por usuário para habilitar reembolsos e gastos de terceiros.
+- `20260628230300_goals_module.sql`: imagens, categorias e movimentações auditáveis das metas.
 
 ## Segurança
 

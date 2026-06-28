@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
-import { Bell, CreditCard, Database, Download, Eye, EyeOff, LogOut, Pencil, Plus, Tags, Trash2, Wallet } from 'lucide-react';
-import { Account, Card, Category, UserProfile } from '../../types';
+import { Bell, Check, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, Plus, Tags, Trash2, Wallet, X } from 'lucide-react';
+import { Account, Card, Category, Transaction, UserProfile } from '../../types';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
+import { getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
+import { getVisibleNotes } from '../../lib/utils/transactionMeta';
 
 interface ProfileViewProps {
   user: UserProfile;
   accounts: Account[];
   cards: Card[];
   categories: Category[];
+  transactions: Transaction[];
   showBalances: boolean;
   onToggleBalances: () => void;
   onUpdateProfile: (input: { name: string }) => Promise<void>;
+  onUpdateReimbursementsEnabled: (enabled: boolean) => Promise<void>;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
@@ -33,14 +37,22 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
+function escapeCsvCell(value: string | number | undefined) {
+  const text = String(value ?? '');
+  const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
+}
+
 export function ProfileView({
   user,
   accounts,
   cards,
   categories,
+  transactions,
   showBalances,
   onToggleBalances,
   onUpdateProfile,
+  onUpdateReimbursementsEnabled,
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
@@ -58,10 +70,72 @@ export function ProfileView({
   const [profileName, setProfileName] = useState(user.name);
   const [profileMessage, setProfileMessage] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isSavingReimbursements, setIsSavingReimbursements] = useState(false);
   const [categoryFlow, setCategoryFlow] = useState<Category['flow']>('expense');
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [exportPeriod, setExportPeriod] = useState<'monthly' | 'annual'>('monthly');
+  const [exportMonth, setExportMonth] = useState(getCurrentMonthKey());
+  const [exportYear, setExportYear] = useState(() => getCurrentMonthKey().slice(0, 4));
   const visibleCategories = categories.filter((category) => category.flow === categoryFlow);
   const incomeCategoryCount = categories.filter((category) => category.flow === 'income').length;
   const expenseCategoryCount = categories.filter((category) => category.flow === 'expense').length;
+  const availableYears = Array.from(new Set([
+    getCurrentMonthKey().slice(0, 4),
+    ...transactions.map((transaction) => getFinancialMonthKey(transaction).slice(0, 4)),
+  ])).sort().reverse();
+
+  function handleExportData() {
+    const periodKey = exportPeriod === 'monthly' ? exportMonth : exportYear;
+    const exportedTransactions = transactions
+      .filter((transaction) => {
+        const transactionMonth = getFinancialMonthKey(transaction);
+        return exportPeriod === 'monthly'
+          ? transactionMonth === exportMonth
+          : transactionMonth.startsWith(`${exportYear}-`);
+      })
+      .sort((left, right) => left.date.localeCompare(right.date));
+
+    const headers = [
+      'Data',
+      'Descrição',
+      'Tipo',
+      'Status',
+      'Valor',
+      'Categoria',
+      'Conta ou cartão',
+      'Reembolsável',
+      'Status do reembolso',
+      'Projetado',
+      'Observações',
+    ];
+    const rows = exportedTransactions.map((transaction) => [
+      transaction.date,
+      transaction.description,
+      transaction.flow === 'income' ? 'Entrada' : transaction.flow === 'expense' ? 'Despesa' : 'Transferência',
+      transaction.status === 'paid' ? 'Confirmado' : 'Pendente',
+      transaction.amount.toFixed(2).replace('.', ','),
+      getCategoryName(categories, transaction.categoryId),
+      getPaymentSource(accounts, cards, transaction),
+      transaction.isReimbursable ? 'Sim' : 'Não',
+      transaction.isReimbursable
+        ? transaction.reimbursementStatus === 'received' ? 'Recebido' : 'Pendente'
+        : '',
+      transaction.isProjected ? 'Sim' : 'Não',
+      getVisibleNotes(transaction.notes),
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => escapeCsvCell(cell)).join(';'))
+      .join('\r\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `axisfin-${periodKey}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setIsExportOpen(false);
+  }
+
 
   async function handleSaveProfile(event: React.FormEvent) {
     event.preventDefault();
@@ -78,6 +152,19 @@ export function ProfileView({
       setProfileMessage(getUserFriendlyError(error, 'Não foi possível atualizar o perfil. Tente novamente.'));
     } finally {
       setIsSavingProfile(false);
+    }
+  }
+
+  async function handleToggleReimbursements() {
+    setProfileMessage('');
+    setIsSavingReimbursements(true);
+    try {
+      await onUpdateReimbursementsEnabled(!user.reimbursementsEnabled);
+      setProfileMessage(`Reembolsos ${user.reimbursementsEnabled ? 'desativados' : 'ativados'}.`);
+    } catch (error) {
+      setProfileMessage(getUserFriendlyError(error, 'Não foi possível alterar o recurso de reembolsos.'));
+    } finally {
+      setIsSavingReimbursements(false);
     }
   }
 
@@ -186,6 +273,27 @@ export function ProfileView({
             </span>
             <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${showBalances ? 'bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-slate-500'}`}>
               {showBalances ? 'Ativo' : 'Oculto'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleToggleReimbursements()}
+            disabled={isSavingReimbursements}
+            className="flex h-14 w-full items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 text-left text-sm font-semibold text-slate-200 hover:bg-white/5 disabled:opacity-60"
+            title="Habilitar ou desabilitar reembolsos e gastos de terceiros"
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${user.reimbursementsEnabled ? 'bg-amber-500/15 text-amber-300' : 'bg-white/5 text-slate-500'}`}>
+                <HandCoins size={17} />
+              </span>
+              <span className="truncate">Reembolsos e terceiros</span>
+            </span>
+            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${
+              user.reimbursementsEnabled
+                ? 'border-emerald-400/15 bg-emerald-500/10 text-emerald-300'
+                : 'border-white/10 bg-white/5 text-slate-500'
+            }`}>
+              {isSavingReimbursements ? 'Salvando' : user.reimbursementsEnabled ? 'Ativo' : 'Inativo'}
             </span>
           </button>
         </div>
@@ -392,7 +500,7 @@ export function ProfileView({
       </section>
 
       <section className="mt-5 grid gap-3 sm:grid-cols-2">
-        <button type="button" className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 font-bold text-slate-200">
+        <button type="button" onClick={() => setIsExportOpen(true)} className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 font-bold text-slate-200">
           <Download size={17} />
           Exportar dados
         </button>
@@ -410,6 +518,59 @@ export function ProfileView({
         <LogOut size={17} />
         Sair da conta
       </button>
+
+      {isExportOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="export-title" className="w-full max-w-lg rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-sky-300">Exportação CSV</p>
+                <h2 id="export-title" className="mt-1 font-display text-lg font-bold text-white">Exportar dados</h2>
+              </div>
+              <button type="button" onClick={() => setIsExportOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400" aria-label="Fechar exportação">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 rounded-2xl border border-white/8 bg-white/[0.03] p-1">
+              <button
+                type="button"
+                onClick={() => setExportPeriod('monthly')}
+                className={`h-11 rounded-xl text-sm font-bold transition ${exportPeriod === 'monthly' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+              >
+                Mensal
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportPeriod('annual')}
+                className={`h-11 rounded-xl text-sm font-bold transition ${exportPeriod === 'annual' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+              >
+                Anual
+              </button>
+            </div>
+
+            <label className="mt-4 grid gap-1.5 text-xs font-semibold text-slate-400">
+              {exportPeriod === 'monthly' ? 'Mês da exportação' : 'Ano da exportação'}
+              {exportPeriod === 'monthly' ? (
+                <input type="month" value={exportMonth} onChange={(event) => setExportMonth(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400" />
+              ) : (
+                <select value={exportYear} onChange={(event) => setExportYear(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400">
+                  {availableYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+              )}
+            </label>
+
+            <p className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-3 text-xs leading-relaxed text-slate-500">
+              O arquivo inclui lançamentos confirmados, pendentes e projetados, além de categorias, origem e reembolsos.
+            </p>
+
+            <button type="button" onClick={handleExportData} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white">
+              <Check size={18} />
+              Baixar CSV
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

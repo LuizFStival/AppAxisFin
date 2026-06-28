@@ -11,6 +11,7 @@ import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
+  reimbursementsEnabled: boolean;
   accounts: Account[];
   cards: Card[];
   categories: Category[];
@@ -105,6 +106,7 @@ function getEntryModeTagClass(transaction: Transaction) {
 
 export function TransactionsView({
   transactions,
+  reimbursementsEnabled,
   accounts,
   cards,
   categories,
@@ -244,7 +246,9 @@ export function TransactionsView({
                 setExpenseScope(scope as ExpenseScope);
                 setExpenseFilter('personal');
               }}
-              options={expenseScopeOptions}
+              options={reimbursementsEnabled
+                ? expenseScopeOptions
+                : expenseScopeOptions.filter((option) => option.id !== 'others')}
             />
             {expenseScope !== 'all' ? (
               <ExpenseFilterChips

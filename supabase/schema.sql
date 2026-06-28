@@ -37,6 +37,7 @@ create table if not exists public.profiles (
   full_name text,
   avatar_url text,
   currency text not null default 'BRL',
+  reimbursements_enabled boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -242,12 +243,57 @@ create table if not exists public.goals (
   name text not null,
   target_amount numeric(14,2) not null check (target_amount > 0),
   current_amount numeric(14,2) not null default 0 check (current_amount >= 0),
+  category_id uuid references public.categories(id) on delete set null,
+  image_path text,
   target_date date,
   color text not null default '#10B981',
   status text not null default 'active' check (status in ('active', 'completed', 'archived')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.goals
+  add constraint goals_id_user_id_unique unique (id, user_id);
+
+create table if not exists public.goal_movements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  goal_id uuid not null,
+  amount numeric(14,2) not null check (amount <> 0),
+  created_at timestamptz not null default now(),
+  constraint goal_movements_goal_owner_fk
+    foreign key (goal_id, user_id) references public.goals(id, user_id) on delete cascade
+);
+
+create or replace function public.apply_goal_movement()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  next_amount numeric(14,2);
+begin
+  select current_amount + new.amount into next_amount
+  from public.goals
+  where id = new.goal_id and user_id = new.user_id
+  for update;
+
+  if next_amount is null then raise exception 'Meta não encontrada para o usuário atual.'; end if;
+  if next_amount < 0 then raise exception 'O valor retirado é maior que o saldo atual da meta.'; end if;
+
+  update public.goals
+  set current_amount = next_amount,
+      status = case when next_amount >= target_amount then 'completed' else 'active' end
+  where id = new.goal_id and user_id = new.user_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists goal_movements_apply_amount on public.goal_movements;
+create trigger goal_movements_apply_amount
+before insert on public.goal_movements
+for each row execute function public.apply_goal_movement();
 
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
@@ -304,6 +350,7 @@ create index if not exists installments_user_id_due_date_idx on public.installme
 create index if not exists installments_transaction_id_idx on public.installments(transaction_id);
 create index if not exists installments_invoice_id_idx on public.installments(invoice_id);
 create index if not exists goals_user_id_idx on public.goals(user_id);
+create index if not exists goal_movements_user_goal_idx on public.goal_movements(user_id, goal_id, created_at desc);
 create index if not exists budgets_user_id_period_idx on public.budgets(user_id, period);
 create index if not exists budgets_category_id_idx on public.budgets(category_id);
 create index if not exists notifications_user_id_created_at_idx on public.notifications(user_id, created_at desc);
@@ -437,6 +484,7 @@ alter table public.recurring_transactions enable row level security;
 alter table public.invoices enable row level security;
 alter table public.installments enable row level security;
 alter table public.goals enable row level security;
+alter table public.goal_movements enable row level security;
 alter table public.budgets enable row level security;
 alter table public.notifications enable row level security;
 
@@ -639,6 +687,18 @@ drop policy if exists goals_delete_own on public.goals;
 create policy goals_delete_own on public.goals
 for delete to authenticated
 using ((select auth.uid()) = user_id);
+
+drop policy if exists goal_movements_select_own on public.goal_movements;
+create policy goal_movements_select_own on public.goal_movements
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists goal_movements_insert_own on public.goal_movements;
+create policy goal_movements_insert_own on public.goal_movements
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
+
+grant select, insert on public.goal_movements to authenticated;
 
 drop policy if exists budgets_select_own on public.budgets;
 create policy budgets_select_own on public.budgets

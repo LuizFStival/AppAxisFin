@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { User } from '@supabase/supabase-js';
 import { AppShell } from './components/layout/AppShell';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { TransactionsView } from './components/transactions/TransactionsView';
@@ -8,6 +9,7 @@ import { AddCardModal } from './components/cards/AddCardModal';
 import { CardsView } from './components/cards/CardsView';
 import { AddCategoryModal } from './components/categories/AddCategoryModal';
 import { ReportsView } from './components/reports/ReportsView';
+import { GoalsView } from './components/goals/GoalsView';
 import { ReimbursementsView } from './components/reimbursements/ReimbursementsView';
 import { ProfileView } from './components/profile/ProfileView';
 import { AccountsView } from './components/accounts/AccountsView';
@@ -18,6 +20,7 @@ import { cardRepository } from './features/cards/cardRepository';
 import { categoryRepository } from './features/categories/categoryRepository';
 import { loadFinanceSnapshot, resetFinanceSnapshot } from './features/finance/financeStore';
 import { reimbursementRepository } from './features/reimbursements/reimbursementRepository';
+import { profileRepository } from './features/profile/profileRepository';
 import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
 import { isSupabaseConfigured, supabase } from './lib/supabase/supabaseClient';
@@ -93,6 +96,26 @@ export default function App() {
     }
   }
 
+  function hydrateUserProfile(sessionUser: User) {
+    setUser({
+      id: sessionUser.id,
+      name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
+      email: sessionUser.email ?? '',
+      plan: 'AxisFin',
+      reimbursementsEnabled: false,
+    });
+
+    void profileRepository.getReimbursementsEnabled(sessionUser.id)
+      .then((reimbursementsEnabled) => {
+        setUser((current) => current.id === sessionUser.id
+          ? { ...current, reimbursementsEnabled }
+          : current);
+      })
+      .catch((error: unknown) => {
+        setAppError(getUserFriendlyError(error, 'Não foi possível carregar suas preferências. Tente novamente.'));
+      });
+  }
+
   async function refreshAccounts() {
     const accounts = await accountRepository.list();
     setSnapshot((current) => ({ ...current, accounts }));
@@ -161,21 +184,11 @@ export default function App() {
       const isRecoveryUrl = hashParams.get('type') === 'recovery' || queryParams.get('type') === 'recovery';
 
       if (sessionUser && !isRecoveryUrl) {
-        setUser({
-          id: sessionUser.id,
-          name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
-          email: sessionUser.email ?? '',
-          plan: 'AxisFin',
-        });
+        hydrateUserProfile(sessionUser);
         setIsAuthenticated(true);
         loadSnapshot();
       } else if (sessionUser && isRecoveryUrl) {
-        setUser({
-          id: sessionUser.id,
-          name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
-          email: sessionUser.email ?? '',
-          plan: 'AxisFin',
-        });
+        hydrateUserProfile(sessionUser);
         setIsPasswordRecovery(true);
         setIsAuthenticated(false);
       }
@@ -191,12 +204,7 @@ export default function App() {
       const sessionUser = session?.user;
       if (event === 'PASSWORD_RECOVERY') {
         if (sessionUser) {
-          setUser({
-            id: sessionUser.id,
-            name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
-            email: sessionUser.email ?? '',
-            plan: 'AxisFin',
-          });
+          hydrateUserProfile(sessionUser);
         }
         setIsPasswordRecovery(true);
         setIsAuthenticated(false);
@@ -206,12 +214,7 @@ export default function App() {
       setIsAuthenticated(Boolean(sessionUser));
       if (sessionUser) {
         setIsPasswordRecovery(false);
-        setUser({
-          id: sessionUser.id,
-          name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
-          email: sessionUser.email ?? '',
-          plan: 'AxisFin',
-        });
+        hydrateUserProfile(sessionUser);
         loadSnapshot();
       }
     });
@@ -579,6 +582,12 @@ export default function App() {
     }));
   }
 
+  async function handleUpdateReimbursementsEnabled(enabled: boolean) {
+    await profileRepository.updateReimbursementsEnabled(user.id, enabled);
+    setUser((current) => ({ ...current, reimbursementsEnabled: enabled }));
+    if (!enabled && currentView === 'reimbursements') setCurrentView('profile');
+  }
+
   async function handleDeleteTransaction(transaction: Transaction) {
     const meta = readTransactionMeta(transaction.notes);
     const recurringTransactionId = transaction.recurringTransactionId ?? meta.recurringTransactionId;
@@ -763,6 +772,7 @@ export default function App() {
   return (
     <AppShell
       currentView={currentView}
+      reimbursementsEnabled={user.reimbursementsEnabled}
       onNavigate={(view) => {
         setCurrentView(view);
         setDashboardTransactionFilter(null);
@@ -892,6 +902,7 @@ export default function App() {
       {currentView === 'transactions' ? (
         <TransactionsView
           transactions={snapshot.transactions}
+          reimbursementsEnabled={user.reimbursementsEnabled}
           accounts={snapshot.accounts}
           cards={snapshot.cards}
           categories={snapshot.categories}
@@ -939,8 +950,14 @@ export default function App() {
           month={activeMonth}
           transactions={snapshot.transactions}
           categories={snapshot.categories}
-          summary={summary}
+          onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
+          onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
+          onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
         />
+      ) : null}
+
+      {currentView === 'goals' ? (
+        <GoalsView categories={snapshot.categories} />
       ) : null}
 
       {currentView === 'profile' ? (
@@ -949,9 +966,11 @@ export default function App() {
           accounts={snapshot.accounts}
           cards={snapshot.cards}
           categories={snapshot.categories}
+          transactions={snapshot.transactions}
           showBalances={showBalances}
           onToggleBalances={() => setShowBalances((value) => !value)}
           onUpdateProfile={handleUpdateProfile}
+          onUpdateReimbursementsEnabled={handleUpdateReimbursementsEnabled}
           onAddAccount={() => {
             setEditingAccount(null);
             setIsAddAccountOpen(true);
@@ -991,6 +1010,7 @@ export default function App() {
         cards={snapshot.cards}
         categories={snapshot.categories}
         reimbursementPeople={snapshot.reimbursementPeople}
+        reimbursementsEnabled={user.reimbursementsEnabled}
         transaction={editingTransaction}
         onCreateCategory={handleCreateCategoryFromEntry}
         onCreateReimbursementPerson={handleCreateReimbursementPerson}

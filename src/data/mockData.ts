@@ -5,6 +5,7 @@ export const mockUser: UserProfile = {
   name: 'Usuário',
   email: '',
   plan: 'AxisFin',
+  reimbursementsEnabled: true,
 };
 
 export const mockCategories: Category[] = [

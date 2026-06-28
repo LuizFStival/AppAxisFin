@@ -23,6 +23,19 @@ Estado funcional consolidado:
 - Cartoes possuem bandeira e cor configuraveis; a cor salva e usada nos cards e indicadores da fatura.
 - Categorias no Perfil sao separadas entre Entradas e Despesas, incluindo o contexto correto ao criar uma nova categoria.
 - A navegacao mobile mantem quatro atalhos principais e concentra destinos secundarios em `Mais`.
+- A tela de Relatorios usa uma visao detalhada mensal com comparacao ao mes anterior.
+- O relatorio separa receitas, despesas pessoais, valores de terceiros, reembolsos pendentes/concluidos, gastos em conta e gastos no cartao.
+- O balanco do relatorio apresenta total de entradas, total de saidas e resultado, sem incluir despesas de terceiros no consumo pessoal.
+- O seletor `Geral` / `Apenas meu` recalcula os totais e oculta reembolsos e valores de terceiros na visao pessoal.
+- A evolucao diaria compara receitas e despesas pessoais; o grafico de categorias tambem exclui despesas reembolsaveis.
+- Periodos sem dados exibem estados vazios explicitos em vez de graficos enganosos.
+- O Perfil permite exportar lancamentos em CSV por mes ou ano, incluindo status, origem, categoria, reembolso e indicacao de projecao.
+- Reembolsos e gastos de terceiros sao um modulo opcional persistido em `profiles.reimbursements_enabled`.
+- Contas existentes permanecem com o recurso ativo por compatibilidade; novas contas iniciam com o recurso desativado.
+- Quando desativado, o app oculta o atalho de Reembolsos, o filtro `Dos outros` e os campos de gasto de terceiros, sem excluir registros historicos.
+- Metas possuem estados ativa/concluida, titulo, valor-alvo, imagem e categoria/data final opcionais.
+- Aportes e retiradas sao registrados em `goal_movements`; um trigger atualiza o saldo e conclui ou reabre a meta automaticamente.
+- Imagens de metas ficam no bucket privado `goal-images`, isoladas por pasta do usuario.
 
 Regras financeiras reafirmadas:
 
