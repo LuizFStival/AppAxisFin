@@ -11,7 +11,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd, children }: AppShellProps) {
-  const contentScrollClass = currentView === 'transactions' || currentView === 'cards' || currentView === 'reimbursements' || currentView === 'goals' ? 'overflow-hidden' : 'overflow-y-auto';
+  const contentScrollClass = currentView === 'transactions' || currentView === 'cards' || currentView === 'reimbursements' || currentView === 'goals' || currentView === 'notifications' ? 'overflow-hidden' : 'overflow-y-auto';
 
   return (
     <main className="h-screen overflow-hidden bg-[#050608] text-[#E0E0E0] selection:bg-[#3B82F6] selection:text-white md:flex md:items-center md:justify-center md:p-6">

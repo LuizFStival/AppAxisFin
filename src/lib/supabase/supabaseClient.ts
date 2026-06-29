@@ -40,11 +40,11 @@ export const supabase = isSupabaseConfigured
 
 export function assertSupabaseConfigured() {
   if (hasSupabaseSecretKeyInClient) {
-    throw new Error('A Vercel esta usando uma chave secreta do Supabase. Troque VITE_SUPABASE_ANON_KEY por uma chave publica anon ou publishable.');
+    throw new Error('A Vercel está usando uma chave secreta do Supabase. Troque VITE_SUPABASE_ANON_KEY por uma chave pública anon ou publishable.');
   }
 
   if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Supabase ainda nao configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
+    throw new Error('Supabase ainda não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
   }
 
   return supabase;

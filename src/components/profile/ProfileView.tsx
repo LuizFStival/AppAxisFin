@@ -12,7 +12,9 @@ interface ProfileViewProps {
   categories: Category[];
   transactions: Transaction[];
   showBalances: boolean;
+  notificationCount: number;
   onToggleBalances: () => void;
+  onOpenNotifications: () => void;
   onUpdateProfile: (input: { name: string }) => Promise<void>;
   onUpdateReimbursementsEnabled: (enabled: boolean) => Promise<void>;
   onAddAccount: () => void;
@@ -50,7 +52,9 @@ export function ProfileView({
   categories,
   transactions,
   showBalances,
+  notificationCount,
   onToggleBalances,
+  onOpenNotifications,
   onUpdateProfile,
   onUpdateReimbursementsEnabled,
   onAddAccount,
@@ -241,17 +245,17 @@ export function ProfileView({
           </form>
         ) : null}
 
-        <div className="mt-5 flex items-center justify-between rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+        <button type="button" onClick={onOpenNotifications} className="mt-5 flex w-full items-center justify-between rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3 text-left">
           <span className="flex items-center gap-3 text-sm font-semibold text-slate-500">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-500">
               <Bell size={17} />
             </span>
-            Notificacoes
+            Notificações
           </span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            Em breve
+          <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${notificationCount > 0 ? 'bg-rose-500 text-white' : 'border border-emerald-400/20 bg-emerald-500/10 text-emerald-300'}`}>
+            {notificationCount > 0 ? notificationCount : 'Em dia'}
           </span>
-        </div>
+        </button>
       </section>
 
       <section className="mt-5 rounded-[24px] border border-white/8 bg-[#101319] p-4">

@@ -11,8 +11,8 @@ interface BottomNavigationProps {
 
 const primaryItems = [
   { id: 'home' as const, label: 'Home', icon: Home },
-  { id: 'transactions' as const, label: 'Transacoes', icon: ArrowLeftRight },
-  { id: 'cards' as const, label: 'Cartoes', icon: CreditCard },
+  { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
+  { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
 ];
 
 const moreItems = [

@@ -316,6 +316,8 @@ create table if not exists public.notifications (
   read_at timestamptz,
   scheduled_for timestamptz,
   metadata jsonb not null default '{}'::jsonb,
+  source_key text,
+  action_view text check (action_view in ('transactions', 'cards', 'reimbursements')),
   created_at timestamptz not null default now()
 );
 
@@ -354,6 +356,11 @@ create index if not exists goal_movements_user_goal_idx on public.goal_movements
 create index if not exists budgets_user_id_period_idx on public.budgets(user_id, period);
 create index if not exists budgets_category_id_idx on public.budgets(category_id);
 create index if not exists notifications_user_id_created_at_idx on public.notifications(user_id, created_at desc);
+create unique index if not exists notifications_user_source_key_unique
+on public.notifications (user_id, source_key);
+create index if not exists notifications_user_unread_idx
+on public.notifications (user_id, created_at desc)
+where read_at is null;
 
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at
@@ -721,6 +728,10 @@ create policy budgets_delete_own on public.budgets
 for delete to authenticated
 using ((select auth.uid()) = user_id);
 
+revoke all privileges on table public.budgets from anon;
+revoke all privileges on table public.budgets from authenticated;
+grant select, insert, update, delete on table public.budgets to authenticated;
+
 drop policy if exists notifications_select_own on public.notifications;
 create policy notifications_select_own on public.notifications
 for select to authenticated
@@ -1022,3 +1033,63 @@ drop trigger if exists budgets_validate_owner_refs on public.budgets;
 create trigger budgets_validate_owner_refs
 before insert or update on public.budgets
 for each row execute function public.validate_budget_owner_refs();
+
+create or replace function public.validate_goal_owner_refs()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  perform public.assert_owned_category(new.category_id, new.user_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists goals_validate_owner_refs on public.goals;
+create trigger goals_validate_owner_refs
+before insert or update of user_id, category_id on public.goals
+for each row execute function public.validate_goal_owner_refs();
+
+alter function public.set_updated_at() set search_path = public, pg_temp;
+alter function public.assert_owned_account(uuid, uuid) set search_path = public, pg_temp;
+alter function public.assert_owned_card(uuid, uuid) set search_path = public, pg_temp;
+alter function public.assert_owned_category(uuid, uuid) set search_path = public, pg_temp;
+alter function public.assert_owned_transaction(uuid, uuid) set search_path = public, pg_temp;
+alter function public.assert_owned_invoice(uuid, uuid) set search_path = public, pg_temp;
+alter function public.assert_owned_reimbursement_person(uuid, uuid) set search_path = public, pg_temp;
+alter function public.validate_card_owner_refs() set search_path = public, pg_temp;
+alter function public.validate_transaction_owner_refs() set search_path = public, pg_temp;
+alter function public.validate_recurring_transaction_owner_refs() set search_path = public, pg_temp;
+alter function public.validate_invoice_owner_refs() set search_path = public, pg_temp;
+alter function public.validate_installment_owner_refs() set search_path = public, pg_temp;
+alter function public.validate_budget_owner_refs() set search_path = public, pg_temp;
+alter function public.sync_account_balance_from_transaction() set search_path = public, pg_temp;
+
+revoke execute on function public.create_profile_for_new_user() from public, anon, authenticated;
+revoke execute on function public.validate_goal_owner_refs() from public, anon, authenticated;
+
+do $$
+declare
+  table_name text;
+  finance_tables constant text[] := array[
+    'profiles', 'accounts', 'cards', 'categories', 'reimbursement_people',
+    'transactions', 'recurring_transactions', 'invoices', 'installments',
+    'goals', 'goal_movements', 'budgets', 'notifications'
+  ];
+begin
+  foreach table_name in array finance_tables loop
+    execute format('revoke all privileges on table public.%I from anon', table_name);
+    execute format('revoke all privileges on table public.%I from authenticated', table_name);
+  end loop;
+end;
+$$;
+
+grant select, insert, update, delete on table
+  public.accounts, public.cards, public.categories,
+  public.reimbursement_people, public.transactions, public.recurring_transactions,
+  public.invoices, public.installments, public.goals, public.budgets,
+  public.notifications
+to authenticated;
+
+grant select, update on table public.profiles to authenticated;
+grant select, insert on table public.goal_movements to authenticated;

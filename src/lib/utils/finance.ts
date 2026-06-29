@@ -112,7 +112,7 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
     received,
     paid,
     pendingIncome: roundMoney(income - received),
-    pendingExpenses: roundMoney(expenses - paid),
+    pendingExpenses: roundMoney(Math.max(0, expenses - paid)),
     reimbursementsPending: roundMoney(reimbursementTransactions
       .filter((transaction) => transaction.reimbursementStatus !== 'received')
       .reduce((sum, transaction) => sum + transaction.amount, 0)),

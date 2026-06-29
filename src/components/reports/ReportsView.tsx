@@ -42,6 +42,7 @@ import {
   shiftMonthKey,
 } from '../../lib/utils/finance';
 import { MonthNavigator } from '../shared/MonthNavigator';
+import { BudgetSection } from './BudgetSection';
 
 interface ReportsViewProps {
   month: string;
@@ -367,6 +368,8 @@ export function ReportsView({
           )}
         </div>
       </section>
+
+      <BudgetSection month={month} transactions={transactions} categories={categories} />
 
       <section className="mt-5 rounded-[24px] border border-white/8 bg-[#101319] p-5">
         <div>

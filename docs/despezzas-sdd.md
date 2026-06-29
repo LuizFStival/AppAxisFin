@@ -1,16 +1,24 @@
 # SDD - AxisFin
 
-Versao: 1.1  
+Versão: 1.2
 Status: documento vivo do produto  
 Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel  
 
-## Status de Atualizacao - 2026-06-28
+## Status de atualização - 2026-06-28
 
-Checkpoint aplicado antes da reformulacao da tela de Relatorios.
+Checkpoint aplicado antes da reformulação da tela de Relatórios.
 
 Estado funcional consolidado:
 
-- A tela de Transacoes exibe receitas, despesas e transferencias do mes e separa os escopos `Todas`, `Meus gastos` e `Dos outros`.
+- Telas e modais secundários usam carregamento sob demanda; Relatórios e sua biblioteca de gráficos não fazem parte do bundle inicial.
+- Autenticação/sessão e ordenação persistente da fatura ficam isoladas em hooks próprios, reduzindo as responsabilidades diretas de `App.tsx`.
+- Relatórios permitem definir orçamentos mensais por categoria, mostram usado/disponível/percentual, comparam o consumo ao mês anterior e alertam nos marcos de 70%, 90% e 100%.
+- O consumo do orçamento considera apenas despesas pessoais; gastos reembolsáveis de terceiros ficam explicitamente excluídos.
+- A suíte automatizada descobre todos os testes `*.test.ts` e cobre cálculos, faturas, reembolsos, orçamentos, metadados e invariantes de segurança do schema.
+- Papéis do frontend não recebem `TRUNCATE`, `TRIGGER` ou `REFERENCES`; `anon` não possui privilégios nas tabelas financeiras e `authenticated` recebe somente as operações usadas por cada recurso.
+- A central de notificações é aberta pelo sino com badge no cabeçalho da Home, sincroniza despesas pendentes, faturas e reembolsos atrasados, persiste leitura e abre a tela de origem; alertas resolvidos são removidos na sincronização seguinte.
+- O Dashboard calcula a previsão de caixa de 30 dias a partir do saldo atual, receitas pendentes, despesas fixas pendentes e reembolsos esperados, sem recontar valores já realizados.
+- A tela de Transações exibe receitas, despesas e transferências do mês e separa os escopos `Todas`, `Meus gastos` e `Dos outros`.
 - Em `Meus gastos`, os filtros variavel, fixa, parcelada, essencial e superflua consideram somente consumo pessoal.
 - Em `Dos outros`, os filtros variavel, fixa e parcelada consideram somente despesas reembolsaveis.
 - O balanco mensal explicita total de entradas, total de gastos e sua composicao. Reembolsos ficam discriminados entre pendentes e concluidos.
@@ -80,7 +88,7 @@ Decisoes atuais que passam a valer:
 - Dados financeiros de usuario nao podem ser persistidos em `localStorage`, session storage ou mock local. Contas, cartoes, lancamentos e saldos devem ser gravados e lidos pelo Supabase.
 - Dados mockados ficam restritos a constantes nao sensiveis de interface, como categorias iniciais do sistema, e nao podem criar contas, cartoes ou transacoes para o usuario.
 - Supabase e a fonte de verdade para toda informacao financeira do usuario.
-- A sessao de autenticacao no navegador deve usar chave propria do AxisFin e preferir `sessionStorage` a `localStorage`, reduzindo persistencia local de tokens em maquinas compartilhadas.
+- A sessão de autenticação no navegador usa a chave própria `axisfin.auth.session` em `localStorage`, mantendo o login entre reinicializações do navegador. Dados financeiros não são armazenados localmente.
 - Variaveis `VITE_` expostas no navegador devem usar apenas chaves publicas do Supabase (`sb_publishable_...` ou legacy `anon public`); chaves `sb_secret_...` devem ser bloqueadas no cliente.
 - O app deve coletar metricas de performance em producao com Vercel Speed Insights, sem capturar dados financeiros do usuario.
 - Toda tabela financeira deve ter RLS por `user_id` e toda referencia entre tabelas deve validar que o registro referenciado pertence ao mesmo usuario.
@@ -109,11 +117,12 @@ Atualizacao tecnica aplicada:
 - `src/features/finance/financeStore.ts` centraliza snapshot, autenticacao, bootstrap de categorias e leitura agregada, sem fallback de persistencia local para dados financeiros.
 - `accountRepository`, `cardRepository` e `transactionRepository` fazem suas proprias escritas exclusivamente no Supabase e exigem usuario autenticado.
 - `categoryRepository` tambem expoe `list`, `create`, `update` e `remove`, com escrita exclusiva no Supabase e isolamento por usuario.
-- `src/lib/supabase/supabaseClient.ts` usa `axisfin.auth.session` em `sessionStorage` para a sessao do Supabase; dados financeiros continuam fora do storage do navegador.
+- `src/lib/supabase/supabaseClient.ts` usa `axisfin.auth.session` em `localStorage` para a sessão do Supabase; dados financeiros continuam fora do storage do navegador.
 - `src/lib/supabase/supabaseClient.ts` bloqueia inicializacao com chave Supabase `sb_secret_...` em ambiente client-side e orienta trocar por chave publica.
 - `@vercel/speed-insights` foi adicionado e `<SpeedInsights />` e renderizado em `src/main.tsx` para medir performance do deploy na Vercel.
 - `supabase/migrations/20260611195552_enforce_user_owned_finance_refs.sql` adiciona triggers para impedir que cards, transacoes, faturas, parcelas e orcamentos apontem para registros de outro usuario.
 - `supabase/migrations/20260612022118_unique_category_names_ci.sql` adiciona unicidade case-insensitive para categorias por usuario e fluxo.
+- `supabase/migrations/20260629003000_harden_database_functions_and_goal_refs.sql` restringe funções internas, fixa `search_path` e impede metas de referenciarem categorias de outro usuário.
 - `src/lib/utils/finance.test.ts` valida os calculos financeiros puros e deve crescer junto com novas regras.
 - `npm.cmd run test` passa a ser verificacao obrigatoria junto com `lint` e `build` quando a mudanca tocar calculos financeiros.
 - `src/components/shared/BankLogo.tsx` concentra a lista inicial de bancos e a representacao visual usada nas contas.

@@ -1,30 +1,35 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { User } from '@supabase/supabase-js';
+import React, { Suspense, useMemo, useState } from 'react';
 import { AppShell } from './components/layout/AppShell';
-import { DashboardView } from './components/dashboard/DashboardView';
-import { TransactionsView } from './components/transactions/TransactionsView';
-import { AddEntryModal } from './components/transactions/AddEntryModal';
-import { AddAccountModal } from './components/accounts/AddAccountModal';
-import { AddCardModal } from './components/cards/AddCardModal';
-import { CardsView } from './components/cards/CardsView';
-import { AddCategoryModal } from './components/categories/AddCategoryModal';
-import { ReportsView } from './components/reports/ReportsView';
-import { GoalsView } from './components/goals/GoalsView';
-import { ReimbursementsView } from './components/reimbursements/ReimbursementsView';
-import { ProfileView } from './components/profile/ProfileView';
-import { AccountsView } from './components/accounts/AccountsView';
 import { AuthView } from './components/auth/AuthView';
-import { mockUser } from './data/mockData';
+import {
+  AccountsView,
+  AddAccountModal,
+  AddCardModal,
+  AddCategoryModal,
+  AddEntryModal,
+  CardsView,
+  DashboardView,
+  GoalsView,
+  ModalLoadingFallback,
+  NotificationsView,
+  ProfileView,
+  ReimbursementsView,
+  ReportsView,
+  TransactionsView,
+  ViewLoadingFallback,
+} from './components/app/lazyComponents';
 import { accountRepository } from './features/accounts/accountRepository';
+import { useAuthSession } from './features/auth/useAuthSession';
 import { cardRepository } from './features/cards/cardRepository';
+import { useInvoiceOrdering } from './features/cards/useInvoiceOrdering';
 import { categoryRepository } from './features/categories/categoryRepository';
 import { loadFinanceSnapshot, resetFinanceSnapshot } from './features/finance/financeStore';
 import { reimbursementRepository } from './features/reimbursements/reimbursementRepository';
 import { profileRepository } from './features/profile/profileRepository';
+import { useNotifications } from './features/notifications/useNotifications';
 import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
-import { isSupabaseConfigured, supabase } from './lib/supabase/supabaseClient';
-import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, Transaction, UserProfile } from './types';
+import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, Transaction } from './types';
 import { getCurrentMonthKey, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
 import { addMonths } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
@@ -78,13 +83,7 @@ export default function App() {
   const [dashboardTransactionFilter, setDashboardTransactionFilter] = useState<DashboardTransactionFilter | null>(null);
   const [showBalances, setShowBalances] = useState(true);
   const [activeMonth, setActiveMonth] = useState(getCurrentMonthKey);
-  const [isAuthLoading, setIsAuthLoading] = useState(isSupabaseConfigured);
-  const [user, setUser] = useState<UserProfile>(mockUser);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [appError, setAppError] = useState('');
-  const pendingInvoiceOrderNotesRef = useRef(new Map<string, string | undefined>());
-  const previousViewRef = useRef<AppView>(currentView);
 
   async function loadSnapshot() {
     try {
@@ -96,25 +95,28 @@ export default function App() {
     }
   }
 
-  function hydrateUserProfile(sessionUser: User) {
-    setUser({
-      id: sessionUser.id,
-      name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
-      email: sessionUser.email ?? '',
-      plan: 'AxisFin',
-      reimbursementsEnabled: false,
-    });
-
-    void profileRepository.getReimbursementsEnabled(sessionUser.id)
-      .then((reimbursementsEnabled) => {
-        setUser((current) => current.id === sessionUser.id
-          ? { ...current, reimbursementsEnabled }
-          : current);
-      })
-      .catch((error: unknown) => {
-        setAppError(getUserFriendlyError(error, 'Não foi possível carregar suas preferências. Tente novamente.'));
-      });
-  }
+  const {
+    finishPasswordRecovery,
+    isAuthenticated,
+    isAuthLoading,
+    isPasswordRecovery,
+    setUser,
+    signOut,
+    updateAuthName,
+    user,
+  } = useAuthSession({ loadFinance: loadSnapshot, setAppError });
+  const {
+    error: notificationError,
+    markAllRead,
+    markRead,
+    notifications,
+    unreadCount,
+  } = useNotifications({
+    cards: snapshot.cards,
+    enabled: isAuthenticated,
+    reimbursementsEnabled: user.reimbursementsEnabled,
+    transactions: snapshot.transactions,
+  });
 
   async function refreshAccounts() {
     const accounts = await accountRepository.list();
@@ -130,97 +132,12 @@ export default function App() {
     }
   }
 
-  async function flushPendingInvoiceOrder() {
-    const pendingNotes = new Map(pendingInvoiceOrderNotesRef.current);
-    if (pendingNotes.size === 0) return;
-
-    const pendingTransactions = snapshot.transactions.filter((transaction) =>
-      pendingNotes.has(transaction.id) && !transaction.isProjected,
-    );
-    const savedTransactions = await transactionRepository.updateMany(pendingTransactions);
-    const savedById = new Map(savedTransactions.map((transaction) => [transaction.id, transaction]));
-
-    pendingNotes.forEach((notes, id) => {
-      if (pendingInvoiceOrderNotesRef.current.get(id) === notes) {
-        pendingInvoiceOrderNotesRef.current.delete(id);
-      }
-    });
-    setSnapshot((current) => ({
-      ...current,
-      transactions: current.transactions.map((transaction) =>
-        pendingInvoiceOrderNotesRef.current.has(transaction.id)
-          ? transaction
-          : savedById.get(transaction.id) ?? transaction,
-      ),
-    }));
-  }
-
-  useEffect(() => {
-    const previousView = previousViewRef.current;
-    previousViewRef.current = currentView;
-    if (previousView !== 'cards' || currentView === 'cards') return;
-
-    void runAppAction(
-      flushPendingInvoiceOrder,
-      'A nova ordem da fatura ficou nesta tela, mas ainda não foi salva. Entre na fatura e tente sair novamente.',
-    );
-  }, [currentView]);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      loadSnapshot();
-      return;
-    }
-
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (error) {
-        setAppError(getUserFriendlyError(error, 'Não foi possível verificar sua sessão. Entre novamente.'));
-        setIsAuthLoading(false);
-        return;
-      }
-      const sessionUser = data.session?.user;
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-      const queryParams = new URLSearchParams(window.location.search);
-      const isRecoveryUrl = hashParams.get('type') === 'recovery' || queryParams.get('type') === 'recovery';
-
-      if (sessionUser && !isRecoveryUrl) {
-        hydrateUserProfile(sessionUser);
-        setIsAuthenticated(true);
-        loadSnapshot();
-      } else if (sessionUser && isRecoveryUrl) {
-        hydrateUserProfile(sessionUser);
-        setIsPasswordRecovery(true);
-        setIsAuthenticated(false);
-      }
-      setIsAuthLoading(false);
-    }).catch((error: unknown) => {
-      setAppError(getUserFriendlyError(error, 'Não foi possível verificar sua sessão. Entre novamente.'));
-      setIsAuthLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      const sessionUser = session?.user;
-      if (event === 'PASSWORD_RECOVERY') {
-        if (sessionUser) {
-          hydrateUserProfile(sessionUser);
-        }
-        setIsPasswordRecovery(true);
-        setIsAuthenticated(false);
-        return;
-      }
-
-      setIsAuthenticated(Boolean(sessionUser));
-      if (sessionUser) {
-        setIsPasswordRecovery(false);
-        hydrateUserProfile(sessionUser);
-        loadSnapshot();
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const { reorderInvoiceTransactions } = useInvoiceOrdering({
+    currentView,
+    runAction: runAppAction,
+    setSnapshot,
+    transactions: snapshot.transactions,
+  });
 
   const summary = useMemo(
     () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth),
@@ -511,27 +428,6 @@ export default function App() {
     }));
   }
 
-  async function handleReorderInvoiceTransactions(transactions: Transaction[]) {
-    const reorderedTransactions = transactions.map((transaction, index) => ({
-      ...transaction,
-      notes: writeTransactionNotes(getVisibleNotes(transaction.notes), {
-        ...readTransactionMeta(transaction.notes),
-        invoiceSortOrder: (index + 1) * 1000,
-      }),
-    }));
-    const optimisticById = new Map(reorderedTransactions.map((transaction) => [transaction.id, transaction]));
-    reorderedTransactions.forEach((transaction) => {
-      if (!transaction.isProjected) pendingInvoiceOrderNotesRef.current.set(transaction.id, transaction.notes);
-    });
-
-    setSnapshot((current) => ({
-      ...current,
-      transactions: current.transactions.map((transaction) =>
-        optimisticById.get(transaction.id) ?? transaction,
-      ),
-    }));
-  }
-
   async function handleUpdateCardClosingDay(card: FinanceSnapshot['cards'][number], closingDay: number) {
     const saved = await cardRepository.update(card.id, {
       name: card.name,
@@ -567,14 +463,7 @@ export default function App() {
   }
 
   async function handleUpdateProfile(input: { name: string }) {
-    if (supabase) {
-      const { error } = await supabase.auth.updateUser({
-        data: {
-          full_name: input.name,
-        },
-      });
-      if (error) throw error;
-    }
+    await updateAuthName(input.name);
 
     setUser((current) => ({
       ...current,
@@ -728,13 +617,7 @@ export default function App() {
   }
 
   async function handleSignOut() {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
-
-    setIsAuthenticated(false);
-    setIsPasswordRecovery(false);
-    setUser(mockUser);
+    await signOut();
     setSnapshot(emptyFinanceSnapshot);
     setCurrentView('home');
     setActiveMonth(getCurrentMonthKey());
@@ -760,11 +643,7 @@ export default function App() {
       <AuthView
         isPasswordRecovery={isPasswordRecovery}
         onAuthenticated={loadSnapshot}
-        onPasswordRecovered={() => {
-          setIsPasswordRecovery(false);
-          setIsAuthenticated(true);
-          loadSnapshot();
-        }}
+        onPasswordRecovered={finishPasswordRecovery}
       />
     );
   }
@@ -797,8 +676,9 @@ export default function App() {
         </div>
       ) : null}
 
-      {currentView === 'home' ? (
-        <DashboardView
+      <Suspense fallback={<ViewLoadingFallback />}>
+        {currentView === 'home' ? (
+          <DashboardView
           userName={user.name}
           accounts={snapshot.accounts}
           cards={snapshot.cards}
@@ -807,6 +687,7 @@ export default function App() {
           activeMonth={activeMonth}
           summary={summary}
           showBalances={showBalances}
+          notificationCount={unreadCount}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
           onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
@@ -816,6 +697,7 @@ export default function App() {
             setIsAddOpen(true);
           }}
           onOpenProfile={() => setCurrentView('profile')}
+          onOpenNotifications={() => setCurrentView('notifications')}
           onAddAccount={() => {
             setEditingAccount(null);
             setIsAddAccountOpen(true);
@@ -843,8 +725,8 @@ export default function App() {
             setIsAddCardOpen(true);
           }}
           onDeleteCard={handleDeleteCard}
-        />
-      ) : null}
+          />
+        ) : null}
 
       {currentView === 'accounts' ? (
         <AccountsView
@@ -888,7 +770,7 @@ export default function App() {
             () => handleDeleteTransaction(transaction),
             'Não foi possível excluir o lançamento. Tente novamente.',
           )}
-          onReorderInvoiceTransactions={handleReorderInvoiceTransactions}
+          onReorderInvoiceTransactions={reorderInvoiceTransactions}
           onPayInvoice={handlePayCardInvoice}
           onUpdateCardClosingDay={handleUpdateCardClosingDay}
           onEditCard={(card) => {
@@ -956,19 +838,31 @@ export default function App() {
         />
       ) : null}
 
+      {currentView === 'notifications' ? (
+        <NotificationsView
+          error={notificationError}
+          notifications={notifications}
+          onMarkAllRead={markAllRead}
+          onMarkRead={markRead}
+          onNavigate={setCurrentView}
+        />
+      ) : null}
+
       {currentView === 'goals' ? (
         <GoalsView categories={snapshot.categories} />
       ) : null}
 
-      {currentView === 'profile' ? (
-        <ProfileView
+        {currentView === 'profile' ? (
+          <ProfileView
           user={user}
           accounts={snapshot.accounts}
           cards={snapshot.cards}
           categories={snapshot.categories}
           transactions={snapshot.transactions}
           showBalances={showBalances}
+          notificationCount={unreadCount}
           onToggleBalances={() => setShowBalances((value) => !value)}
+          onOpenNotifications={() => setCurrentView('notifications')}
           onUpdateProfile={handleUpdateProfile}
           onUpdateReimbursementsEnabled={handleUpdateReimbursementsEnabled}
           onAddAccount={() => {
@@ -1001,61 +895,72 @@ export default function App() {
           onDeleteCategory={handleDeleteCategory}
           onReset={handleReset}
           onSignOut={handleSignOut}
-        />
-      ) : null}
+          />
+        ) : null}
+      </Suspense>
 
-      <AddEntryModal
-        isOpen={isAddOpen}
-        accounts={snapshot.accounts}
-        cards={snapshot.cards}
-        categories={snapshot.categories}
-        reimbursementPeople={snapshot.reimbursementPeople}
-        reimbursementsEnabled={user.reimbursementsEnabled}
-        transaction={editingTransaction}
-        onCreateCategory={handleCreateCategoryFromEntry}
-        onCreateReimbursementPerson={handleCreateReimbursementPerson}
-        onCreateRecurring={handleCreateRecurring}
-        onClose={() => {
-          setIsAddOpen(false);
-          setEditingTransaction(null);
-        }}
-        onSave={handleSaveTransaction}
-      />
+      <Suspense fallback={<ModalLoadingFallback />}>
+        {isAddOpen ? (
+          <AddEntryModal
+            isOpen
+            accounts={snapshot.accounts}
+            cards={snapshot.cards}
+            categories={snapshot.categories}
+            reimbursementPeople={snapshot.reimbursementPeople}
+            reimbursementsEnabled={user.reimbursementsEnabled}
+            transaction={editingTransaction}
+            onCreateCategory={handleCreateCategoryFromEntry}
+            onCreateReimbursementPerson={handleCreateReimbursementPerson}
+            onCreateRecurring={handleCreateRecurring}
+            onClose={() => {
+              setIsAddOpen(false);
+              setEditingTransaction(null);
+            }}
+            onSave={handleSaveTransaction}
+          />
+        ) : null}
 
-      <AddAccountModal
-        isOpen={isAddAccountOpen}
-        accounts={snapshot.accounts}
-        account={editingAccount}
-        onClose={() => {
-          setIsAddAccountOpen(false);
-          setEditingAccount(null);
-        }}
-        onSave={handleSaveAccount}
-      />
+        {isAddAccountOpen ? (
+          <AddAccountModal
+            isOpen
+            accounts={snapshot.accounts}
+            account={editingAccount}
+            onClose={() => {
+              setIsAddAccountOpen(false);
+              setEditingAccount(null);
+            }}
+            onSave={handleSaveAccount}
+          />
+        ) : null}
 
-      <AddCardModal
-        isOpen={isAddCardOpen}
-        accounts={snapshot.accounts}
-        cards={snapshot.cards}
-        card={editingCard}
-        onClose={() => {
-          setIsAddCardOpen(false);
-          setEditingCard(null);
-        }}
-        onSave={handleSaveCard}
-      />
+        {isAddCardOpen ? (
+          <AddCardModal
+            isOpen
+            accounts={snapshot.accounts}
+            cards={snapshot.cards}
+            card={editingCard}
+            onClose={() => {
+              setIsAddCardOpen(false);
+              setEditingCard(null);
+            }}
+            onSave={handleSaveCard}
+          />
+        ) : null}
 
-      <AddCategoryModal
-        isOpen={isAddCategoryOpen}
-        categories={snapshot.categories}
-        category={editingCategory}
-        defaultFlow={newCategoryFlow}
-        onClose={() => {
-          setIsAddCategoryOpen(false);
-          setEditingCategory(null);
-        }}
-        onSave={handleSaveCategory}
-      />
+        {isAddCategoryOpen ? (
+          <AddCategoryModal
+            isOpen
+            categories={snapshot.categories}
+            category={editingCategory}
+            defaultFlow={newCategoryFlow}
+            onClose={() => {
+              setIsAddCategoryOpen(false);
+              setEditingCategory(null);
+            }}
+            onSave={handleSaveCategory}
+          />
+        ) : null}
+      </Suspense>
     </AppShell>
   );
 }

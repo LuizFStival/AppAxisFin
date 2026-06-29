@@ -6,7 +6,7 @@ export type ExpenseNeed = 'essential' | 'superfluous';
 export type ReimbursementStatus = 'pending' | 'received';
 export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
 export type CardNetwork = 'mastercard' | 'visa' | 'elo' | 'other';
-export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'goals' | 'reports' | 'profile';
+export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'goals' | 'reports' | 'notifications' | 'profile';
 export type TransactionTab = 'general' | 'cards' | 'accounts';
 export type DashboardTransactionFilter = 'income' | 'expenses' | 'received' | 'paid';
 
@@ -58,6 +58,25 @@ export interface Goal {
   imageUrl?: string;
   color: string;
   status: 'active' | 'completed' | 'archived';
+}
+
+export interface Budget {
+  id: string;
+  categoryId: string;
+  period: string;
+  limitAmount: number;
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  body?: string;
+  type: 'info' | 'warning' | 'success' | 'danger';
+  readAt?: string;
+  scheduledFor?: string;
+  sourceKey: string;
+  actionView: Extract<AppView, 'transactions' | 'cards' | 'reimbursements'>;
+  createdAt: string;
 }
 
 export interface Transaction {
