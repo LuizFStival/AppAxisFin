@@ -9,6 +9,7 @@ import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { createSeriesId, getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { hasDuplicateName } from '../../lib/utils/validation';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
+import { parseMathExpression } from '../../lib/utils/mathExpression';
 
 interface AddEntryModalProps {
   isOpen: boolean;
@@ -84,18 +85,6 @@ function parseEntryCount(value: string, minimum: number): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return minimum;
   return Math.min(60, Math.max(minimum, parsed));
-}
-
-function evaluateExpression(rawValue: string): number | null {
-  const expression = rawValue.replace(/\s+/g, '').replace(/,/g, '.');
-  if (!expression || !/^[\d.+\-*/]+$/.test(expression)) return null;
-
-  try {
-    const result = Function(`"use strict"; return (${expression});`)();
-    return typeof result === 'number' && Number.isFinite(result) && result >= 0 ? result : null;
-  } catch {
-    return null;
-  }
 }
 
 export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, reimbursementsEnabled, transaction, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onClose, onSave }: AddEntryModalProps) {
@@ -248,7 +237,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   }
 
   function applyCalculatorResult() {
-    const result = evaluateExpression(calculatorExpression);
+    const result = parseMathExpression(calculatorExpression);
     if (result === null) return;
     setAmount(formatCurrencyInput(result));
     setIsCalculatorOpen(false);
@@ -604,7 +593,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     );
   }
 
-  const calculatorResult = evaluateExpression(calculatorExpression);
+  const calculatorResult = parseMathExpression(calculatorExpression);
   const todayValue = formatLocalDate(new Date());
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);

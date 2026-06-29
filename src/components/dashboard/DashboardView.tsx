@@ -31,6 +31,7 @@ interface DashboardViewProps {
   activeMonth: string;
   summary: DashboardSummary;
   showBalances: boolean;
+  notificationCount: number;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   onCurrentMonth: () => void;
@@ -39,6 +40,7 @@ interface DashboardViewProps {
   onAddAccount: () => void;
   onAddCard: () => void;
   onOpenProfile: () => void;
+  onOpenNotifications: () => void;
   onViewAccounts: (accountId?: string) => void;
   onViewCards: (cardId?: string) => void;
   onViewDashboardTransactions: (filter: DashboardTransactionFilter) => void;
@@ -104,6 +106,7 @@ export function DashboardView({
   activeMonth,
   summary,
   showBalances,
+  notificationCount,
   onPreviousMonth,
   onNextMonth,
   onCurrentMonth,
@@ -111,6 +114,7 @@ export function DashboardView({
   onAddAccount,
   onAddCard,
   onOpenProfile,
+  onOpenNotifications,
   onViewAccounts,
   onViewCards,
   onViewDashboardTransactions,
@@ -183,12 +187,16 @@ export function DashboardView({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled
-            className="relative flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-full border border-white/10 bg-[#0F1116]/35 text-gray-500 opacity-55 backdrop-blur"
-            aria-label="Notificações indisponíveis"
-            title="Notificações em breve"
+            onClick={onOpenNotifications}
+            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#0F1116] text-slate-400 backdrop-blur transition hover:border-sky-400/30 hover:text-white"
+            aria-label={notificationCount > 0 ? `Abrir notificações, ${notificationCount} não lidas` : 'Abrir notificações'}
           >
             <Bell size={18} />
+            {notificationCount > 0 ? (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#050608] bg-rose-500 px-1 text-[9px] font-bold text-white">
+                {Math.min(99, notificationCount)}
+              </span>
+            ) : null}
           </button>
         </div>
       </header>

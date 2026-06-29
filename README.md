@@ -49,16 +49,21 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 - Perfil com atalhos operacionais, cartões e categorias.
 - Exportação mensal ou anual de lançamentos em CSV compatível com Excel.
 - Metas financeiras ativas/concluídas com imagem, valor-alvo, categoria/data opcionais e aportes ou retiradas auditáveis.
+- Orçamentos mensais por categoria com consumo pessoal, valor disponível, comparação ao mês anterior e alertas em 70%, 90% e 100%.
+- Central de notificações persistida para despesas próximas/atrasadas, faturas a vencer/vencidas e reembolsos atrasados, acessível pelo sino com badge no cabeçalho da Home.
+- Previsão de caixa dos próximos 30 dias com saldo projetado, receitas pendentes, despesas fixas e reembolsos esperados.
 
 ## Arquitetura
 
 ```text
 src/
   components/
+    app/lazyComponents.tsx
     accounts/
     cards/
     categories/
     dashboard/
+    goals/
     layout/
     profile/
     reimbursements/
@@ -67,9 +72,15 @@ src/
     transactions/
   features/
     accounts/accountRepository.ts
+    auth/useAuthSession.ts
     cards/cardRepository.ts
+    cards/useInvoiceOrdering.ts
     categories/categoryRepository.ts
+    budgets/budgetRepository.ts
     finance/financeStore.ts
+    goals/goalRepository.ts
+    notifications/notificationRepository.ts
+    profile/profileRepository.ts
     recurring/recurringRepository.ts
     reimbursements/reimbursementRepository.ts
     transactions/transactionRepository.ts
@@ -81,7 +92,9 @@ src/
   types.ts
 ```
 
-Os componentes cuidam da interface. Os repositories cuidam de leitura/escrita por feature. `financeStore` centraliza snapshot, usuário atual, bootstrap de categorias e mapeamento dos dados vindos do Supabase.
+Os componentes cuidam da interface. Os repositories cuidam de leitura/escrita por feature. `financeStore` centraliza snapshot, bootstrap de categorias e mapeamento dos dados vindos do Supabase. A sessão fica isolada em `useAuthSession`, enquanto `useInvoiceOrdering` encapsula a persistência diferida da ordem da fatura.
+
+As telas e os modais secundários usam carregamento sob demanda com `React.lazy` e `Suspense`. O bundle inicial mantém autenticação, shell e regras centrais; relatórios e demais áreas são baixados apenas quando acessados.
 
 ## Supabase
 
@@ -122,7 +135,7 @@ Migrations importantes:
 - Policies devem usar `(select auth.uid()) = user_id`.
 - Inserts e updates precisam de `WITH CHECK`.
 - Referências entre tabelas financeiras devem validar ownership do mesmo usuário.
-- A sessão do Supabase usa `sessionStorage` com chave `axisfin.auth.session`.
+- A sessão de autenticação do Supabase usa `localStorage` com chave `axisfin.auth.session`, mantendo o login entre reinicializações do navegador.
 - Dados financeiros não ficam em storage do navegador.
 
 ## Desenvolvimento
@@ -145,7 +158,10 @@ Validar:
 npm run lint
 npm run test
 npm run build
+npx.cmd supabase db advisors --linked --type security --level warn
 ```
+
+`npm run test` descobre automaticamente todos os arquivos `*.test.ts` em `src`. A suíte cobre cálculos financeiros, cartões e faturas, reembolsos, filtros, orçamentos, moeda e datas, metadados, parser matemático, mensagens de erro e invariantes do schema/RLS. O último comando executa o Database Advisor no projeto remoto vinculado.
 
 ## Deploy Vercel
 

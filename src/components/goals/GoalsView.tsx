@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarDays, Check, ImagePlus, Minus, Plus, Target, Trash2, X } from 'lucide-react';
+import { Check, ImagePlus, Minus, Plus, Target, Trash2, X } from 'lucide-react';
 import { Category, Goal } from '../../types';
 import { goalRepository } from '../../features/goals/goalRepository';
 import { CurrencyInput } from '../shared/CurrencyInput';
