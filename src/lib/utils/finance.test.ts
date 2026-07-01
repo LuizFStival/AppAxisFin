@@ -5,6 +5,7 @@ import {
   getAccountSignedAmount,
   getAvailableMonths,
   getFinancialMonthKey,
+  getCurrentMonthKey,
   isCardInvoicePaid,
   getPaymentSource,
   shiftMonthKey,
@@ -154,6 +155,8 @@ assert.deepEqual(summary, {
 });
 
 assert.deepEqual(getAvailableMonths(transactions), ['2026-06', '2026-05']);
+assert.equal(getCurrentMonthKey(new Date(2026, 5, 30, 23, 59)), '2026-06');
+assert.equal(getCurrentMonthKey(new Date(2026, 6, 1, 0, 0)), '2026-07');
 assert.equal(shiftMonthKey('2026-01', -1), '2025-12');
 assert.equal(shiftMonthKey('2026-12', 1), '2027-01');
 assert.equal(formatMonthLabel('2026-06'), 'junho de 2026');

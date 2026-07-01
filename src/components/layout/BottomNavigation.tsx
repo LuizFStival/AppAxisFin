@@ -36,7 +36,7 @@ export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigat
   }
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 h-[72px] border-t border-[#1A1C22] bg-[#0A0B0E]/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:absolute md:rounded-b-[34px]">
+    <nav className="bottom-navigation fixed inset-x-0 bottom-0 z-40 border-t border-[#1A1C22] bg-[#0A0B0E]/95 px-4 pt-2 backdrop-blur-md md:absolute md:rounded-b-[34px]">
       {isMoreOpen ? (
         <div className="absolute bottom-[76px] right-4 w-56 rounded-2xl border border-white/10 bg-[#101319] p-2 shadow-2xl shadow-black/50">
           {visibleMoreItems.map((item) => {

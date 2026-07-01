@@ -18,8 +18,8 @@ export function getMonthKey(date: string): string {
   return date.slice(0, 7);
 }
 
-export function getCurrentMonthKey(): string {
-  return new Date().toISOString().slice(0, 7);
+export function getCurrentMonthKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export function shiftMonthKey(month: string, offset: number): string {

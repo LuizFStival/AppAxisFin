@@ -5,7 +5,7 @@ interface AxisFinLogoProps {
 
 export function AxisFinLogo({ className = '', showWordmark = false }: AxisFinLogoProps) {
   return (
-    <div className={`flex items-center gap-3 ${className}`} aria-label="AxisFin">
+    <div className={`flex items-center gap-3 ${className}`} role="img" aria-label="Axis Fin">
       <svg
         width="48"
         height="48"

@@ -141,7 +141,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                     setIsRecoveryCodeSent(false);
                     setMode('signin');
                   }}
-                  className={`h-11 rounded-xl text-sm font-bold transition ${mode === 'signin' ? 'bg-[#1A1C22] text-[#3B82F6]' : 'text-gray-500'}`}
+                  className={`h-11 rounded-xl text-sm font-bold transition ${mode === 'signin' ? 'bg-[#1A1C22] text-[#3B82F6]' : 'text-gray-400'}`}
                 >
                   Entrar
                 </button>
@@ -152,7 +152,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                     setIsRecoveryCodeSent(false);
                     setMode('signup');
                   }}
-                  className={`h-11 rounded-xl text-sm font-bold transition ${mode === 'signup' ? 'bg-[#1A1C22] text-[#3B82F6]' : 'text-gray-500'}`}
+                  className={`h-11 rounded-xl text-sm font-bold transition ${mode === 'signup' ? 'bg-[#1A1C22] text-[#3B82F6]' : 'text-gray-400'}`}
                 >
                   Criar conta
                 </button>
@@ -269,7 +269,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                     setIsRecoveryCodeSent(false);
                     setMode('recover');
                   }}
-                  className="-mt-2 self-end pr-1 text-[11px] font-semibold leading-none text-gray-500 transition hover:text-[#3B82F6]"
+                  className="-mt-2 self-end pr-1 text-[11px] font-semibold leading-none text-gray-400 transition hover:text-[#3B82F6]"
                 >
                   Esqueci minha senha
                 </button>
