@@ -1,6 +1,6 @@
 import { assertSupabaseConfigured } from '../../lib/supabase/supabaseClient';
 import type { AppNotification } from '../../types';
-import type { NotificationCandidate } from '../../lib/utils/notifications';
+import { preserveNotificationReadState, type NotificationCandidate } from '../../lib/utils/notifications';
 import { assertCurrentUserId } from '../finance/financeStore';
 
 type NotificationRow = {
@@ -54,10 +54,11 @@ export const notificationRepository = {
     const existing = await list();
     const activeKeys = new Set(candidates.map((candidate) => candidate.sourceKey));
     const staleIds = existing.filter((notification) => !activeKeys.has(notification.sourceKey)).map((notification) => notification.id);
+    const candidatesWithReadState = preserveNotificationReadState(candidates, existing);
 
     if (candidates.length > 0) {
       const { error } = await client.from('notifications').upsert(
-        candidates.map((candidate) => ({
+        candidatesWithReadState.map((candidate) => ({
           user_id: userId,
           source_key: candidate.sourceKey,
           title: candidate.title,
@@ -65,8 +66,9 @@ export const notificationRepository = {
           type: candidate.type,
           scheduled_for: candidate.scheduledFor ?? null,
           action_view: candidate.actionView,
+          read_at: candidate.readAt ?? null,
         })),
-        { onConflict: 'user_id,source_key' },
+        { onConflict: 'user_id,source_key', defaultToNull: false },
       );
       if (error) throw error;
     }

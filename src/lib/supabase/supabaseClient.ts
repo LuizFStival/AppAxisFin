@@ -4,20 +4,55 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const isSecretKey = typeof supabaseAnonKey === 'string' && supabaseAnonKey.startsWith('sb_secret_');
 const authStorageKey = 'axisfin.auth.session';
+const authPersistencePreferenceKey = 'axisfin.auth.keep-connected';
 
-function getPersistentAuthStorage(): Storage | undefined {
+export function getAuthPersistencePreference() {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(authPersistencePreferenceKey) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+export function setAuthPersistencePreference(keepConnected: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(authPersistencePreferenceKey, String(keepConnected));
+  } catch {
+    // The session still works for the current tab when persistent storage is unavailable.
+  }
+}
+
+function getAuthStorage(): Storage | undefined {
   if (typeof window === 'undefined') return undefined;
 
   try {
-    const migrationKeys = [authStorageKey, `${authStorageKey}-code-verifier`, `${authStorageKey}-user`];
-    migrationKeys.forEach((key) => {
-      const existingValue = window.localStorage.getItem(key);
-      const previousValue = window.sessionStorage.getItem(key);
-      if (!existingValue && previousValue) window.localStorage.setItem(key, previousValue);
-      if (previousValue) window.sessionStorage.removeItem(key);
-    });
+    const selectedStorage = () => getAuthPersistencePreference() ? window.localStorage : window.sessionStorage;
+    const alternateStorage = () => getAuthPersistencePreference() ? window.sessionStorage : window.localStorage;
 
-    return window.localStorage;
+    return {
+      get length() {
+        return selectedStorage().length;
+      },
+      clear() {
+        selectedStorage().clear();
+      },
+      getItem(key: string) {
+        return selectedStorage().getItem(key) ?? alternateStorage().getItem(key);
+      },
+      key(index: number) {
+        return selectedStorage().key(index);
+      },
+      removeItem(key: string) {
+        window.localStorage.removeItem(key);
+        window.sessionStorage.removeItem(key);
+      },
+      setItem(key: string, value: string) {
+        selectedStorage().setItem(key, value);
+        alternateStorage().removeItem(key);
+      },
+    };
   } catch {
     return window.sessionStorage;
   }
@@ -32,7 +67,7 @@ export const supabase = isSupabaseConfigured
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storage: getPersistentAuthStorage(),
+        storage: getAuthStorage(),
         storageKey: authStorageKey,
       },
     })

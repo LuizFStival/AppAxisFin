@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react';
-import { assertSupabaseConfigured } from '../../lib/supabase/supabaseClient';
+import {
+  assertSupabaseConfigured,
+  getAuthPersistencePreference,
+  setAuthPersistencePreference,
+} from '../../lib/supabase/supabaseClient';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { AxisFinLogo } from '../shared/AxisFinLogo';
 
@@ -23,6 +27,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [keepConnected, setKeepConnected] = useState(getAuthPersistencePreference);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -93,6 +98,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
         if (error) throw error;
         setMessage('Cadastro criado. Se o Supabase pedir confirmação por e-mail, confirme antes de entrar.');
       } else {
+        setAuthPersistencePreference(keepConnected);
         const { error } = await client.auth.signInWithPassword({ email, password });
         if (error) throw error;
         onAuthenticated();
@@ -259,20 +265,31 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
               ) : null}
 
               {!isPasswordRecovery && mode === 'signin' ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMessage('');
-                    setPassword('');
-                    setConfirmPassword('');
-                    setRecoveryCode('');
-                    setIsRecoveryCodeSent(false);
-                    setMode('recover');
-                  }}
-                  className="-mt-2 self-end pr-1 text-[11px] font-semibold leading-none text-gray-400 transition hover:text-[#3B82F6]"
-                >
-                  Esqueci minha senha
-                </button>
+                <div className="-mt-2 flex items-center justify-between gap-3">
+                  <label className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold text-gray-400">
+                    <input
+                      type="checkbox"
+                      checked={keepConnected}
+                      onChange={(event) => setKeepConnected(event.target.checked)}
+                      className="size-4 accent-[#3B82F6]"
+                    />
+                    Manter conectado
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMessage('');
+                      setPassword('');
+                      setConfirmPassword('');
+                      setRecoveryCode('');
+                      setIsRecoveryCodeSent(false);
+                      setMode('recover');
+                    }}
+                    className="pr-1 text-[11px] font-semibold leading-none text-gray-400 transition hover:text-[#3B82F6]"
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
               ) : null}
 
               {message ? (

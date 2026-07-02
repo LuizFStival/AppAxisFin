@@ -26,7 +26,7 @@ interface ProfileViewProps {
   onAddCategory: (flow: Category['flow']) => void;
   onEditCategory: (category: Category) => void;
   onDeleteCategory: (category: Category) => void;
-  onReset: () => void;
+  onReset: () => Promise<boolean>;
   onSignOut: () => void;
 }
 
@@ -77,6 +77,9 @@ export function ProfileView({
   const [isSavingReimbursements, setIsSavingReimbursements] = useState(false);
   const [categoryFlow, setCategoryFlow] = useState<Category['flow']>('expense');
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [isResetConfirmed, setIsResetConfirmed] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [exportPeriod, setExportPeriod] = useState<'monthly' | 'annual'>('monthly');
   const [exportMonth, setExportMonth] = useState(getCurrentMonthKey());
   const [exportYear, setExportYear] = useState(() => getCurrentMonthKey().slice(0, 4));
@@ -87,6 +90,17 @@ export function ProfileView({
     getCurrentMonthKey().slice(0, 4),
     ...transactions.map((transaction) => getFinancialMonthKey(transaction).slice(0, 4)),
   ])).sort().reverse();
+
+  async function handleResetConfirmed() {
+    if (!isResetConfirmed || isResetting) return;
+    setIsResetting(true);
+    const resetCompleted = await onReset();
+    setIsResetting(false);
+    if (resetCompleted) {
+      setIsResetOpen(false);
+      setIsResetConfirmed(false);
+    }
+  }
 
   function handleExportData() {
     const periodKey = exportPeriod === 'monthly' ? exportMonth : exportYear;
@@ -508,9 +522,16 @@ export function ProfileView({
           <Download size={17} />
           Exportar dados
         </button>
-        <button type="button" onClick={onReset} className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 font-bold text-rose-200">
+        <button
+          type="button"
+          onClick={() => {
+            setIsResetConfirmed(false);
+            setIsResetOpen(true);
+          }}
+          className="flex h-14 items-center justify-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 font-bold text-rose-200"
+        >
           <Database size={17} />
-          Restaurar demo
+          Começar do zero
         </button>
       </section>
 
@@ -572,6 +593,65 @@ export function ProfileView({
               <Check size={18} />
               Baixar CSV
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {isResetOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-sm sm:items-center sm:p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="reset-title" aria-describedby="reset-description" className="w-full max-w-lg rounded-t-[28px] border border-rose-400/20 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-rose-300">Ação permanente</p>
+                <h2 id="reset-title" className="mt-1 font-display text-xl font-bold text-white">Começar do zero?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResetOpen(false)}
+                disabled={isResetting}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-400 disabled:opacity-50"
+                aria-label="Fechar confirmação"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p id="reset-description" className="mt-4 text-sm leading-relaxed text-slate-300">
+              Todos os seus dados financeiros serão apagados: contas e saldos, cartões e faturas, receitas, despesas, recorrências, reembolsos, metas, orçamentos e notificações.
+            </p>
+            <p className="mt-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3 text-xs leading-relaxed text-slate-400">
+              Sua conta de acesso e seus dados de perfil serão mantidos. Esta ação não pode ser desfeita.
+            </p>
+
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-rose-400/15 bg-rose-500/[0.06] p-3 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                checked={isResetConfirmed}
+                onChange={(event) => setIsResetConfirmed(event.target.checked)}
+                disabled={isResetting}
+                className="mt-0.5 size-4 shrink-0 accent-rose-500"
+              />
+              Entendo que todos os dados financeiros serão apagados permanentemente.
+            </label>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setIsResetOpen(false)}
+                disabled={isResetting}
+                className="h-12 rounded-2xl border border-white/10 bg-white/5 text-sm font-bold text-slate-200 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleResetConfirmed()}
+                disabled={!isResetConfirmed || isResetting}
+                className="h-12 rounded-2xl bg-rose-500 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isResetting ? 'Apagando...' : 'Apagar tudo'}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

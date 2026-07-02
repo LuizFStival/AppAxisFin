@@ -5,6 +5,18 @@ import { parseLocalDate } from './date';
 import { getReimbursementDueDate, isReimbursementOverdue } from './reimbursements';
 
 export type NotificationCandidate = Omit<AppNotification, 'id' | 'readAt' | 'createdAt'>;
+export type NotificationCandidateWithReadState = NotificationCandidate & Pick<AppNotification, 'readAt'>;
+
+export function preserveNotificationReadState(
+  candidates: NotificationCandidate[],
+  existing: Pick<AppNotification, 'sourceKey' | 'readAt'>[],
+): NotificationCandidateWithReadState[] {
+  const readAtBySourceKey = new Map(existing.map((notification) => [notification.sourceKey, notification.readAt]));
+  return candidates.map((candidate) => ({
+    ...candidate,
+    readAt: readAtBySourceKey.get(candidate.sourceKey),
+  }));
+}
 
 function differenceInDays(date: string, today: string) {
   return Math.round((parseLocalDate(date).getTime() - parseLocalDate(today).getTime()) / 86_400_000);

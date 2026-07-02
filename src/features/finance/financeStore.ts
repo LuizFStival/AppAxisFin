@@ -386,13 +386,26 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
   };
 }
 
-export async function resetFinanceSnapshot(): Promise<FinanceSnapshot> {
+export async function clearFinanceSnapshot(): Promise<FinanceSnapshot> {
   const userId = await assertCurrentUserId();
   const client = assertSupabaseConfigured();
-  const { error } = await client.from('transactions').delete().eq('user_id', userId);
+  const { data: goalImages, error: goalImagesError } = await client
+    .from('goals')
+    .select('image_path')
+    .eq('user_id', userId)
+    .not('image_path', 'is', null);
+  if (goalImagesError) throw goalImagesError;
+
+  const imagePaths = (goalImages ?? [])
+    .map((goal) => goal.image_path)
+    .filter((path): path is string => Boolean(path));
+  if (imagePaths.length > 0) {
+    const { error: storageError } = await client.storage.from('goal-images').remove(imagePaths);
+    if (storageError) throw storageError;
+  }
+
+  const { error } = await client.rpc('reset_my_finance_data');
   if (error) throw error;
-  const { error: peopleError } = await client.from('reimbursement_people').delete().eq('user_id', userId);
-  if (peopleError) throw peopleError;
 
   return loadFinanceSnapshot();
 }

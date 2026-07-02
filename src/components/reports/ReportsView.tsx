@@ -48,6 +48,7 @@ interface ReportsViewProps {
   month: string;
   transactions: Transaction[];
   categories: Category[];
+  reimbursementsEnabled: boolean;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   onCurrentMonth: () => void;
@@ -102,11 +103,13 @@ export function ReportsView({
   month,
   transactions,
   categories,
+  reimbursementsEnabled,
   onPreviousMonth,
   onNextMonth,
   onCurrentMonth,
 }: ReportsViewProps) {
   const [reportScope, setReportScope] = useState<'general' | 'personal'>('general');
+  const effectiveReportScope = reimbursementsEnabled ? reportScope : 'personal';
   const previousMonth = shiftMonthKey(month, -1);
   const report = useMemo(() => {
     const summarize = (period: string) => {
@@ -142,8 +145,8 @@ export function ReportsView({
 
   const totalInflows = report.current.income + report.current.thirdParty;
   const totalOutflows = report.current.expenses + report.current.thirdParty;
-  const visibleInflows = reportScope === 'general' ? totalInflows : report.current.income;
-  const visibleOutflows = reportScope === 'general' ? totalOutflows : report.current.expenses;
+  const visibleInflows = effectiveReportScope === 'general' ? totalInflows : report.current.income;
+  const visibleOutflows = effectiveReportScope === 'general' ? totalOutflows : report.current.expenses;
   const balance = visibleInflows - visibleOutflows;
   const previousBalance = report.previous.income - report.previous.expenses;
   const categoryData = expensesByCategory(transactions, categories, month).map((item, index) => {
@@ -190,7 +193,7 @@ export function ReportsView({
         className="mt-4"
       />
 
-      <div className="mt-3 grid grid-cols-2 rounded-2xl border border-white/8 bg-[#101319] p-1" role="tablist" aria-label="Escopo do relatório">
+      {reimbursementsEnabled ? <div className="mt-3 grid grid-cols-2 rounded-2xl border border-white/8 bg-[#101319] p-1" role="tablist" aria-label="Escopo do relatório">
         <button
           type="button"
           role="tab"
@@ -209,7 +212,7 @@ export function ReportsView({
         >
           Apenas meu
         </button>
-      </div>
+      </div> : null}
 
       <section className="mt-5 grid min-w-0 grid-cols-2 gap-3">
         <article className="min-w-0 overflow-hidden rounded-[22px] border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
@@ -284,7 +287,7 @@ export function ReportsView({
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.income)}</span>
             </article>
-            {reportScope === 'general' ? <article className="rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="rounded-2xl border border-white/8 bg-[#101319] p-4">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
@@ -309,7 +312,7 @@ export function ReportsView({
             </div>
           </div>
           <div className="mt-3 grid gap-2">
-            {reportScope === 'general' ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {effectiveReportScope === 'general' || !reimbursementsEnabled ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300"><Landmark size={18} /></span>
                 Gastos em contas
@@ -323,13 +326,13 @@ export function ReportsView({
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.cardExpenses)}</span>
             </article>
-            <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
                 Valores de terceiros
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.thirdParty)}</span>
-            </article>
+            </article> : null}
           </div>
         </section>
       </div>

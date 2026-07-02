@@ -28,6 +28,9 @@ assert.match(schema, /grant select, insert on table public\.goal_movements to au
 assert.match(schema, /grant select, update on table public\.profiles to authenticated/);
 assert.match(schema, /revoke execute on function public\.create_profile_for_new_user\(\) from public, anon, authenticated/);
 assert.doesNotMatch(schema, /create policy[\s\S]{0,200}auth\.role\(\)/);
+assert.match(schema, /create or replace function public\.reset_my_finance_data\(\)[\s\S]*?security invoker[\s\S]*?current_user_id uuid := \(select auth\.uid\(\)\)/);
+assert.match(schema, /revoke execute on function public\.reset_my_finance_data\(\) from public, anon/);
+assert.match(schema, /grant execute on function public\.reset_my_finance_data\(\) to authenticated/);
 
 const updatePolicies = [...schema.matchAll(/create policy\s+\w+_update_own on public\.\w+[\s\S]*?;/g)];
 assert.ok(updatePolicies.length >= 10, 'As tabelas editáveis precisam de policies de update');

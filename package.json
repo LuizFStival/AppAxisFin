@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "node -e \"const fs=require('node:fs'); for (const path of ['dist','server.js']) fs.rmSync(path,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
+    "seed:demo": "node scripts/seed-demo-user.mjs",
     "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {

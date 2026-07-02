@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { Card, Transaction } from '../../types';
-import { buildOperationalNotifications } from './notifications';
+import { buildOperationalNotifications, preserveNotificationReadState } from './notifications';
 import { writeTransactionNotes } from './transactionMeta';
 
 const card: Card = {
@@ -30,6 +30,13 @@ assert.ok(notifications.some((notification) => notification.sourceKey === 'reimb
 assert.ok(!notifications.some((notification) => notification.sourceKey === 'due:future'));
 assert.ok(!notifications.some((notification) => notification.sourceKey === 'reimbursement:received'));
 assert.ok(!buildOperationalNotifications(transactions, [card], '2026-07-03', false).some((notification) => notification.sourceKey.startsWith('reimbursement:')));
+
+const readAt = '2026-07-03T12:00:00.000Z';
+const notificationsWithReadState = preserveNotificationReadState(notifications, [
+  { sourceKey: 'due:due', readAt },
+]);
+assert.equal(notificationsWithReadState.find((notification) => notification.sourceKey === 'due:due')?.readAt, readAt);
+assert.equal(notificationsWithReadState.find((notification) => notification.sourceKey === 'invoice:card:2026-06')?.readAt, undefined);
 
 const paidInvoice = transactions.map((transaction) => transaction.cardId === 'card'
   ? { ...transaction, notes: writeTransactionNotes(undefined, { paidAt: '2026-07-02', paidFromAccountId: 'account' }) }

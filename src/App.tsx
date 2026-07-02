@@ -23,7 +23,7 @@ import { useAuthSession } from './features/auth/useAuthSession';
 import { cardRepository } from './features/cards/cardRepository';
 import { useInvoiceOrdering } from './features/cards/useInvoiceOrdering';
 import { categoryRepository } from './features/categories/categoryRepository';
-import { loadFinanceSnapshot, resetFinanceSnapshot } from './features/finance/financeStore';
+import { clearFinanceSnapshot, loadFinanceSnapshot } from './features/finance/financeStore';
 import { reimbursementRepository } from './features/reimbursements/reimbursementRepository';
 import { profileRepository } from './features/profile/profileRepository';
 import { useNotifications } from './features/notifications/useNotifications';
@@ -446,19 +446,16 @@ export default function App() {
     }));
   }
 
-  async function handleReset() {
-    const confirmed = window.confirm(
-      'Restaurar demo vai apagar os dados cadastrados e voltar o app para o estado inicial. Deseja prosseguir?',
-    );
-    if (!confirmed) return;
-
+  async function handleReset(): Promise<boolean> {
     try {
-      const restored = await resetFinanceSnapshot();
-      setSnapshot(restored);
+      const emptySnapshot = await clearFinanceSnapshot();
+      setSnapshot(emptySnapshot);
       setCurrentView('home');
       setAppError('');
+      return true;
     } catch (error) {
-      setAppError(getUserFriendlyError(error, 'Não foi possível restaurar os dados. Tente novamente.'));
+      setAppError(getUserFriendlyError(error, 'Não foi possível limpar seus dados. Tente novamente.'));
+      return false;
     }
   }
 
@@ -832,6 +829,7 @@ export default function App() {
           month={activeMonth}
           transactions={snapshot.transactions}
           categories={snapshot.categories}
+          reimbursementsEnabled={user.reimbursementsEnabled}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
           onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
