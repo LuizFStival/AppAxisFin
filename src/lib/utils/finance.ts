@@ -133,6 +133,57 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
   };
 }
 
+export function summarizeMonthlyInvestmentGoal(
+  accounts: Account[],
+  categories: Category[],
+  transactions: Transaction[],
+  month: string,
+  targetRate = 0.2,
+) {
+  const normalize = (value: string) => value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const salaryCategoryIds = new Set(
+    categories
+      .filter((category) => normalize(category.name).includes('salario'))
+      .map((category) => category.id),
+  );
+  const salaryReceived = roundMoney(transactions
+    .filter((transaction) =>
+      transaction.flow === 'income'
+      && transaction.status === 'paid'
+      && getFinancialMonthKey(transaction) === month
+      && (
+        Boolean(transaction.categoryId && salaryCategoryIds.has(transaction.categoryId))
+        || normalize(transaction.description).includes('salario')
+      ),
+    )
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const investmentAccountIds = new Set(
+    accounts.filter((account) => account.type === 'investment').map((account) => account.id),
+  );
+  const invested = roundMoney(transactions
+    .filter((transaction) =>
+      transaction.flow === 'transfer'
+      && transaction.status === 'paid'
+      && getFinancialMonthKey(transaction) === month
+      && Boolean(transaction.toAccountId && investmentAccountIds.has(transaction.toAccountId))
+      && !Boolean(transaction.fromAccountId && investmentAccountIds.has(transaction.fromAccountId)),
+    )
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const target = roundMoney(salaryReceived * targetRate);
+
+  return {
+    salaryReceived,
+    target,
+    invested,
+    remaining: roundMoney(Math.max(0, target - invested)),
+    progress: target > 0 ? Math.min(100, roundMoney((invested / target) * 100)) : 0,
+    hasInvestmentAccount: investmentAccountIds.size > 0,
+  };
+}
+
 export function expensesByCategory(transactions: Transaction[], categories: Category[], month: string) {
   const totals = new Map<string, { name: string; value: number; color: string }>();
 

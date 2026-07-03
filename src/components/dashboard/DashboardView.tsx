@@ -15,7 +15,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction } from '../../types';
-import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, isCardInvoicePaid, shiftMonthKey, summarizeDashboard } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, isCardInvoicePaid, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { StatCard } from '../shared/StatCard';
@@ -102,6 +102,7 @@ export function DashboardView({
   userName,
   accounts,
   cards,
+  categories,
   transactions,
   activeMonth,
   summary,
@@ -141,6 +142,14 @@ export function DashboardView({
     : `${Math.abs(expenseChange).toFixed(1).replace('.', ',')}% ${expenseChange <= 0 ? 'menor' : 'maior'} que o mês anterior`;
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
   const monthResult = summary.income - summary.expenses;
+  const investmentGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, activeMonth);
+  const investmentGoalHint = investmentGoal.target <= 0
+    ? 'Meta 20% • salário não identificado'
+    : !investmentGoal.hasInvestmentAccount
+      ? `Meta ${formatCurrency(investmentGoal.target)} • crie uma conta Investimento`
+      : investmentGoal.remaining <= 0
+        ? `Meta 20% atingida • ${formatCurrency(investmentGoal.invested)} investidos`
+        : `Meta em aberto • ${formatCurrency(investmentGoal.invested)} de ${formatCurrency(investmentGoal.target)}`;
 
   function handleAccountsPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest('button')) return;
@@ -260,18 +269,18 @@ export function DashboardView({
           <div className="mb-3 h-px w-full bg-[#1A1C22]" />
 
           <div className="grid w-full grid-cols-2 text-left">
-            <div className="border-r border-[#1A1C22] pr-3">
+            <button type="button" onClick={() => onViewDashboardTransactions('received')} className="border-r border-[#1A1C22] pr-3 text-left transition hover:opacity-80" title="Ver receitas recebidas">
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Recebido</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-emerald-400">
                 {hiddenMoney(showBalances, summary.received)}
               </p>
-            </div>
-            <div className="pl-4">
+            </button>
+            <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="pl-4 text-left transition hover:opacity-80" title="Ver pagamentos realizados">
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Pago</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-red-400">
                 {hiddenMoney(showBalances, summary.paid)}
               </p>
-            </div>
+            </button>
           </div>
         </div>
       </section>
@@ -280,7 +289,7 @@ export function DashboardView({
         <StatCard label="Receitas" value={hiddenMoney(showBalances, summary.income)} tone="info" icon={TrendingUp} hint={`Recebido ${formatCurrency(summary.received)} • Falta ${formatCurrency(summary.pendingIncome)}`} onClick={() => onViewDashboardTransactions('income')} />
         <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint={expenseComparison} onClick={() => onViewDashboardTransactions('expenses')} />
         <StatCard label="Dos outros" value={hiddenMoney(showBalances, reimbursementsTotal)} tone="expense" icon={HandCoins} hint={`Recebido ${formatCurrency(summary.reimbursementsReceived)} • Falta ${formatCurrency(summary.reimbursementsPending)}`} />
-        <StatCard label="Resultado do mês" value={hiddenMoney(showBalances, monthResult)} tone={monthResult >= 0 ? 'income' : 'expense'} icon={Scale} hint="Receitas menos despesas pessoais" />
+        <StatCard label="Resultado do mês" value={hiddenMoney(showBalances, monthResult)} tone={investmentGoal.remaining <= 0 && investmentGoal.target > 0 ? 'income' : monthResult >= 0 ? 'info' : 'expense'} icon={Scale} hint={investmentGoalHint} />
       </section>
 
       <section className="mt-4 px-4">

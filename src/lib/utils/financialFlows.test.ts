@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { Account, Category, Transaction } from '../../types';
-import { expensesByCategory, getAccountSignedAmount, getExpenseSignedAmount, summarizeDashboard } from './finance';
+import { expensesByCategory, getAccountSignedAmount, getExpenseSignedAmount, summarizeDashboard, summarizeMonthlyInvestmentGoal } from './finance';
 import { writeTransactionNotes } from './transactionMeta';
 
 const accounts: Account[] = [
@@ -36,5 +36,22 @@ assert.deepEqual(expensesByCategory(transactions, categories, '2026-06'), [
 assert.equal(getExpenseSignedAmount(transactions[4]), -50);
 assert.equal(getAccountSignedAmount(transactions[6], 'main'), -80);
 assert.equal(getAccountSignedAmount(transactions[6], 'reserve'), 80);
+
+const investmentAccounts: Account[] = [
+  ...accounts,
+  { id: 'broker', name: 'Corretora', type: 'investment', balance: 200, color: '#fff', institution: 'Corretora' },
+];
+const investmentTransactions: Transaction[] = [
+  { id: 'salary', description: 'Salário', amount: 3000, flow: 'income', status: 'paid', date: '2026-06-05', accountId: 'main' },
+  { id: 'investment', description: 'Aporte mensal', amount: 400, flow: 'transfer', status: 'paid', date: '2026-06-06', fromAccountId: 'main', toAccountId: 'broker' },
+];
+assert.deepEqual(summarizeMonthlyInvestmentGoal(investmentAccounts, categories, investmentTransactions, '2026-06'), {
+  salaryReceived: 3000,
+  target: 600,
+  invested: 400,
+  remaining: 200,
+  progress: 66.67,
+  hasInvestmentAccount: true,
+});
 
 console.log('financial flow tests passed');
