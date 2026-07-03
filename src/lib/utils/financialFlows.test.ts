@@ -23,6 +23,7 @@ assert.deepEqual(summarizeDashboard(accounts, transactions, '2026-06'), {
   currentBalance: 900,
   income: 1000,
   expenses: 250,
+  settledExpenses: 250,
   received: 1000,
   paid: 800,
   pendingIncome: 0,

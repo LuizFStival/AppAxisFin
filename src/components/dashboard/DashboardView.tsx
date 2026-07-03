@@ -69,6 +69,16 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
+function formatMonthComparison(current: number, previous: number) {
+  if (previous === 0) {
+    return current === 0 ? '0,0% igual ao mês anterior' : 'Sem base no mês anterior';
+  }
+
+  const change = ((current - previous) / Math.abs(previous)) * 100;
+  if (Math.abs(change) < 0.05) return '0,0% igual ao mês anterior';
+  return `${Math.abs(change).toFixed(1).replace('.', ',')}% ${change > 0 ? 'acima' : 'abaixo'} do mês anterior`;
+}
+
 function getInvoiceSummary(card: Card, transactions: Transaction[], closingMonth: string) {
   const openInvoice = getCardInvoiceInfoForClosingMonth(card, closingMonth, formatLocalDate(new Date()));
   const invoiceTransactions = transactions.filter((transaction) => {
@@ -134,22 +144,15 @@ export function DashboardView({
     0,
   );
   const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1));
-  const expenseChange = previousSummary.expenses > 0
-    ? ((summary.expenses - previousSummary.expenses) / previousSummary.expenses) * 100
-    : null;
-  const expenseComparison = expenseChange === null
-    ? summary.expenses > 0 ? 'Sem base no mês anterior' : 'Sem despesas nos dois meses'
-    : `${Math.abs(expenseChange).toFixed(1).replace('.', ',')}% ${expenseChange <= 0 ? 'menor' : 'maior'} que o mês anterior`;
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
+  const previousReimbursementsTotal = previousSummary.reimbursementsPending + previousSummary.reimbursementsReceived;
   const monthResult = summary.income - summary.expenses;
+  const previousMonthResult = previousSummary.income - previousSummary.expenses;
+  const incomeComparison = formatMonthComparison(summary.income, previousSummary.income);
+  const expenseComparison = formatMonthComparison(summary.expenses, previousSummary.expenses);
+  const reimbursementComparison = formatMonthComparison(reimbursementsTotal, previousReimbursementsTotal);
+  const resultComparison = formatMonthComparison(monthResult, previousMonthResult);
   const investmentGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, activeMonth);
-  const investmentGoalHint = investmentGoal.target <= 0
-    ? 'Meta 20% • salário não identificado'
-    : !investmentGoal.hasInvestmentAccount
-      ? `Meta ${formatCurrency(investmentGoal.target)} • crie uma conta Investimento`
-      : investmentGoal.remaining <= 0
-        ? `Meta 20% atingida • ${formatCurrency(investmentGoal.invested)} investidos`
-        : `Meta em aberto • ${formatCurrency(investmentGoal.invested)} de ${formatCurrency(investmentGoal.target)}`;
 
   function handleAccountsPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest('button')) return;
@@ -286,10 +289,51 @@ export function DashboardView({
       </section>
 
       <section className="mt-3 grid grid-cols-2 gap-2.5 px-4">
-        <StatCard label="Receitas" value={hiddenMoney(showBalances, summary.income)} tone="info" icon={TrendingUp} hint={`Recebido ${formatCurrency(summary.received)} • Falta ${formatCurrency(summary.pendingIncome)}`} onClick={() => onViewDashboardTransactions('income')} />
-        <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint={expenseComparison} onClick={() => onViewDashboardTransactions('expenses')} />
-        <StatCard label="Dos outros" value={hiddenMoney(showBalances, reimbursementsTotal)} tone="expense" icon={HandCoins} hint={`Recebido ${formatCurrency(summary.reimbursementsReceived)} • Falta ${formatCurrency(summary.reimbursementsPending)}`} />
-        <StatCard label="Resultado do mês" value={hiddenMoney(showBalances, monthResult)} tone={investmentGoal.remaining <= 0 && investmentGoal.target > 0 ? 'income' : monthResult >= 0 ? 'info' : 'expense'} icon={Scale} hint={investmentGoalHint} />
+        <StatCard
+          label="Receitas"
+          value={hiddenMoney(showBalances, summary.income)}
+          tone="info"
+          icon={TrendingUp}
+          hint={<><span className="block">Recebido {formatCurrency(summary.received)} • Falta {formatCurrency(summary.pendingIncome)}</span><span className="mt-0.5 block">{incomeComparison}</span></>}
+          onClick={() => onViewDashboardTransactions('income')}
+        />
+        <StatCard
+          label="Despesas do mês"
+          value={hiddenMoney(showBalances, summary.expenses)}
+          tone="neutral"
+          icon={TrendingDown}
+          hint={<><span className="block">Pago {formatCurrency(summary.settledExpenses)} • Falta {formatCurrency(summary.pendingExpenses)}</span><span className="mt-0.5 block">{expenseComparison}</span></>}
+          onClick={() => onViewDashboardTransactions('expenses')}
+        />
+        <StatCard
+          label="Dos outros"
+          value={hiddenMoney(showBalances, reimbursementsTotal)}
+          tone="expense"
+          icon={HandCoins}
+          hint={<><span className="block">Recebido {formatCurrency(summary.reimbursementsReceived)} • Falta {formatCurrency(summary.reimbursementsPending)}</span><span className="mt-0.5 block">{reimbursementComparison}</span></>}
+        />
+        <StatCard
+          label="Resultado do mês"
+          value={hiddenMoney(showBalances, monthResult)}
+          tone={investmentGoal.remaining <= 0 && investmentGoal.target > 0 ? 'income' : monthResult >= 0 ? 'info' : 'expense'}
+          icon={Scale}
+          hint={
+            <>
+              {investmentGoal.target <= 0 ? (
+                <span className="block">Meta 20%: salário não identificado</span>
+              ) : (
+                <>
+                  <span className="block">Meta 20% {formatCurrency(investmentGoal.target)} • Investido {formatCurrency(investmentGoal.invested)}</span>
+                  <span className="mt-0.5 block">
+                    {investmentGoal.remaining <= 0 ? 'Meta atingida' : `Falta investir ${formatCurrency(investmentGoal.remaining)}`}
+                  </span>
+                  {!investmentGoal.hasInvestmentAccount ? <span className="mt-0.5 block">Crie uma conta do tipo Investimento para registrar aportes</span> : null}
+                </>
+              )}
+              <span className="mt-0.5 block">{resultComparison}</span>
+            </>
+          }
+        />
       </section>
 
       <section className="mt-4 px-4">

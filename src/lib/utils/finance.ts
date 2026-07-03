@@ -111,6 +111,9 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
   const received = roundMoney(incomeTransactions
     .filter((transaction) => transaction.status === 'paid')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const settledExpenses = roundMoney(expenseTransactions
+    .filter((transaction) => transaction.status === 'paid')
+    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
   const paid = roundMoney(monthTransactions
     .filter((transaction) => transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId)
     .filter((transaction) => !isThirdPartyExpense(transaction))
@@ -120,10 +123,11 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
     currentBalance: roundMoney(accounts.reduce((sum, account) => sum + account.balance, 0)),
     income,
     expenses,
+    settledExpenses,
     received,
     paid,
     pendingIncome: roundMoney(income - received),
-    pendingExpenses: roundMoney(Math.max(0, expenses - paid)),
+    pendingExpenses: roundMoney(Math.max(0, expenses - settledExpenses)),
     reimbursementsPending: roundMoney(reimbursementTransactions
       .filter((transaction) => transaction.reimbursementStatus !== 'received')
       .reduce((sum, transaction) => sum + transaction.amount, 0)),

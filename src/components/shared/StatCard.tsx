@@ -6,7 +6,7 @@ interface StatCardProps {
   value: string;
   tone: 'income' | 'expense' | 'info' | 'neutral';
   icon: LucideIcon;
-  hint?: string;
+  hint?: React.ReactNode;
   onClick?: () => void;
 }
 
@@ -35,7 +35,7 @@ export function StatCard({ label, value, tone, icon: Icon, hint, onClick }: Stat
           <Icon size={16} />
         </span>
       </div>
-      {hint ? <p className="mt-1.5 text-[10px] leading-snug text-slate-500">{hint}</p> : null}
+      {hint ? <div className="mt-1.5 text-[10px] leading-snug text-slate-500">{hint}</div> : null}
     </Component>
   );
 }

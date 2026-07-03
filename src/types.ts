@@ -163,6 +163,7 @@ export interface DashboardSummary {
   currentBalance: number;
   income: number;
   expenses: number;
+  settledExpenses: number;
   received: number;
   paid: number;
   pendingIncome: number;
