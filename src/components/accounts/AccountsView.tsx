@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { Account, Card, Category, Transaction } from '../../types';
-import { formatCurrency, getAccountSignedAmount, getCategoryName, getPaymentSource, getMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, getAccountSignedAmount, getCategoryName, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
 
 interface AccountsViewProps {
@@ -45,7 +45,7 @@ export function AccountsView({
   const selectedTransactions = useMemo(() => {
     if (!selectedAccount) return [];
     return transactions
-      .filter((transaction) => getMonthKey(transaction.date) === activeMonth && isAccountTransaction(transaction, selectedAccount.id))
+      .filter((transaction) => getFinancialMonthKey(transaction) === activeMonth && isAccountTransaction(transaction, selectedAccount.id))
       .filter((transaction) => getAccountSignedAmount(transaction, selectedAccount.id) !== 0)
       .sort((left, right) => right.date.localeCompare(left.date));
   }, [activeMonth, selectedAccount, transactions]);

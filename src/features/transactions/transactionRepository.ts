@@ -7,6 +7,7 @@ import {
 import { Account, Card, Transaction } from '../../types';
 import { getExpenseSignedAmount } from '../../lib/utils/finance';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
+import { getCardInvoiceClosingMonth } from '../../lib/utils/cardInvoices';
 
 function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'>) {
   return {
@@ -50,6 +51,7 @@ export const transactionRepository = {
       signed_amount: getExpenseSignedAmount(transaction),
       flow: transaction.flow,
       transaction_date: transaction.date,
+      invoice_period: getCardInvoiceClosingMonth(input.card, transaction.date),
       category_id: transaction.categoryId ?? null,
       notes: transaction.notes ?? null,
       is_reimbursable: transaction.isReimbursable ?? false,

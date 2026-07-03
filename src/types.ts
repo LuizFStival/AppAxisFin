@@ -134,6 +134,8 @@ export interface TransactionMeta {
   generatedUntil?: string;
   paidAt?: string;
   paidFromAccountId?: string;
+  invoicePaymentCardId?: string;
+  invoicePaymentPeriod?: string;
   invoiceSortOrder?: number;
   recurringTransactionId?: string;
   recurringOccurrenceDate?: string;

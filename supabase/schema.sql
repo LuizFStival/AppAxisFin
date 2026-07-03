@@ -1138,11 +1138,14 @@ declare
   current_user_id uuid := (select auth.uid());
   item jsonb;
   transaction_row public.transactions%rowtype;
+  payment_row public.transactions%rowtype;
   account_row public.accounts%rowtype;
+  card_name text;
   transaction_ids uuid[] := array[]::uuid[];
   calculated_amount numeric(14,2) := 0;
   signed_amount numeric(14,2);
   result_transactions jsonb;
+  payment_meta jsonb;
 begin
   if current_user_id is null then raise exception 'Usuário não autenticado.'; end if;
   if p_payment_date is null then raise exception 'Informe a data do pagamento.'; end if;
@@ -1154,7 +1157,9 @@ begin
   where id = p_account_id and user_id = current_user_id for update;
   if not found then raise exception 'Conta de pagamento não encontrada.'; end if;
 
-  if not exists (select 1 from public.cards where id = p_card_id and user_id = current_user_id) then
+  select name into card_name from public.cards
+  where id = p_card_id and user_id = current_user_id;
+  if not found then
     raise exception 'Cartão não encontrado.';
   end if;
 
@@ -1209,8 +1214,31 @@ begin
     raise exception 'O valor da fatura mudou. Recarregue os dados e tente novamente.';
   end if;
 
-  update public.accounts set balance = balance - calculated_amount
-  where id = p_account_id and user_id = current_user_id returning * into account_row;
+  payment_meta := jsonb_build_object(
+    'invoicePaymentCardId', p_card_id::text,
+    'invoicePaymentPeriod', p_items->0->>'invoice_period',
+    'paidAt', p_payment_date::text,
+    'paidFromAccountId', p_account_id::text
+  );
+
+  insert into public.transactions (
+    user_id, description, amount, flow, status, transaction_date,
+    account_id, notes, is_reimbursable
+  )
+  values (
+    current_user_id, 'Pagamento da fatura ' || card_name, calculated_amount,
+    'expense', 'paid', p_payment_date, p_account_id,
+    '[axisfin-meta:'
+      || replace(encode(convert_to(payment_meta::text, 'UTF8'), 'base64'), chr(10), '')
+      || ']',
+    false
+  )
+  returning * into payment_row;
+
+  transaction_ids := array_append(transaction_ids, payment_row.id);
+
+  select * into account_row from public.accounts
+  where id = p_account_id and user_id = current_user_id;
 
   select coalesce(jsonb_agg(to_jsonb(transaction_result)), '[]'::jsonb)
   into result_transactions

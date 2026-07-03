@@ -41,6 +41,8 @@ export function getAvailableMonths(transactions: Transaction[]): string[] {
 }
 
 export function getFinancialMonthKey(transaction: Transaction): string {
+  const invoicePaymentPeriod = readTransactionMeta(transaction.notes).invoicePaymentPeriod;
+  if (invoicePaymentPeriod) return invoicePaymentPeriod;
   return getMonthKey(transaction.date);
 }
 
@@ -77,6 +79,10 @@ export function isInvoiceCredit(transaction: Transaction): boolean {
   return transaction.flow === 'expense' && Boolean(transaction.cardId) && readTransactionMeta(transaction.notes).invoiceAdjustment === 'credit';
 }
 
+export function isInvoicePayment(transaction: Transaction): boolean {
+  return transaction.flow === 'expense' && Boolean(readTransactionMeta(transaction.notes).invoicePaymentCardId);
+}
+
 export function getExpenseSignedAmount(transaction: Transaction): number {
   return isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
 }
@@ -93,7 +99,11 @@ export function isCardInvoicePaid(transactions: Transaction[]): boolean {
 export function summarizeDashboard(accounts: Account[], transactions: Transaction[], month: string): DashboardSummary {
   const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
   const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
-  const expenseTransactions = monthTransactions.filter((transaction) => transaction.flow === 'expense' && !isThirdPartyExpense(transaction));
+  const expenseTransactions = monthTransactions.filter((transaction) =>
+    transaction.flow === 'expense'
+    && !isThirdPartyExpense(transaction)
+    && !isInvoicePayment(transaction),
+  );
   const reimbursementTransactions = monthTransactions.filter(isThirdPartyExpense);
 
   const income = roundMoney(incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
@@ -101,8 +111,9 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
   const received = roundMoney(incomeTransactions
     .filter((transaction) => transaction.status === 'paid')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
-  const paid = roundMoney(expenseTransactions
-    .filter((transaction) => transaction.status === 'paid' && !transaction.cardId)
+  const paid = roundMoney(monthTransactions
+    .filter((transaction) => transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId)
+    .filter((transaction) => !isThirdPartyExpense(transaction))
     .reduce((sum, transaction) => sum + transaction.amount, 0));
 
   return {
@@ -128,6 +139,7 @@ export function expensesByCategory(transactions: Transaction[], categories: Cate
   transactions
     .filter((transaction) => transaction.flow === 'expense' && getFinancialMonthKey(transaction) === month)
     .filter((transaction) => !isThirdPartyExpense(transaction))
+    .filter((transaction) => !isInvoicePayment(transaction))
     .forEach((transaction) => {
       const category = categories.find((item) => item.id === transaction.categoryId);
       const key = category?.id ?? 'other';

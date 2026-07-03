@@ -38,6 +38,7 @@ import {
   formatCurrency,
   getExpenseSignedAmount,
   getFinancialMonthKey,
+  isInvoicePayment,
   isThirdPartyExpense,
   shiftMonthKey,
 } from '../../lib/utils/finance';
@@ -116,7 +117,7 @@ export function ReportsView({
       const periodTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === period);
       return periodTransactions.reduce((totals, transaction) => {
         if (transaction.flow === 'income') totals.income += transaction.amount;
-        if (transaction.flow === 'expense') {
+        if (transaction.flow === 'expense' && !isInvoicePayment(transaction)) {
           const amount = getExpenseSignedAmount(transaction);
           if (isThirdPartyExpense(transaction)) {
             totals.thirdParty += amount;
@@ -162,7 +163,7 @@ export function ReportsView({
   const dailyData = useMemo(() => {
     const totals = new Map<number, { income: number; expenses: number }>();
     monthTransactions.forEach((transaction) => {
-      if (transaction.flow === 'transfer' || isThirdPartyExpense(transaction)) return;
+      if (transaction.flow === 'transfer' || isThirdPartyExpense(transaction) || isInvoicePayment(transaction)) return;
       const day = Number(transaction.date.slice(8, 10));
       const current = totals.get(day) ?? { income: 0, expenses: 0 };
       if (transaction.flow === 'income') current.income += transaction.amount;

@@ -1,10 +1,8 @@
 import React, { useRef } from 'react';
 import {
-  ArrowDownToLine,
   CalendarDays,
   ChevronLeft,
   ArrowRight,
-  ArrowUpFromLine,
   Bell,
   ChevronRight,
   CreditCard,
@@ -266,8 +264,6 @@ export function DashboardView({
       <section className="mt-3 grid grid-cols-2 gap-2.5 px-4">
         <StatCard label="Receitas" value={hiddenMoney(showBalances, summary.income)} tone="info" icon={TrendingUp} hint={`+${formatCurrency(summary.received)}`} onClick={() => onViewDashboardTransactions('income')} />
         <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint="Débito + crédito pela data da compra" onClick={() => onViewDashboardTransactions('expenses')} />
-        <StatCard label="Recebido" value={hiddenMoney(showBalances, summary.received)} tone="info" icon={ArrowDownToLine} onClick={() => onViewDashboardTransactions('received')} />
-        <StatCard label="Pago" value={hiddenMoney(showBalances, summary.paid)} tone="neutral" icon={ArrowUpFromLine} onClick={() => onViewDashboardTransactions('paid')} />
       </section>
 
       <section className="mt-4 px-4">

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, isInvoiceCredit, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, isInvoiceCredit, isInvoicePayment, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { ExpenseViewFilter } from '../../lib/utils/expenseFilters';
@@ -70,7 +70,7 @@ function matchesScopedExpenseFilter(transaction: Transaction, filter: ExpenseVie
 function matchesDashboardFilter(transaction: Transaction, selectedMonth: string, filter: DashboardTransactionFilter) {
   if (getFinancialMonthKey(transaction) !== selectedMonth) return false;
   if (filter === 'income') return transaction.flow === 'income';
-  if (filter === 'expenses') return transaction.flow === 'expense' && !isThirdPartyExpense(transaction);
+  if (filter === 'expenses') return transaction.flow === 'expense' && !isThirdPartyExpense(transaction) && !isInvoicePayment(transaction);
   if (filter === 'received') return transaction.flow === 'income' && transaction.status === 'paid';
   return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId && !isThirdPartyExpense(transaction);
 }
@@ -155,15 +155,16 @@ export function TransactionsView({
   }, [expenseFilter, expenseScope, sourceTransactions]);
   const viewTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, transaction) => {
+      if (isInvoicePayment(transaction) && dashboardFilter !== 'paid') return sum;
       if (transaction.flow === 'income') return sum + transaction.amount;
       if (isInvoiceCredit(transaction)) return sum + transaction.amount;
       if (transaction.flow === 'expense') return sum - transaction.amount;
       return sum;
     }, 0);
-  }, [filteredTransactions]);
+  }, [dashboardFilter, filteredTransactions]);
   const spendingSummary = useMemo(() => {
     return sourceTransactions.reduce((summary, transaction) => {
-      if (transaction.flow !== 'expense') return summary;
+      if (transaction.flow !== 'expense' || isInvoicePayment(transaction)) return summary;
       const amount = isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
       if (isThirdPartyExpense(transaction)) summary.others += amount;
       else summary.personal += amount;
@@ -187,7 +188,7 @@ export function TransactionsView({
   }, [sourceTransactions]);
   const scopedExpenseTransactions = useMemo(() => {
     if (expenseScope === 'others') return sourceTransactions.filter(isThirdPartyExpense);
-    return sourceTransactions.filter((transaction) => transaction.flow === 'expense' && !isThirdPartyExpense(transaction));
+    return sourceTransactions.filter((transaction) => transaction.flow === 'expense' && !isThirdPartyExpense(transaction) && !isInvoicePayment(transaction));
   }, [expenseScope, sourceTransactions]);
   const expenseBreakdown = useMemo(
     () => summarizeExpenseBreakdown(scopedExpenseTransactions),
@@ -401,6 +402,7 @@ export function TransactionsView({
           const isIncome = transaction.flow === 'income';
           const isTransfer = transaction.flow === 'transfer';
           const isCredit = isInvoiceCredit(transaction);
+          const isPayment = isInvoicePayment(transaction);
           const isPaid = transaction.status === 'paid';
           const meta = readTransactionMeta(transaction.notes);
           const expenseNeedLabel = transaction.isReimbursable ? '' : meta.expenseNeed === 'essential' ? 'Essencial' : meta.expenseNeed === 'superfluous' ? 'Supérflua' : '';
@@ -412,9 +414,13 @@ export function TransactionsView({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
-                  <button type="button" onClick={() => onToggleStatus(transaction)} className={`${isPaid ? 'text-emerald-300' : 'text-amber-300'}`}>
-                    {isPaid ? <CheckCircle2 size={15} /> : <Circle size={15} />}
-                  </button>
+                  {isPayment ? (
+                    <CheckCircle2 size={15} className="text-emerald-300" />
+                  ) : (
+                    <button type="button" onClick={() => onToggleStatus(transaction)} className={`${isPaid ? 'text-emerald-300' : 'text-amber-300'}`}>
+                      {isPaid ? <CheckCircle2 size={15} /> : <Circle size={15} />}
+                    </button>
+                  )}
                 </div>
                 <p className="mt-1 truncate text-xs text-slate-500">
                   {getCategoryName(categories, transaction.categoryId)} - {getPaymentSource(accounts, cards, transaction)}
@@ -426,7 +432,7 @@ export function TransactionsView({
                     Reembolso - {getReimbursementPersonName(reimbursementPeople, transaction.reimbursementPersonId)}
                   </span>
                 ) : null}
-                {transaction.flow === 'expense' && !isCredit ? (
+                {transaction.flow === 'expense' && !isCredit && !isPayment ? (
                   <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${getEntryModeTagClass(transaction)}`}>
                     {getEntryModeLabel(transaction)}
                   </span>
@@ -434,6 +440,11 @@ export function TransactionsView({
                 {isCredit ? (
                   <span className="mt-2 inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
                     Credito na fatura
+                  </span>
+                ) : null}
+                {isPayment ? (
+                  <span className="mt-2 inline-flex rounded-full border border-sky-400/20 bg-sky-500/15 px-2 py-0.5 text-[10px] font-bold text-sky-100">
+                    Pagamento de fatura
                   </span>
                 ) : null}
               </div>
@@ -444,7 +455,7 @@ export function TransactionsView({
                 <p className="mt-1 text-[11px] text-slate-500">
                   {transaction.cardId ? 'Compra ' : ''}{transaction.date.slice(8, 10)}/{transaction.date.slice(5, 7)}
                 </p>
-                <div className="mt-2 flex justify-end gap-1">
+                {!isPayment ? <div className="mt-2 flex justify-end gap-1">
                   <button
                     type="button"
                     onClick={() => onEdit(transaction)}
@@ -461,7 +472,7 @@ export function TransactionsView({
                   >
                     <Trash2 size={14} />
                   </button>
-                </div>
+                </div> : null}
               </div>
             </article>
           );
