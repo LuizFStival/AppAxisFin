@@ -8,12 +8,14 @@ import {
   CreditCard,
   Eye,
   EyeOff,
+  HandCoins,
   Plus,
+  Scale,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
 import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction } from '../../types';
-import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, isCardInvoicePaid, shiftMonthKey, summarizeDashboard } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { StatCard } from '../shared/StatCard';
@@ -84,7 +86,7 @@ function getInvoiceSummary(card: Card, transactions: Transaction[], closingMonth
 }
 
 function getAccountMonthSummary(account: Account, transactions: Transaction[], month: string) {
-  const monthTransactions = transactions.filter((transaction) => getMonthKey(transaction.date) === month);
+  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
   const signedAmounts = monthTransactions.map((transaction) => getAccountSignedAmount(transaction, account.id));
   const inflow = signedAmounts.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
   const outflow = Math.abs(signedAmounts.reduce((sum, amount) => amount < 0 ? sum + amount : sum, 0));
@@ -125,7 +127,20 @@ export function DashboardView({
   const isCurrentMonth = activeMonth === getCurrentMonthKey();
   const accountsScrollerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0 });
-  const upcomingInvoiceTotal = cards.reduce((sum, card) => sum + getInvoiceSummary(card, transactions, activeMonth).total, 0);
+  const invoiceSummaries = cards.map((card) => ({ card, invoice: getInvoiceSummary(card, transactions, activeMonth) }));
+  const upcomingInvoiceTotal = invoiceSummaries.reduce(
+    (sum, { invoice }) => sum + (isCardInvoicePaid(invoice.transactions) ? 0 : invoice.total),
+    0,
+  );
+  const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1));
+  const expenseChange = previousSummary.expenses > 0
+    ? ((summary.expenses - previousSummary.expenses) / previousSummary.expenses) * 100
+    : null;
+  const expenseComparison = expenseChange === null
+    ? summary.expenses > 0 ? 'Sem base no mês anterior' : 'Sem despesas nos dois meses'
+    : `${Math.abs(expenseChange).toFixed(1).replace('.', ',')}% ${expenseChange <= 0 ? 'menor' : 'maior'} que o mês anterior`;
+  const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
+  const monthResult = summary.income - summary.expenses;
 
   function handleAccountsPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest('button')) return;
@@ -262,8 +277,10 @@ export function DashboardView({
       </section>
 
       <section className="mt-3 grid grid-cols-2 gap-2.5 px-4">
-        <StatCard label="Receitas" value={hiddenMoney(showBalances, summary.income)} tone="info" icon={TrendingUp} hint={`+${formatCurrency(summary.received)}`} onClick={() => onViewDashboardTransactions('income')} />
-        <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint="Débito + crédito pela data da compra" onClick={() => onViewDashboardTransactions('expenses')} />
+        <StatCard label="Receitas" value={hiddenMoney(showBalances, summary.income)} tone="info" icon={TrendingUp} hint={`Recebido ${formatCurrency(summary.received)} • Falta ${formatCurrency(summary.pendingIncome)}`} onClick={() => onViewDashboardTransactions('income')} />
+        <StatCard label="Despesas do mês" value={hiddenMoney(showBalances, summary.expenses)} tone="neutral" icon={TrendingDown} hint={expenseComparison} onClick={() => onViewDashboardTransactions('expenses')} />
+        <StatCard label="Dos outros" value={hiddenMoney(showBalances, reimbursementsTotal)} tone="expense" icon={HandCoins} hint={`Recebido ${formatCurrency(summary.reimbursementsReceived)} • Falta ${formatCurrency(summary.reimbursementsPending)}`} />
+        <StatCard label="Resultado do mês" value={hiddenMoney(showBalances, monthResult)} tone={monthResult >= 0 ? 'income' : 'expense'} icon={Scale} hint="Receitas menos despesas pessoais" />
       </section>
 
       <section className="mt-4 px-4">
@@ -351,8 +368,8 @@ export function DashboardView({
           </div>
         ) : (
           <div className="space-y-3">
-          {cards.map((card) => {
-            const invoice = getInvoiceSummary(card, transactions, activeMonth);
+          {invoiceSummaries.map(({ card, invoice }) => {
+            const paid = isCardInvoicePaid(invoice.transactions);
             const progress = card.limit > 0 ? Math.min(100, (invoice.total / card.limit) * 100) : 0;
             return (
               <article
@@ -368,7 +385,7 @@ export function DashboardView({
                   <div>
                     <p className="text-sm font-semibold text-white">{card.name}</p>
                     <p className="mt-1 text-[10px] font-semibold capitalize text-sky-200">
-                      {invoice.label} {invoice.status}
+                      {invoice.label} {paid ? 'Paga' : invoice.status}
                     </p>
                     <p className="mt-1 text-[10px] text-gray-500">Vence em {formatDatePtBr(invoice.dueDate)}</p>
                   </div>
