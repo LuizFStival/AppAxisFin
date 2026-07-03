@@ -408,7 +408,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       description: formatDescriptionForMeta(descriptionValue, meta),
       amount: parseCurrencyInput(amount),
       flow,
-      status,
+      status: shouldUseCard ? 'pending' : status,
       date: dateValue,
       notes: writeTransactionNotes(notes, nextMeta),
       categoryId,
@@ -855,13 +855,20 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 <DateInput value={date} onChange={setDate} />
               </div>
             </label>
-            <label className="grid gap-2 text-sm font-semibold text-slate-200">
-              Estado
-              <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
-                <option value="paid">Confirmado</option>
-                <option value="pending">Pendente</option>
-              </select>
-            </label>
+            {flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) ? (
+              <div className="rounded-[22px] border border-violet-400/15 bg-violet-500/10 px-4 py-3">
+                <p className="text-xs font-semibold text-violet-100">Estado controlado pela fatura</p>
+                <p className="mt-1 text-[11px] text-violet-200/60">A compra será quitada quando a fatura for paga.</p>
+              </div>
+            ) : (
+              <label className="grid gap-2 text-sm font-semibold text-slate-200">
+                Estado
+                <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
+                  <option value="paid">Confirmado</option>
+                  <option value="pending">Pendente</option>
+                </select>
+              </label>
+            )}
           </div>
 
           {flow === 'transfer' ? (

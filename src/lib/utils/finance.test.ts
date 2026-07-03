@@ -146,11 +146,11 @@ assert.deepEqual(summary, {
   currentBalance: 1500,
   income: 5800,
   expenses: 1682.64,
-  settledExpenses: 482.64,
+  settledExpenses: 350,
   received: 5000,
   paid: 350,
   pendingIncome: 800,
-  pendingExpenses: 1200,
+  pendingExpenses: 1332.64,
   reimbursementsPending: 0,
   reimbursementsReceived: 0,
 });

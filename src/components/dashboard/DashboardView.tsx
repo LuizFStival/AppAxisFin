@@ -294,30 +294,32 @@ export function DashboardView({
           value={hiddenMoney(showBalances, summary.income)}
           tone="info"
           icon={TrendingUp}
-          hint={<><span className="block">Recebido {formatCurrency(summary.received)} • Falta {formatCurrency(summary.pendingIncome)}</span><span className="mt-0.5 block">{incomeComparison}</span></>}
-          onClick={() => onViewDashboardTransactions('income')}
+          hint={incomeComparison}
+          details={<><span className="block">Recebido {formatCurrency(summary.received)}</span><span className="block">Falta receber {formatCurrency(summary.pendingIncome)}</span></>}
         />
         <StatCard
           label="Despesas do mês"
           value={hiddenMoney(showBalances, summary.expenses)}
           tone="neutral"
           icon={TrendingDown}
-          hint={<><span className="block">Pago {formatCurrency(summary.settledExpenses)} • Falta {formatCurrency(summary.pendingExpenses)}</span><span className="mt-0.5 block">{expenseComparison}</span></>}
-          onClick={() => onViewDashboardTransactions('expenses')}
+          hint={expenseComparison}
+          details={<><span className="block">Quitado {formatCurrency(summary.settledExpenses)}</span><span className="block">Falta quitar {formatCurrency(summary.pendingExpenses)}</span></>}
         />
         <StatCard
           label="Dos outros"
           value={hiddenMoney(showBalances, reimbursementsTotal)}
           tone="expense"
           icon={HandCoins}
-          hint={<><span className="block">Recebido {formatCurrency(summary.reimbursementsReceived)} • Falta {formatCurrency(summary.reimbursementsPending)}</span><span className="mt-0.5 block">{reimbursementComparison}</span></>}
+          hint={reimbursementComparison}
+          details={<><span className="block">Reembolsado {formatCurrency(summary.reimbursementsReceived)}</span><span className="block">Falta receber {formatCurrency(summary.reimbursementsPending)}</span></>}
         />
         <StatCard
           label="Resultado do mês"
           value={hiddenMoney(showBalances, monthResult)}
           tone={investmentGoal.remaining <= 0 && investmentGoal.target > 0 ? 'income' : monthResult >= 0 ? 'info' : 'expense'}
           icon={Scale}
-          hint={
+          hint={resultComparison}
+          details={
             <>
               {investmentGoal.target <= 0 ? (
                 <span className="block">Meta 20%: salário não identificado</span>
@@ -330,7 +332,6 @@ export function DashboardView({
                   {!investmentGoal.hasInvestmentAccount ? <span className="mt-0.5 block">Crie uma conta do tipo Investimento para registrar aportes</span> : null}
                 </>
               )}
-              <span className="mt-0.5 block">{resultComparison}</span>
             </>
           }
         />
