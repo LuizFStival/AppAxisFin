@@ -1,9 +1,12 @@
 import { assertSupabaseConfigured } from '../../lib/supabase/supabaseClient';
 import {
   assertCurrentUserId,
+  mapAccount,
   mapTransaction,
 } from '../finance/financeStore';
-import { Transaction } from '../../types';
+import { Account, Card, Transaction } from '../../types';
+import { getExpenseSignedAmount } from '../../lib/utils/finance';
+import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 
 function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'>) {
   return {
@@ -30,6 +33,56 @@ function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'
 const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at';
 
 export const transactionRepository = {
+  async payCardInvoice(input: {
+    card: Card;
+    accountId: string;
+    paymentDate: string;
+    amount: number;
+    transactions: Transaction[];
+  }): Promise<{ account: Account; transactions: Transaction[] }> {
+    await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const items = input.transactions.map((transaction) => ({
+      id: transaction.isProjected ? null : transaction.id,
+      is_projected: Boolean(transaction.isProjected),
+      description: transaction.description,
+      amount: transaction.amount,
+      signed_amount: getExpenseSignedAmount(transaction),
+      flow: transaction.flow,
+      transaction_date: transaction.date,
+      category_id: transaction.categoryId ?? null,
+      notes: transaction.notes ?? null,
+      is_reimbursable: transaction.isReimbursable ?? false,
+      reimbursement_person_id: transaction.reimbursementPersonId ?? null,
+      reimbursement_status: transaction.isReimbursable ? transaction.reimbursementStatus ?? 'pending' : null,
+      reimbursement_received_at: transaction.reimbursementReceivedAt ?? null,
+      reimbursement_received_account_id: transaction.reimbursementReceivedAccountId ?? null,
+      paid_notes: writeTransactionNotes(getVisibleNotes(transaction.notes), {
+        ...readTransactionMeta(transaction.notes),
+        paidAt: input.paymentDate,
+        paidFromAccountId: input.accountId,
+      }) ?? null,
+    }));
+
+    const { data, error } = await client.rpc('pay_card_invoice', {
+      p_account_id: input.accountId,
+      p_card_id: input.card.id,
+      p_payment_date: input.paymentDate,
+      p_expected_amount: input.amount,
+      p_items: items,
+    });
+
+    if (error) throw error;
+    if (!data?.account || !Array.isArray(data.transactions)) {
+      throw new Error('O pagamento foi processado, mas a resposta do banco veio incompleta. Recarregue os dados.');
+    }
+
+    return {
+      account: mapAccount(data.account),
+      transactions: data.transactions.map(mapTransaction),
+    };
+  },
+
   async create(transaction: Omit<Transaction, 'id'>): Promise<Transaction> {
     const userId = await assertCurrentUserId();
     const client = assertSupabaseConfigured();

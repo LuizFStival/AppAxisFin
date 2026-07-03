@@ -406,25 +406,25 @@ export default function App() {
     if (!input.paymentDate) throw new Error('Selecione a data do pagamento.');
     if (input.amount <= 0 || input.transactions.length === 0) throw new Error('Esta fatura não tem valor para pagamento.');
 
-    const updatedAccount = await accountRepository.updateBalance(input.accountId, account.balance - input.amount);
-    const paidTransactions = input.transactions.map((transaction) => ({
-      ...transaction,
-      status: 'paid' as const,
-      notes: writeTransactionNotes(getVisibleNotes(transaction.notes), {
-        ...readTransactionMeta(transaction.notes),
-        paidAt: input.paymentDate,
-        paidFromAccountId: input.accountId,
-      }),
-    }));
-    const savedTransactions = await transactionRepository.updateMany(paidTransactions);
+    const {
+      account: updatedAccount,
+      transactions: savedTransactions,
+    } = await transactionRepository.payCardInvoice(input);
     const savedById = new Map(savedTransactions.map((transaction) => [transaction.id, transaction]));
+    const paidIds = new Set(input.transactions.map((transaction) => transaction.id));
+    const materializedProjectedTransactions = savedTransactions.filter(
+      (transaction) => !paidIds.has(transaction.id),
+    );
 
     setSnapshot((current) => ({
       ...current,
       accounts: current.accounts.map((item) => item.id === updatedAccount.id ? updatedAccount : item),
-      transactions: current.transactions.map((transaction) =>
-        savedById.get(transaction.id) ?? transaction,
-      ),
+      transactions: [
+        ...materializedProjectedTransactions,
+        ...current.transactions
+          .filter((transaction) => !transaction.isProjected || !paidIds.has(transaction.id))
+          .map((transaction) => savedById.get(transaction.id) ?? transaction),
+      ],
     }));
   }
 
