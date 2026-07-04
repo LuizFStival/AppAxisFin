@@ -30,12 +30,16 @@ export function useAuthSession({ loadFinance, setAppError }: UseAuthSessionOptio
       email: sessionUser.email ?? '',
       plan: 'AxisFin',
       reimbursementsEnabled: false,
+      savingsGoalMode: 'salary_percentage',
+      savingsGoalAmount: 0,
+      savingsGoalPercentage: 20,
+      includePendingSalary: true,
     });
 
-    void profileRepository.getReimbursementsEnabled(sessionUser.id)
-      .then((reimbursementsEnabled) => {
+    void profileRepository.getPreferences(sessionUser.id)
+      .then((preferences) => {
         setUser((current) => current.id === sessionUser.id
-          ? { ...current, reimbursementsEnabled }
+          ? { ...current, ...preferences }
           : current);
       })
       .catch((error: unknown) => {

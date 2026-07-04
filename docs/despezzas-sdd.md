@@ -4,6 +4,22 @@ Versão: 1.2
 Status: documento vivo do produto  
 Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel  
 
+## Status de atualização - 2026-07-04
+
+- A preferência `Meta mensal para investir` fica persistida no perfil do usuário e pode usar valor fixo ou percentual do salário, incluindo opcionalmente salário ainda pendente.
+- O progresso da meta mede o valor economizado no mês (`receitas - despesas pessoais`) e não depende de transferência ou aporte em conta de investimento.
+- Dashboard e Relatórios usam a mesma regra de meta, exibindo percentual, valor economizado, quanto falta e faixas visuais de risco/progresso.
+- Relatórios incluem evolução financeira dos últimos seis meses para comparar receitas, despesas pessoais e resultado mensal.
+- O pagamento de fatura exibido no detalhe da conta é navegável e abre diretamente o cartão e o ciclo de fatura registrados nos metadados do pagamento.
+- Faturas destacam status, vencimento e reembolsos pendentes; transações diferenciam visualmente origens de conta e cartão.
+- A migration `20260704160259_add_monthly_savings_preferences.sql` adiciona as preferências da meta ao perfil com validações de modo, valor e percentual.
+
+Regras financeiras reafirmadas:
+
+- `Economizado no mês = max(0, receitas - despesas pessoais)`.
+- Pagamentos de fatura não são recontados como consumo mensal, pois os lançamentos originais da fatura já representam as despesas.
+- Gastos reembolsáveis de terceiros não reduzem o progresso da meta pessoal para investir.
+
 ## Status de atualização - 2026-06-28
 
 Checkpoint aplicado antes da reformulação da tela de Relatórios.

@@ -20,19 +20,15 @@ const toneClasses = {
 
 export function StatCard({ label, value, tone, icon: Icon, hint, details, onClick }: StatCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const Component = onClick ? 'button' : 'section';
 
   return (
-    <Component
-      type={onClick ? 'button' : undefined}
-      onClick={onClick}
-      className="cosmic-card cosmic-card-hover w-full rounded-2xl p-3 text-left"
-    >
+    <section className="cosmic-card cosmic-card-hover w-full rounded-2xl p-3 text-left">
       <div className="flex items-center justify-between gap-3">
-        <div>
+        <button type="button" onClick={onClick} disabled={!onClick} className="min-w-0 flex-1 text-left disabled:cursor-default">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
           <p className="mt-0.5 font-display text-base font-bold leading-tight text-white">{value}</p>
-        </div>
+          {hint ? <span className="mt-1.5 block text-[10px] leading-snug text-slate-500">{hint}</span> : null}
+        </button>
         {details ? (
           <button
             type="button"
@@ -49,12 +45,11 @@ export function StatCard({ label, value, tone, icon: Icon, hint, details, onClic
           </span>
         )}
       </div>
-      {hint ? <div className="mt-1.5 text-[10px] leading-snug text-slate-500">{hint}</div> : null}
       {details && expanded ? (
-        <div className="mt-2 border-t border-white/8 pt-2 text-[10px] leading-relaxed text-slate-400">
+        <button type="button" onClick={onClick} disabled={!onClick} className="mt-2 block w-full border-t border-white/8 pt-2 text-left text-[9px] font-normal leading-tight text-slate-400 [&_*]:text-[9px] disabled:cursor-default">
           {details}
-        </div>
+        </button>
       ) : null}
-    </Component>
+    </section>
   );
 }

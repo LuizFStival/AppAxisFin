@@ -151,6 +151,9 @@ export function CardsView({
       const reimbursementTotal = invoiceTransactions
         .filter((transaction) => transaction.isReimbursable)
         .reduce((sum, transaction) => sum + transaction.amount, 0);
+      const reimbursementPending = invoiceTransactions
+        .filter((transaction) => transaction.isReimbursable && transaction.reimbursementStatus !== 'received')
+        .reduce((sum, transaction) => sum + transaction.amount, 0);
       const personalTransactions = invoiceTransactions.filter((transaction) => !transaction.isReimbursable);
       const reimbursementTransactions = invoiceTransactions.filter((transaction) => transaction.isReimbursable);
       const personalTotal = personalTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
@@ -164,6 +167,7 @@ export function CardsView({
         total,
         invoiceCreditTotal,
         reimbursementTotal,
+        reimbursementPending,
         personalTotal,
         personalBreakdown,
         reimbursementBreakdown,
@@ -310,8 +314,16 @@ export function CardsView({
           </section>
 
           <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, invoiceCreditTotal }) => {
+            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, reimbursementPending, invoiceCreditTotal }) => {
               const progress = card.limit > 0 ? Math.max(0, Math.min(100, (total / card.limit) * 100)) : 0;
+              const displayStatus = getInvoiceDisplayStatus(invoice.status, invoiceTransactions);
+              const statusClass = displayStatus === 'Paga'
+                ? 'border-emerald-400/25 bg-emerald-500/15 text-emerald-200'
+                : displayStatus === 'Vencida'
+                  ? 'border-rose-400/25 bg-rose-500/15 text-rose-200'
+                  : displayStatus === 'Fechada'
+                    ? 'border-amber-400/25 bg-amber-500/15 text-amber-200'
+                    : 'border-sky-400/25 bg-sky-500/15 text-sky-200';
               return (
                 <article
                   key={card.id}
@@ -322,13 +334,33 @@ export function CardsView({
                   }}
                 >
                   <button type="button" onClick={() => onSelectCard(card.id)} className="w-full text-left">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <span className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: card.color }}>
+                        {card.network} • Crédito
+                      </span>
+                      <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${statusClass}`}>
+                        {displayStatus}
+                      </span>
+                    </div>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-white">{card.name}</p>
-                        <p className="mt-1 text-[10px] font-semibold text-sky-200">{invoice.label} {getInvoiceDisplayStatus(invoice.status, invoiceTransactions)}</p>
-                        <p className="mt-1 text-[10px] text-slate-500">{formatDatePtBr(invoice.startDate)} até {formatDatePtBr(invoice.endDate)}. Vence em {formatDatePtBr(invoice.dueDate)}</p>
+                        <p className="truncate font-display text-base font-bold text-white">{card.name}</p>
+                        <p className="mt-1 text-[10px] font-semibold text-slate-400">{invoice.label}</p>
                       </div>
-                      <CreditCard size={20} style={{ color: card.color }} />
+                      <span className="rounded-xl border border-white/10 bg-black/20 p-2">
+                        <CreditCard size={20} style={{ color: card.color }} />
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5">
+                      <span className="text-[10px] leading-relaxed text-slate-500">
+                        Ciclo {formatDatePtBr(invoice.startDate)}–{formatDatePtBr(invoice.endDate)}
+                      </span>
+                      <span className="text-right">
+                        <span className="block text-[8px] font-bold uppercase tracking-widest text-slate-500">Vencimento</span>
+                        <span className={`mt-0.5 block font-mono text-xs font-bold ${displayStatus === 'Vencida' ? 'text-rose-300' : 'text-white'}`}>
+                          {formatDatePtBr(invoice.dueDate)}
+                        </span>
+                      </span>
                     </div>
                     <div className="mt-4 h-2 rounded-full bg-white/8">
                       <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: card.color }} />
@@ -338,7 +370,12 @@ export function CardsView({
                       <span className="text-slate-500">{invoiceTransactions.length} lançamento{invoiceTransactions.length === 1 ? '' : 's'}</span>
                     </div>
                     {reimbursementTotal > 0 ? (
-                      <p className="mt-1 text-[10px] font-semibold text-amber-200">Reembolsos na fatura: {formatCurrency(reimbursementTotal)}</p>
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold">
+                        <span className="text-amber-200">Reembolsos: {formatCurrency(reimbursementTotal)}</span>
+                        <span className={reimbursementPending > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                          Pendente: {formatCurrency(reimbursementPending)}
+                        </span>
+                      </div>
                     ) : null}
                     {invoiceCreditTotal > 0 ? (
                       <p className="mt-1 text-[10px] font-semibold text-emerald-200">Descontos/estornos: -{formatCurrency(invoiceCreditTotal)}</p>
@@ -361,7 +398,12 @@ export function CardsView({
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold">
                   <span className="text-emerald-200">Meu: {formatCurrency(selectedInvoice.personalTotal)}</span>
                   {selectedInvoice.reimbursementTotal > 0 ? (
-                    <span className="text-amber-200">Dos outros: {formatCurrency(selectedInvoice.reimbursementTotal)}</span>
+                    <>
+                      <span className="text-amber-200">Dos outros: {formatCurrency(selectedInvoice.reimbursementTotal)}</span>
+                      <span className={selectedInvoice.reimbursementPending > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                        Pendente: {formatCurrency(selectedInvoice.reimbursementPending)}
+                      </span>
+                    </>
                   ) : null}
                   {selectedInvoice.invoiceCreditTotal > 0 ? (
                     <span className="text-emerald-200">Descontos: -{formatCurrency(selectedInvoice.invoiceCreditTotal)}</span>

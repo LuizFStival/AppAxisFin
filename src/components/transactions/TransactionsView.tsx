@@ -52,12 +52,12 @@ const othersExpenseOptions: Array<{ id: ExpenseViewFilter; label: string }> = [
 ];
 
 type ExpenseScope = 'all' | 'personal' | 'others';
-type MovementFilter = 'all' | 'received' | 'paid';
+type MovementFilter = 'all' | 'income' | 'expenses';
 
 const movementFilters: Array<{ id: MovementFilter; label: string }> = [
-  { id: 'all', label: 'Todas' },
-  { id: 'received', label: 'Recebido' },
-  { id: 'paid', label: 'Pago' },
+  { id: 'all', label: 'Todos' },
+  { id: 'income', label: 'Entradas' },
+  { id: 'expenses', label: 'Saídas' },
 ];
 
 function matchesScopedExpenseFilter(transaction: Transaction, filter: ExpenseViewFilter) {
@@ -71,6 +71,8 @@ function matchesDashboardFilter(transaction: Transaction, selectedMonth: string,
   if (getFinancialMonthKey(transaction) !== selectedMonth) return false;
   if (filter === 'income') return transaction.flow === 'income';
   if (filter === 'expenses') return transaction.flow === 'expense' && !isThirdPartyExpense(transaction) && !isInvoicePayment(transaction);
+  if (filter === 'reimbursements') return isThirdPartyExpense(transaction);
+  if (filter === 'result') return !isInvoicePayment(transaction);
   if (filter === 'received') return transaction.flow === 'income' && transaction.status === 'paid';
   return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId && !isThirdPartyExpense(transaction);
 }
@@ -123,10 +125,18 @@ export function TransactionsView({
   const [expenseScope, setExpenseScope] = useState<ExpenseScope>('all');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseViewFilter>('personal');
   const [movementFilter, setMovementFilter] = useState<MovementFilter>('all');
+  const [dashboardDetailFilter, setDashboardDetailFilter] = useState<DashboardTransactionFilter | null>(null);
   const [showMonthlyDetails, setShowMonthlyDetails] = useState(false);
 
   useEffect(() => {
-    setMovementFilter(dashboardFilter === 'received' || dashboardFilter === 'paid' ? dashboardFilter : 'all');
+    setMovementFilter(
+      dashboardFilter === 'income' || dashboardFilter === 'received'
+        ? 'income'
+        : dashboardFilter === 'expenses' || dashboardFilter === 'paid'
+          ? 'expenses'
+          : 'all',
+    );
+    setDashboardDetailFilter(dashboardFilter);
     if (!dashboardFilter) return;
     setSelectedMonth(activeMonth);
     setTab('general');
@@ -137,14 +147,16 @@ export function TransactionsView({
   const sourceTransactions = useMemo(() => {
     return transactions
       .filter((transaction) => {
-        const matchesView = movementFilter === 'all'
+        const matchesView = dashboardDetailFilter
+          ? matchesDashboardFilter(transaction, selectedMonth, dashboardDetailFilter)
+          : movementFilter === 'all'
           ? getFinancialMonthKey(transaction) === selectedMonth
           : matchesDashboardFilter(transaction, selectedMonth, movementFilter);
         return matchesView && matchesTransactionSource(transaction, tab);
       })
       .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [cards, movementFilter, search, selectedMonth, tab, transactions]);
+  }, [cards, dashboardDetailFilter, movementFilter, search, selectedMonth, tab, transactions]);
   const filteredTransactions = useMemo(() => {
     if (expenseScope === 'all') return sourceTransactions;
     return sourceTransactions
@@ -156,7 +168,7 @@ export function TransactionsView({
   }, [expenseFilter, expenseScope, sourceTransactions]);
   const viewTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, transaction) => {
-      if (isInvoicePayment(transaction) && movementFilter !== 'paid') return sum;
+      if (isInvoicePayment(transaction)) return sum;
       if (transaction.flow === 'income') return sum + transaction.amount;
       if (isInvoiceCredit(transaction)) return sum + transaction.amount;
       if (transaction.flow === 'expense') return sum - transaction.amount;
@@ -199,10 +211,10 @@ export function TransactionsView({
   const totalInflows = incomeTotal + spendingSummary.others;
   const totalOutflows = spendingSummary.personal + spendingSummary.others;
   const monthlyBalance = totalInflows - totalOutflows;
-  const totalLabel = movementFilter === 'received'
-    ? 'Total recebido'
-    : movementFilter === 'paid'
-      ? 'Total pago'
+  const totalLabel = movementFilter === 'income'
+    ? 'Total de entradas'
+    : movementFilter === 'expenses'
+      ? 'Total de saídas'
       : expenseScope === 'all'
       ? 'Resultado projetado'
     : expenseScope === 'others'
@@ -239,13 +251,15 @@ export function TransactionsView({
         ))}
       </div>
 
-      <div className="mt-3 grid shrink-0 grid-cols-3 gap-1 rounded-xl border border-white/8 bg-[#101319] p-1">
+      <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Movimentação confirmada</p>
+      <div className="mt-1.5 grid shrink-0 grid-cols-3 gap-1 rounded-xl border border-white/8 bg-[#101319] p-1">
         {movementFilters.map((filter) => (
           <button
             key={filter.id}
             type="button"
             onClick={() => {
               setMovementFilter(filter.id);
+              setDashboardDetailFilter(null);
               setExpenseScope('all');
               setExpenseFilter('personal');
             }}
@@ -428,12 +442,28 @@ export function TransactionsView({
           const meta = readTransactionMeta(transaction.notes);
           const isInvoiceSettled = Boolean(meta.paidAt && meta.paidFromAccountId);
           const expenseNeedLabel = transaction.isReimbursable ? '' : meta.expenseNeed === 'essential' ? 'Essencial' : meta.expenseNeed === 'superfluous' ? 'Supérflua' : '';
+          const sourceLabel = getPaymentSource(accounts, cards, transaction);
           return (
-            <article key={transaction.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] p-4">
+            <article
+              key={transaction.id}
+              className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4 ${
+                isCardEntry
+                  ? 'border-violet-400/20 bg-gradient-to-r from-violet-500/[0.09] to-[#101319]'
+                  : 'border-sky-400/15 bg-gradient-to-r from-sky-500/[0.06] to-[#101319]'
+              }`}
+            >
+              <span className={`absolute inset-y-0 left-0 w-1 ${isCardEntry ? 'bg-violet-500' : 'bg-sky-500'}`} />
               <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${transaction.cardId ? 'bg-violet-500/10 text-violet-300' : isTransfer ? 'bg-sky-500/10 text-sky-300' : 'bg-white/5 text-slate-300'}`}>
                 {transaction.cardId ? <CreditCard size={18} /> : <Landmark size={18} />}
               </span>
               <div className="min-w-0 flex-1">
+                <span className={`mb-1.5 inline-flex rounded-md border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest ${
+                  isCardEntry
+                    ? 'border-violet-400/20 bg-violet-500/10 text-violet-300'
+                    : 'border-sky-400/20 bg-sky-500/10 text-sky-300'
+                }`}>
+                  {isCardEntry ? 'Cartão' : 'Conta'} • {sourceLabel}
+                </span>
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
                   {isPayment ? (
@@ -445,7 +475,7 @@ export function TransactionsView({
                   )}
                 </div>
                 <p className="mt-1 truncate text-xs text-slate-500">
-                  {getCategoryName(categories, transaction.categoryId)} - {getPaymentSource(accounts, cards, transaction)}
+                  {getCategoryName(categories, transaction.categoryId)}
                   {expenseNeedLabel ? ` - ${expenseNeedLabel}` : ''}
                 </p>
                 {transaction.isReimbursable ? (

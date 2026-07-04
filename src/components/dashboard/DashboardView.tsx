@@ -14,7 +14,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction } from '../../types';
+import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction, UserProfile } from '../../types';
 import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, isCardInvoicePaid, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
@@ -30,6 +30,7 @@ interface DashboardViewProps {
   transactions: Transaction[];
   activeMonth: string;
   summary: DashboardSummary;
+  savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
   showBalances: boolean;
   notificationCount: number;
   onPreviousMonth: () => void;
@@ -43,6 +44,7 @@ interface DashboardViewProps {
   onOpenNotifications: () => void;
   onViewAccounts: (accountId?: string) => void;
   onViewCards: (cardId?: string) => void;
+  onViewReimbursements: () => void;
   onViewDashboardTransactions: (filter: DashboardTransactionFilter) => void;
   onPayInvoice: (input: {
     card: Card;
@@ -116,6 +118,7 @@ export function DashboardView({
   transactions,
   activeMonth,
   summary,
+  savingsPreferences,
   showBalances,
   notificationCount,
   onPreviousMonth,
@@ -128,6 +131,7 @@ export function DashboardView({
   onOpenNotifications,
   onViewAccounts,
   onViewCards,
+  onViewReimbursements,
   onViewDashboardTransactions,
   onPayInvoice,
   onUpdateCardClosingDay,
@@ -152,7 +156,19 @@ export function DashboardView({
   const expenseComparison = formatMonthComparison(summary.expenses, previousSummary.expenses);
   const reimbursementComparison = formatMonthComparison(reimbursementsTotal, previousReimbursementsTotal);
   const resultComparison = formatMonthComparison(monthResult, previousMonthResult);
-  const investmentGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, activeMonth);
+  const investmentGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, activeMonth, {
+    mode: savingsPreferences.savingsGoalMode,
+    fixedAmount: savingsPreferences.savingsGoalAmount,
+    percentage: savingsPreferences.savingsGoalPercentage,
+    includePendingSalary: savingsPreferences.includePendingSalary,
+  });
+  const investmentZone = investmentGoal.progress >= 100
+    ? { label: 'Meta atingida', color: 'bg-emerald-400', text: 'text-emerald-300' }
+    : investmentGoal.progress >= 80
+      ? { label: 'Muito perto da meta', color: 'bg-sky-400', text: 'text-sky-300' }
+      : investmentGoal.progress >= 50
+        ? { label: 'Zona de atenção', color: 'bg-amber-400', text: 'text-amber-300' }
+        : { label: 'Zona de perigo', color: 'bg-rose-400', text: 'text-rose-300' };
 
   function handleAccountsPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if ((event.target as HTMLElement).closest('button')) return;
@@ -272,14 +288,14 @@ export function DashboardView({
           <div className="mb-3 h-px w-full bg-[#1A1C22]" />
 
           <div className="grid w-full grid-cols-2 text-left">
-            <button type="button" onClick={() => onViewDashboardTransactions('received')} className="border-r border-[#1A1C22] pr-3 text-left transition hover:opacity-80" title="Ver receitas recebidas">
-              <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Recebido</p>
+            <button type="button" onClick={() => onViewDashboardTransactions('received')} className="border-r border-[#1A1C22] pr-3 text-left transition hover:opacity-80" title="Ver entradas confirmadas">
+              <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Entrou nas contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-emerald-400">
                 {hiddenMoney(showBalances, summary.received)}
               </p>
             </button>
-            <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="pl-4 text-left transition hover:opacity-80" title="Ver pagamentos realizados">
-              <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Pago</p>
+            <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="pl-4 text-left transition hover:opacity-80" title="Ver saídas confirmadas">
+              <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Saiu das contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-red-400">
                 {hiddenMoney(showBalances, summary.paid)}
               </p>
@@ -288,7 +304,7 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="mt-3 grid grid-cols-2 gap-2.5 px-4">
+      <section className="mt-3 grid grid-cols-2 items-start gap-2.5 px-4">
         <StatCard
           label="Receitas"
           value={hiddenMoney(showBalances, summary.income)}
@@ -296,6 +312,7 @@ export function DashboardView({
           icon={TrendingUp}
           hint={incomeComparison}
           details={<><span className="block">Recebido {formatCurrency(summary.received)}</span><span className="block">Falta receber {formatCurrency(summary.pendingIncome)}</span></>}
+          onClick={() => onViewDashboardTransactions('income')}
         />
         <StatCard
           label="Despesas do mês"
@@ -304,6 +321,7 @@ export function DashboardView({
           icon={TrendingDown}
           hint={expenseComparison}
           details={<><span className="block">Quitado {formatCurrency(summary.settledExpenses)}</span><span className="block">Falta quitar {formatCurrency(summary.pendingExpenses)}</span></>}
+          onClick={() => onViewDashboardTransactions('expenses')}
         />
         <StatCard
           label="Dos outros"
@@ -312,28 +330,37 @@ export function DashboardView({
           icon={HandCoins}
           hint={reimbursementComparison}
           details={<><span className="block">Reembolsado {formatCurrency(summary.reimbursementsReceived)}</span><span className="block">Falta receber {formatCurrency(summary.reimbursementsPending)}</span></>}
+          onClick={onViewReimbursements}
         />
         <StatCard
           label="Resultado do mês"
           value={hiddenMoney(showBalances, monthResult)}
-          tone={investmentGoal.remaining <= 0 && investmentGoal.target > 0 ? 'income' : monthResult >= 0 ? 'info' : 'expense'}
+          tone={investmentGoal.target <= 0 ? 'info' : investmentGoal.progress >= 100 ? 'income' : investmentGoal.progress >= 50 ? 'neutral' : 'expense'}
           icon={Scale}
-          hint={resultComparison}
+          hint={investmentGoal.target > 0
+            ? <span className={investmentZone.text}>{investmentGoal.progress.toFixed(0)}% da meta • {investmentZone.label}</span>
+            : resultComparison}
           details={
             <>
               {investmentGoal.target <= 0 ? (
-                <span className="block">Meta 20%: salário não identificado</span>
+                <span className="block">Defina sua meta em Configurações</span>
               ) : (
                 <>
-                  <span className="block">Meta 20% {formatCurrency(investmentGoal.target)} • Investido {formatCurrency(investmentGoal.invested)}</span>
-                  <span className="mt-0.5 block">
-                    {investmentGoal.remaining <= 0 ? 'Meta atingida' : `Falta investir ${formatCurrency(investmentGoal.remaining)}`}
+                  <span className="block">Meta {formatCurrency(investmentGoal.target)} • Economizado {formatCurrency(investmentGoal.saved)}</span>
+                  <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <span className={`block h-full rounded-full ${investmentZone.color}`} style={{ width: `${investmentGoal.progress}%` }} />
                   </span>
-                  {!investmentGoal.hasInvestmentAccount ? <span className="mt-0.5 block">Crie uma conta do tipo Investimento para registrar aportes</span> : null}
+                  <span className={`mt-1 block font-bold ${investmentZone.text}`}>
+                    {investmentGoal.progress.toFixed(0)}% • {investmentZone.label}
+                  </span>
+                  <span className="mt-0.5 block">
+                    {investmentGoal.remaining <= 0 ? 'Meta atingida' : `Falta economizar ${formatCurrency(investmentGoal.remaining)}`}
+                  </span>
                 </>
               )}
             </>
           }
+          onClick={() => onViewDashboardTransactions('result')}
         />
       </section>
 

@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
+import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CreditCard, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { Account, Card, Category, Transaction } from '../../types';
 import { formatCurrency, getAccountSignedAmount, getCategoryName, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
+import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 
 interface AccountsViewProps {
   accounts: Account[];
@@ -15,6 +16,7 @@ interface AccountsViewProps {
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
+  onOpenInvoice: (cardId: string, period: string) => void;
 }
 
 const accountTypeLabels: Record<Account['type'], string> = {
@@ -39,6 +41,7 @@ export function AccountsView({
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
+  onOpenInvoice,
 }: AccountsViewProps) {
   const totalBalance = accounts.reduce((sum, account) => sum + account.balance, 0);
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? null;
@@ -184,10 +187,24 @@ export function AccountsView({
             ) : (
               selectedTransactions.map((transaction) => {
                 const signedAmount = getAccountSignedAmount(transaction, selectedAccount.id);
+                const meta = readTransactionMeta(transaction.notes);
+                const isInvoicePayment = Boolean(meta.invoicePaymentCardId && meta.invoicePaymentPeriod);
                 return (
-                  <article key={transaction.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] p-4">
+                  <button
+                    key={transaction.id}
+                    type="button"
+                    onClick={isInvoicePayment
+                      ? () => onOpenInvoice(meta.invoicePaymentCardId!, meta.invoicePaymentPeriod!)
+                      : undefined}
+                    disabled={!isInvoicePayment}
+                    className={`flex w-full items-center gap-3 rounded-2xl border bg-[#101319] p-4 text-left ${
+                      isInvoicePayment
+                        ? 'cursor-pointer border-violet-400/20 transition hover:border-violet-400/40 hover:bg-violet-500/[0.07]'
+                        : 'cursor-default border-white/8'
+                    }`}
+                  >
                     <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${signedAmount >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
-                      {transaction.flow === 'transfer' ? <ArrowRightLeft size={17} /> : signedAmount >= 0 ? <ArrowDownToLine size={17} /> : <ArrowUpFromLine size={17} />}
+                      {isInvoicePayment ? <CreditCard size={17} /> : transaction.flow === 'transfer' ? <ArrowRightLeft size={17} /> : signedAmount >= 0 ? <ArrowDownToLine size={17} /> : <ArrowUpFromLine size={17} />}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
@@ -200,8 +217,9 @@ export function AccountsView({
                         {signedAmount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(signedAmount))}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">{transaction.date.slice(8, 10)}/{transaction.date.slice(5, 7)}</p>
+                      {isInvoicePayment ? <p className="mt-1 text-[9px] font-bold text-violet-300">Abrir fatura</p> : null}
                     </div>
-                  </article>
+                  </button>
                 );
               })
             )}

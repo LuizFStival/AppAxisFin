@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Bell, Check, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, Plus, Tags, Trash2, Wallet, X } from 'lucide-react';
+import { Bell, Check, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, PiggyBank, Plus, Tags, Trash2, Wallet, X } from 'lucide-react';
 import { Account, Card, Category, Transaction, UserProfile } from '../../types';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
 import { getVisibleNotes } from '../../lib/utils/transactionMeta';
+import { formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
+import { CurrencyInput } from '../shared/CurrencyInput';
 
 interface ProfileViewProps {
   user: UserProfile;
@@ -17,6 +19,7 @@ interface ProfileViewProps {
   onOpenNotifications: () => void;
   onUpdateProfile: (input: { name: string }) => Promise<void>;
   onUpdateReimbursementsEnabled: (enabled: boolean) => Promise<void>;
+  onUpdateSavingsGoal: (input: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>) => Promise<void>;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
@@ -57,6 +60,7 @@ export function ProfileView({
   onOpenNotifications,
   onUpdateProfile,
   onUpdateReimbursementsEnabled,
+  onUpdateSavingsGoal,
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
@@ -75,6 +79,12 @@ export function ProfileView({
   const [profileMessage, setProfileMessage] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingReimbursements, setIsSavingReimbursements] = useState(false);
+  const [savingsGoalMode, setSavingsGoalMode] = useState(user.savingsGoalMode);
+  const [savingsGoalAmount, setSavingsGoalAmount] = useState(formatCurrencyInput(user.savingsGoalAmount));
+  const [savingsGoalPercentage, setSavingsGoalPercentage] = useState(String(user.savingsGoalPercentage));
+  const [includePendingSalary, setIncludePendingSalary] = useState(user.includePendingSalary);
+  const [isSavingSavingsGoal, setIsSavingSavingsGoal] = useState(false);
+  const [isSavingsGoalSaved, setIsSavingsGoalSaved] = useState(true);
   const [categoryFlow, setCategoryFlow] = useState<Category['flow']>('expense');
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isResetOpen, setIsResetOpen] = useState(false);
@@ -99,6 +109,25 @@ export function ProfileView({
     if (resetCompleted) {
       setIsResetOpen(false);
       setIsResetConfirmed(false);
+    }
+  }
+
+  async function handleSaveSavingsGoal() {
+    if (isSavingSavingsGoal) return;
+    setIsSavingSavingsGoal(true);
+    try {
+      await onUpdateSavingsGoal({
+        savingsGoalMode,
+        savingsGoalAmount: parseCurrencyInput(savingsGoalAmount),
+        savingsGoalPercentage: Math.min(100, Math.max(0, Number(savingsGoalPercentage.replace(',', '.')) || 0)),
+        includePendingSalary,
+      });
+      setIsSavingsGoalSaved(true);
+      setProfileMessage('Meta mensal para investir salva.');
+    } catch (error) {
+      setProfileMessage(getUserFriendlyError(error, 'Não foi possível salvar a meta.'));
+    } finally {
+      setIsSavingSavingsGoal(false);
     }
   }
 
@@ -314,6 +343,100 @@ export function ProfileView({
               {isSavingReimbursements ? 'Salvando' : user.reimbursementsEnabled ? 'Ativo' : 'Inativo'}
             </span>
           </button>
+
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+                <PiggyBank size={17} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-slate-200">Meta mensal para investir</p>
+                <p className="text-[11px] text-slate-500">Usada no Resultado do mês para orientar seus investimentos.</p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSavingsGoalMode('fixed');
+                  setIsSavingsGoalSaved(false);
+                }}
+                className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${savingsGoalMode === 'fixed' ? 'border-sky-400/30 bg-sky-500/15 text-sky-200' : 'border-white/8 bg-black/10 text-slate-500'}`}
+              >
+                Valor fixo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSavingsGoalMode('salary_percentage');
+                  setIsSavingsGoalSaved(false);
+                }}
+                className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${savingsGoalMode === 'salary_percentage' ? 'border-sky-400/30 bg-sky-500/15 text-sky-200' : 'border-white/8 bg-black/10 text-slate-500'}`}
+              >
+                % do salário
+              </button>
+            </div>
+
+            <label className="mt-3 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              {savingsGoalMode === 'fixed' ? 'Quanto guardar por mês (R$)' : 'Percentual do salário'}
+              {savingsGoalMode === 'fixed' ? (
+                <CurrencyInput
+                  value={savingsGoalAmount}
+                  onChange={(value) => {
+                    setSavingsGoalAmount(value);
+                    setIsSavingsGoalSaved(false);
+                  }}
+                  className="mt-1.5 h-11 rounded-xl bg-[#090B10] text-sm"
+                />
+              ) : (
+                <span className="relative mt-1.5 block">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={savingsGoalPercentage}
+                    onChange={(event) => {
+                      setSavingsGoalPercentage(event.target.value.replace(/[^\d,.]/g, ''));
+                      setIsSavingsGoalSaved(false);
+                    }}
+                    className="h-11 w-full rounded-xl border border-white/10 bg-[#090B10] px-3 pr-10 font-mono text-sm text-white outline-none transition focus:border-sky-400/40"
+                  />
+                  <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center font-mono text-sm text-slate-400">%</span>
+                </span>
+              )}
+            </label>
+
+            {savingsGoalMode === 'salary_percentage' ? (
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-white/8 bg-black/10 p-3">
+                <input
+                  type="checkbox"
+                  checked={includePendingSalary}
+                  onChange={(event) => {
+                    setIncludePendingSalary(event.target.checked);
+                    setIsSavingsGoalSaved(false);
+                  }}
+                  className="mt-0.5 h-4 w-4 accent-sky-500"
+                />
+                <span>
+                  <span className="block text-xs font-semibold text-slate-300">Considerar salário ainda não recebido</span>
+                  <span className="mt-0.5 block text-[10px] text-slate-500">Inclui lançamentos de salário pendentes na meta do mês.</span>
+                </span>
+              </label>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => void handleSaveSavingsGoal()}
+              disabled={isSavingSavingsGoal || isSavingsGoalSaved}
+              className={`mt-3 h-10 w-full rounded-xl text-xs font-bold transition disabled:cursor-default ${
+                isSavingsGoalSaved
+                  ? 'bg-emerald-500/15 text-emerald-300'
+                  : 'bg-sky-500/15 text-sky-200 hover:bg-sky-500/25'
+              }`}
+            >
+              {isSavingSavingsGoal ? 'Salvando...' : isSavingsGoalSaved ? '✓ Meta salva' : 'Salvar alterações'}
+            </button>
+          </div>
         </div>
       </section>
 

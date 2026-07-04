@@ -35,7 +35,7 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 - Autenticação com Supabase.
 - Dashboard com saldo atual, receitas, despesas do mês, recebido, pago, contas e cartões.
 - Cards de resumo do dashboard abrem a lista de transações filtrada.
-- Contas com visão geral e detalhe por conta, incluindo entradas, saídas e transações do mês.
+- Contas com visão geral e detalhe por conta, incluindo entradas, saídas e transações do mês; pagamentos de fatura abrem diretamente o cartão e o ciclo correspondentes.
 - Cartões com fatura por ciclo de fechamento, valor atual, status, pagamento de fatura e ações de edição/exclusão.
 - Cartões com bandeira e cor personalizáveis, refletidas nos resumos e faturas.
 - Lançamentos de receita, despesa, transferência, despesa fixa recorrente e despesa parcelada.
@@ -45,7 +45,8 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 - Transações mensais separadas entre todas, gastos pessoais e gastos de terceiros, com filtros por tipo e balanço auditável.
 - Balanço mensal com receitas, reembolsos, gastos pessoais e valores de terceiros discriminados.
 - Categorias com ícones, cores, criação, edição, exclusão e separação entre entradas e despesas.
-- Relatório detalhado mensal com visão Geral/Apenas meu, totais de entradas e saídas, comparação, balanço, reembolsos, evolução diária e gastos por categoria.
+- Relatório detalhado mensal com visão Geral/Apenas meu, totais de entradas e saídas, balanço, reembolsos, meta mensal para investir, evolução diária, comparação dos últimos seis meses e gastos por categoria.
+- Meta mensal para investir configurável por valor fixo ou percentual do salário, com opção de considerar salário pendente; o progresso usa o valor economizado no mês, independentemente de aporte em conta de investimento.
 - Perfil com atalhos operacionais, cartões e categorias.
 - Exportação mensal ou anual de lançamentos em CSV compatível com Excel.
 - Metas financeiras ativas/concluídas com imagem, valor-alvo, categoria/data opcionais e aportes ou retiradas auditáveis.
@@ -128,6 +129,7 @@ Migrations importantes:
 - `20260625012331_reimbursement_received_account.sql`: conta que recebeu o reembolso.
 - `20260628223048_add_reimbursements_feature_flag.sql`: preferência por usuário para habilitar reembolsos e gastos de terceiros.
 - `20260628230300_goals_module.sql`: imagens, categorias e movimentações auditáveis das metas.
+- `20260704160259_add_monthly_savings_preferences.sql`: modo, valor/percentual e inclusão de salário pendente na meta mensal para investir.
 
 ## Segurança
 

@@ -474,6 +474,11 @@ export default function App() {
     if (!enabled && currentView === 'reimbursements') setCurrentView('profile');
   }
 
+  async function handleUpdateSavingsGoal(input: Pick<typeof user, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>) {
+    await profileRepository.updateSavingsGoal(user.id, input);
+    setUser((current) => ({ ...current, ...input }));
+  }
+
   async function handleDeleteTransaction(transaction: Transaction) {
     const meta = readTransactionMeta(transaction.notes);
     const recurringTransactionId = transaction.recurringTransactionId ?? meta.recurringTransactionId;
@@ -683,6 +688,7 @@ export default function App() {
           transactions={snapshot.transactions}
           activeMonth={activeMonth}
           summary={summary}
+          savingsPreferences={user}
           showBalances={showBalances}
           notificationCount={unreadCount}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
@@ -711,6 +717,7 @@ export default function App() {
             setSelectedCardId(cardId ?? '');
             setCurrentView('cards');
           }}
+          onViewReimbursements={() => setCurrentView('reimbursements')}
           onViewDashboardTransactions={(filter) => {
             setDashboardTransactionFilter(filter);
             setCurrentView('transactions');
@@ -743,6 +750,11 @@ export default function App() {
             setIsAddAccountOpen(true);
           }}
           onDeleteAccount={handleDeleteAccount}
+          onOpenInvoice={(cardId, period) => {
+            setSelectedCardId(cardId);
+            setActiveMonth(period);
+            setCurrentView('cards');
+          }}
         />
       ) : null}
 
@@ -827,8 +839,10 @@ export default function App() {
       {currentView === 'reports' ? (
         <ReportsView
           month={activeMonth}
+          accounts={snapshot.accounts}
           transactions={snapshot.transactions}
           categories={snapshot.categories}
+          savingsPreferences={user}
           reimbursementsEnabled={user.reimbursementsEnabled}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
@@ -863,6 +877,7 @@ export default function App() {
           onOpenNotifications={() => setCurrentView('notifications')}
           onUpdateProfile={handleUpdateProfile}
           onUpdateReimbursementsEnabled={handleUpdateReimbursementsEnabled}
+          onUpdateSavingsGoal={handleUpdateSavingsGoal}
           onAddAccount={() => {
             setEditingAccount(null);
             setIsAddAccountOpen(true);

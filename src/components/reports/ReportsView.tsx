@@ -22,6 +22,7 @@ import {
   Landmark,
   Laptop,
   MoreHorizontal,
+  PiggyBank,
   Scale,
   Settings,
   Tags,
@@ -32,15 +33,17 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Category, Transaction } from '../../types';
+import { Account, Category, Transaction, UserProfile } from '../../types';
 import {
   expensesByCategory,
   formatCurrency,
+  formatMonthLabel,
   getExpenseSignedAmount,
   getFinancialMonthKey,
   isInvoicePayment,
   isThirdPartyExpense,
   shiftMonthKey,
+  summarizeMonthlyInvestmentGoal,
 } from '../../lib/utils/finance';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { BudgetSection } from './BudgetSection';
@@ -49,6 +52,8 @@ interface ReportsViewProps {
   month: string;
   transactions: Transaction[];
   categories: Category[];
+  accounts: Account[];
+  savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
   reimbursementsEnabled: boolean;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
@@ -104,6 +109,8 @@ export function ReportsView({
   month,
   transactions,
   categories,
+  accounts,
+  savingsPreferences,
   reimbursementsEnabled,
   onPreviousMonth,
   onNextMonth,
@@ -159,6 +166,43 @@ export function ReportsView({
     };
   });
   const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
+  const monthlyEvolution = useMemo(() => {
+    return Array.from({ length: 6 }, (_, index) => shiftMonthKey(month, index - 5)).map((period) => {
+      const totals = transactions
+        .filter((transaction) => getFinancialMonthKey(transaction) === period)
+        .reduce((current, transaction) => {
+          if (transaction.flow === 'income') current.income += transaction.amount;
+          if (
+            transaction.flow === 'expense'
+            && !isThirdPartyExpense(transaction)
+            && !isInvoicePayment(transaction)
+          ) {
+            current.expenses += getExpenseSignedAmount(transaction);
+          }
+          return current;
+        }, { income: 0, expenses: 0 });
+
+      return {
+        month: formatMonthLabel(period).slice(0, 3),
+        Receitas: totals.income,
+        Despesas: totals.expenses,
+        Resultado: totals.income - totals.expenses,
+      };
+    });
+  }, [month, transactions]);
+  const savingsGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, month, {
+    mode: savingsPreferences.savingsGoalMode,
+    fixedAmount: savingsPreferences.savingsGoalAmount,
+    percentage: savingsPreferences.savingsGoalPercentage,
+    includePendingSalary: savingsPreferences.includePendingSalary,
+  });
+  const savingsZone = savingsGoal.progress >= 100
+    ? { label: 'Meta atingida', bar: 'bg-emerald-400', text: 'text-emerald-300' }
+    : savingsGoal.progress >= 80
+      ? { label: 'Muito perto', bar: 'bg-sky-400', text: 'text-sky-300' }
+      : savingsGoal.progress >= 50
+        ? { label: 'Zona de atenção', bar: 'bg-amber-400', text: 'text-amber-300' }
+        : { label: 'Zona de perigo', bar: 'bg-rose-400', text: 'text-rose-300' };
 
   const dailyData = useMemo(() => {
     const totals = new Map<number, { income: number; expenses: number }>();
@@ -271,6 +315,33 @@ export function ReportsView({
         </div>
       </section>
 
+      <section className="mt-3 rounded-[22px] border border-white/8 bg-[#101319] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+              <PiggyBank size={19} />
+            </span>
+            <span>
+              <span className="block text-xs font-semibold text-slate-400">Meta mensal para investir</span>
+              <span className="mt-0.5 block font-mono text-base font-bold text-white">{formatCurrency(savingsGoal.target)}</span>
+            </span>
+          </span>
+          <span className={`text-right text-xs font-bold ${savingsZone.text}`}>
+            <span className="block text-base">{savingsGoal.progress.toFixed(0)}%</span>
+            <span className="block text-[9px]">{savingsZone.label}</span>
+          </span>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
+          <div className={`h-full rounded-full ${savingsZone.bar}`} style={{ width: `${savingsGoal.progress}%` }} />
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3 text-[10px]">
+          <span className="text-slate-500">Economizado <strong className="text-slate-300">{formatCurrency(savingsGoal.saved)}</strong></span>
+          <span className="text-slate-500">
+            {savingsGoal.remaining > 0 ? <>Falta <strong className={savingsZone.text}>{formatCurrency(savingsGoal.remaining)}</strong></> : 'Objetivo alcançado'}
+          </span>
+        </div>
+      </section>
+
       <div className="mt-6 grid gap-5">
         <section>
           <div className="flex items-end justify-between gap-3">
@@ -337,6 +408,47 @@ export function ReportsView({
           </div>
         </section>
       </div>
+
+      <section className="mt-6 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-300">Últimos 6 meses</p>
+            <h2 className="font-display text-lg font-bold text-white">Evolução financeira</h2>
+            <p className="mt-1 text-xs text-slate-500">Compare receitas, despesas pessoais e o resultado de cada mês.</p>
+          </div>
+          <TrendingUp size={20} className="shrink-0 text-sky-300" />
+        </div>
+        <div className="mt-4 h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={monthlyEvolution}>
+              <defs>
+                <linearGradient id="monthlyIncomeGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10B981" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="monthlyExpenseGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F43F5E" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#F43F5E" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="month" stroke="#64748B" fontSize={10} />
+              <YAxis hide />
+              <Tooltip
+                contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }}
+                formatter={(value: number) => formatCurrency(value)}
+              />
+              <Area type="monotone" dataKey="Receitas" stroke="#10B981" fill="url(#monthlyIncomeGradient)" strokeWidth={2} />
+              <Area type="monotone" dataKey="Despesas" stroke="#F43F5E" fill="url(#monthlyExpenseGradient)" strokeWidth={2} />
+              <Area type="monotone" dataKey="Resultado" stroke="#38BDF8" fill="transparent" strokeWidth={2.5} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-3 text-[10px] font-semibold">
+          <span className="text-emerald-300">● Receitas</span>
+          <span className="text-rose-300">● Despesas</span>
+          <span className="text-sky-300">● Resultado</span>
+        </div>
+      </section>
 
       <section className="mt-6 rounded-[24px] border border-white/8 bg-[#101319] p-5">
         <div className="flex items-center gap-2">

@@ -48,11 +48,37 @@ const investmentTransactions: Transaction[] = [
 ];
 assert.deepEqual(summarizeMonthlyInvestmentGoal(investmentAccounts, categories, investmentTransactions, '2026-06'), {
   salaryReceived: 3000,
+  salaryConsidered: 3000,
   target: 600,
-  invested: 400,
-  remaining: 200,
-  progress: 66.67,
-  hasInvestmentAccount: true,
+  saved: 3000,
+  remaining: 0,
+  progress: 100,
 });
+
+const pendingSalaryTransactions: Transaction[] = [
+  ...investmentTransactions,
+  { id: 'salary-pending', description: 'Salário pendente', amount: 1000, flow: 'income', status: 'pending', date: '2026-06-20', accountId: 'main' },
+];
+assert.equal(summarizeMonthlyInvestmentGoal(
+  investmentAccounts,
+  categories,
+  pendingSalaryTransactions,
+  '2026-06',
+  { percentage: 25, includePendingSalary: true },
+).target, 1000);
+assert.equal(summarizeMonthlyInvestmentGoal(
+  investmentAccounts,
+  categories,
+  pendingSalaryTransactions,
+  '2026-06',
+  { percentage: 25, includePendingSalary: false },
+).target, 750);
+assert.equal(summarizeMonthlyInvestmentGoal(
+  investmentAccounts,
+  categories,
+  pendingSalaryTransactions,
+  '2026-06',
+  { mode: 'fixed', fixedAmount: 850 },
+).target, 850);
 
 console.log('financial flow tests passed');

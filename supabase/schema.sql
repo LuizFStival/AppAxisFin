@@ -38,6 +38,10 @@ create table if not exists public.profiles (
   avatar_url text,
   currency text not null default 'BRL',
   reimbursements_enabled boolean not null default false,
+  savings_goal_mode text not null default 'salary_percentage' check (savings_goal_mode in ('fixed', 'salary_percentage')),
+  savings_goal_amount numeric(14,2) not null default 0 check (savings_goal_amount >= 0),
+  savings_goal_percentage numeric(5,2) not null default 20 check (savings_goal_percentage between 0 and 100),
+  include_pending_salary boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

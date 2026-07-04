@@ -6,6 +6,10 @@ export const mockUser: UserProfile = {
   email: '',
   plan: 'AxisFin',
   reimbursementsEnabled: true,
+  savingsGoalMode: 'salary_percentage',
+  savingsGoalAmount: 0,
+  savingsGoalPercentage: 20,
+  includePendingSalary: true,
 };
 
 export const mockCategories: Category[] = [
