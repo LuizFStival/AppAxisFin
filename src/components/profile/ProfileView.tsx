@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Bell, Check, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, PiggyBank, Plus, Tags, Trash2, Wallet, X } from 'lucide-react';
-import { Account, Card, Category, Transaction, UserProfile } from '../../types';
+import { Bell, Check, ChevronDown, ChevronUp, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, PiggyBank, Plus, Tags, Trash2, Wallet, X } from 'lucide-react';
+import { Account, Card, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
 import { getVisibleNotes } from '../../lib/utils/transactionMeta';
@@ -20,6 +20,7 @@ interface ProfileViewProps {
   onUpdateProfile: (input: { name: string }) => Promise<void>;
   onUpdateReimbursementsEnabled: (enabled: boolean) => Promise<void>;
   onUpdateSavingsGoal: (input: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>) => Promise<void>;
+  onUpdateReportWidgets: (widgets: ReportWidgetId[]) => Promise<void>;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
@@ -61,6 +62,7 @@ export function ProfileView({
   onUpdateProfile,
   onUpdateReimbursementsEnabled,
   onUpdateSavingsGoal,
+  onUpdateReportWidgets,
   onAddAccount,
   onEditAccount,
   onDeleteAccount,
@@ -85,6 +87,9 @@ export function ProfileView({
   const [includePendingSalary, setIncludePendingSalary] = useState(user.includePendingSalary);
   const [isSavingSavingsGoal, setIsSavingSavingsGoal] = useState(false);
   const [isSavingsGoalSaved, setIsSavingsGoalSaved] = useState(true);
+  const [reportWidgets, setReportWidgets] = useState(user.reportWidgets);
+  const [areReportWidgetsSaved, setAreReportWidgetsSaved] = useState(true);
+  const [isSavingReportWidgets, setIsSavingReportWidgets] = useState(false);
   const [categoryFlow, setCategoryFlow] = useState<Category['flow']>('expense');
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isResetOpen, setIsResetOpen] = useState(false);
@@ -128,6 +133,24 @@ export function ProfileView({
       setProfileMessage(getUserFriendlyError(error, 'Não foi possível salvar a meta.'));
     } finally {
       setIsSavingSavingsGoal(false);
+    }
+  }
+
+  function changeReportWidgets(next: ReportWidgetId[]) {
+    setReportWidgets(next);
+    setAreReportWidgetsSaved(false);
+  }
+
+  async function handleSaveReportWidgets() {
+    setIsSavingReportWidgets(true);
+    try {
+      await onUpdateReportWidgets(reportWidgets);
+      setAreReportWidgetsSaved(true);
+      setProfileMessage('Cards do relatório atualizados.');
+    } catch (error) {
+      setProfileMessage(getUserFriendlyError(error, 'Não foi possível salvar os cards do relatório.'));
+    } finally {
+      setIsSavingReportWidgets(false);
     }
   }
 
@@ -435,6 +458,51 @@ export function ProfileView({
               }`}
             >
               {isSavingSavingsGoal ? 'Salvando...' : isSavingsGoalSaved ? '✓ Meta salva' : 'Salvar alterações'}
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+            <p className="text-sm font-semibold text-slate-200">Cards ativos em Relatórios</p>
+            <p className="mt-1 text-[11px] text-slate-500">Ative, oculte e mude a ordem dos indicadores.</p>
+            <div className="mt-3 space-y-2">
+              {([
+                ['income', 'Receitas'],
+                ['expenses', 'Despesas pessoais'],
+                ['savings_rate', 'Taxa de economia'],
+                ['average_expenses', 'Média de gastos (6 meses)'],
+              ] as Array<[ReportWidgetId, string]>).map(([id, label]) => {
+                const index = reportWidgets.indexOf(id);
+                const active = index >= 0;
+                return (
+                  <div key={id} className="flex items-center gap-2 rounded-xl border border-white/8 bg-black/10 p-2">
+                    <button
+                      type="button"
+                      onClick={() => changeReportWidgets(active ? reportWidgets.filter((item) => item !== id) : [...reportWidgets, id])}
+                      className={`flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-semibold ${active ? 'text-white' : 'text-slate-500'}`}
+                    >
+                      {active ? <Eye size={15} className="text-emerald-300" /> : <EyeOff size={15} />}
+                      <span className="truncate">{label}</span>
+                    </button>
+                    {active ? (
+                      <>
+                        <button type="button" disabled={index === 0} onClick={() => {
+                          const next = [...reportWidgets];
+                          [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                          changeReportWidgets(next);
+                        }} className="p-1 text-slate-400 disabled:opacity-20" aria-label={`Mover ${label} para cima`}><ChevronUp size={15} /></button>
+                        <button type="button" disabled={index === reportWidgets.length - 1} onClick={() => {
+                          const next = [...reportWidgets];
+                          [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                          changeReportWidgets(next);
+                        }} className="p-1 text-slate-400 disabled:opacity-20" aria-label={`Mover ${label} para baixo`}><ChevronDown size={15} /></button>
+                      </>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            <button type="button" disabled={areReportWidgetsSaved || isSavingReportWidgets} onClick={() => void handleSaveReportWidgets()} className="mt-3 h-10 w-full rounded-xl bg-sky-500/15 text-xs font-bold text-sky-200 disabled:bg-emerald-500/15 disabled:text-emerald-300">
+              {isSavingReportWidgets ? 'Salvando...' : areReportWidgetsSaved ? '✓ Organização salva' : 'Salvar organização'}
             </button>
           </div>
         </div>

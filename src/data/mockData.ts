@@ -10,6 +10,7 @@ export const mockUser: UserProfile = {
   savingsGoalAmount: 0,
   savingsGoalPercentage: 20,
   includePendingSalary: true,
+  reportWidgets: ['income', 'expenses', 'savings_rate', 'average_expenses'],
 };
 
 export const mockCategories: Category[] = [

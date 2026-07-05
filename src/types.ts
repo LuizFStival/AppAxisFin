@@ -10,6 +10,7 @@ export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimburs
 export type TransactionTab = 'general' | 'cards' | 'accounts';
 export type DashboardTransactionFilter = 'income' | 'expenses' | 'reimbursements' | 'result' | 'received' | 'paid';
 export type SavingsGoalMode = 'fixed' | 'salary_percentage';
+export type ReportWidgetId = 'income' | 'expenses' | 'savings_rate' | 'average_expenses';
 
 export interface Account {
   id: string;
@@ -162,6 +163,7 @@ export interface UserProfile {
   savingsGoalAmount: number;
   savingsGoalPercentage: number;
   includePendingSalary: boolean;
+  reportWidgets: ReportWidgetId[];
 }
 
 export interface DashboardSummary {

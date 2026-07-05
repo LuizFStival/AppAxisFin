@@ -42,6 +42,7 @@ create table if not exists public.profiles (
   savings_goal_amount numeric(14,2) not null default 0 check (savings_goal_amount >= 0),
   savings_goal_percentage numeric(5,2) not null default 20 check (savings_goal_percentage between 0 and 100),
   include_pending_salary boolean not null default true,
+  report_widgets jsonb not null default '["income","expenses","savings_rate","average_expenses"]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

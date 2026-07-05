@@ -479,6 +479,11 @@ export default function App() {
     setUser((current) => ({ ...current, ...input }));
   }
 
+  async function handleUpdateReportWidgets(reportWidgets: typeof user.reportWidgets) {
+    await profileRepository.updateReportWidgets(user.id, reportWidgets);
+    setUser((current) => ({ ...current, reportWidgets }));
+  }
+
   async function handleDeleteTransaction(transaction: Transaction) {
     const meta = readTransactionMeta(transaction.notes);
     const recurringTransactionId = transaction.recurringTransactionId ?? meta.recurringTransactionId;
@@ -843,6 +848,7 @@ export default function App() {
           transactions={snapshot.transactions}
           categories={snapshot.categories}
           savingsPreferences={user}
+          reportWidgets={user.reportWidgets}
           reimbursementsEnabled={user.reimbursementsEnabled}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
@@ -878,6 +884,7 @@ export default function App() {
           onUpdateProfile={handleUpdateProfile}
           onUpdateReimbursementsEnabled={handleUpdateReimbursementsEnabled}
           onUpdateSavingsGoal={handleUpdateSavingsGoal}
+          onUpdateReportWidgets={handleUpdateReportWidgets}
           onAddAccount={() => {
             setEditingAccount(null);
             setIsAddAccountOpen(true);

@@ -46,6 +46,7 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 - Balanço mensal com receitas, reembolsos, gastos pessoais e valores de terceiros discriminados.
 - Categorias com ícones, cores, criação, edição, exclusão e separação entre entradas e despesas.
 - Relatório detalhado mensal com visão Geral/Apenas meu, totais de entradas e saídas, balanço, reembolsos, meta mensal para investir, evolução diária, comparação dos últimos seis meses e gastos por categoria.
+- Indicadores do relatório podem ser ativados, ocultados e reordenados no Perfil; a organização é persistida por usuário e o resumo mensal pode ser baixado em CSV.
 - Meta mensal para investir configurável por valor fixo ou percentual do salário, com opção de considerar salário pendente; o progresso usa o valor economizado no mês, independentemente de aporte em conta de investimento.
 - Perfil com atalhos operacionais, cartões e categorias.
 - Exportação mensal ou anual de lançamentos em CSV compatível com Excel.

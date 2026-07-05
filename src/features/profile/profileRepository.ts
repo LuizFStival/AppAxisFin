@@ -1,5 +1,15 @@
 import { assertSupabaseConfigured } from '../../lib/supabase/supabaseClient';
-import type { SavingsGoalMode } from '../../types';
+import type { ReportWidgetId, SavingsGoalMode } from '../../types';
+
+const defaultReportWidgets: ReportWidgetId[] = ['income', 'expenses', 'savings_rate', 'average_expenses'];
+const validReportWidgets = new Set<ReportWidgetId>(defaultReportWidgets);
+
+function sanitizeReportWidgets(value: unknown): ReportWidgetId[] {
+  if (!Array.isArray(value)) return defaultReportWidgets;
+  return value.filter((item): item is ReportWidgetId =>
+    typeof item === 'string' && validReportWidgets.has(item as ReportWidgetId),
+  ).filter((item, index, items) => items.indexOf(item) === index);
+}
 
 export interface ProfilePreferences {
   reimbursementsEnabled: boolean;
@@ -7,6 +17,7 @@ export interface ProfilePreferences {
   savingsGoalAmount: number;
   savingsGoalPercentage: number;
   includePendingSalary: boolean;
+  reportWidgets: ReportWidgetId[];
 }
 
 export const profileRepository = {
@@ -14,7 +25,7 @@ export const profileRepository = {
     const client = assertSupabaseConfigured();
     const { data, error } = await client
       .from('profiles')
-      .select('reimbursements_enabled, savings_goal_mode, savings_goal_amount, savings_goal_percentage, include_pending_salary')
+      .select('reimbursements_enabled, savings_goal_mode, savings_goal_amount, savings_goal_percentage, include_pending_salary, report_widgets')
       .eq('id', userId)
       .single();
 
@@ -25,6 +36,7 @@ export const profileRepository = {
       savingsGoalAmount: Number(data.savings_goal_amount ?? 0),
       savingsGoalPercentage: Number(data.savings_goal_percentage ?? 20),
       includePendingSalary: data.include_pending_salary !== false,
+      reportWidgets: sanitizeReportWidgets(data.report_widgets),
     };
   },
 
@@ -38,7 +50,7 @@ export const profileRepository = {
     if (error) throw error;
   },
 
-  async updateSavingsGoal(userId: string, input: Omit<ProfilePreferences, 'reimbursementsEnabled'>): Promise<void> {
+  async updateSavingsGoal(userId: string, input: Pick<ProfilePreferences, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>): Promise<void> {
     const client = assertSupabaseConfigured();
     const { error } = await client
       .from('profiles')
@@ -50,6 +62,12 @@ export const profileRepository = {
       })
       .eq('id', userId);
 
+    if (error) throw error;
+  },
+
+  async updateReportWidgets(userId: string, reportWidgets: ReportWidgetId[]): Promise<void> {
+    const client = assertSupabaseConfigured();
+    const { error } = await client.from('profiles').update({ report_widgets: sanitizeReportWidgets(reportWidgets) }).eq('id', userId);
     if (error) throw error;
   },
 };

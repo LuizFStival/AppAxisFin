@@ -18,6 +18,7 @@ import {
   Car,
   Compass,
   CreditCard,
+  Download,
   Home,
   Landmark,
   Laptop,
@@ -33,7 +34,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Account, Category, Transaction, UserProfile } from '../../types';
+import { Account, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
 import {
   expensesByCategory,
   formatCurrency,
@@ -54,6 +55,7 @@ interface ReportsViewProps {
   categories: Category[];
   accounts: Account[];
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
+  reportWidgets: ReportWidgetId[];
   reimbursementsEnabled: boolean;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
@@ -111,6 +113,7 @@ export function ReportsView({
   categories,
   accounts,
   savingsPreferences,
+  reportWidgets,
   reimbursementsEnabled,
   onPreviousMonth,
   onNextMonth,
@@ -203,6 +206,29 @@ export function ReportsView({
       : savingsGoal.progress >= 50
         ? { label: 'Zona de atenção', bar: 'bg-amber-400', text: 'text-amber-300' }
         : { label: 'Zona de perigo', bar: 'bg-rose-400', text: 'text-rose-300' };
+  const savingsRate = report.current.income > 0
+    ? Math.max(0, (report.current.income - report.current.expenses) / report.current.income * 100)
+    : 0;
+  const averageExpenses = monthlyEvolution.reduce((sum, item) => sum + item.Despesas, 0) / monthlyEvolution.length;
+
+  function downloadReport() {
+    const rows = [
+      ['Indicador', 'Valor'],
+      ['Receitas', report.current.income],
+      ['Despesas pessoais', report.current.expenses],
+      ['Resultado', report.current.income - report.current.expenses],
+      ['Meta mensal para investir', savingsGoal.target],
+      ['Economizado', savingsGoal.saved],
+      ['Taxa de economia (%)', savingsRate.toFixed(2)],
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `axisfin-relatorio-${month}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   const dailyData = useMemo(() => {
     const totals = new Map<number, { income: number; expenses: number }>();
@@ -225,9 +251,14 @@ export function ReportsView({
 
   return (
     <div className="no-scrollbar h-full w-full min-w-0 overflow-x-hidden overflow-y-auto px-4 pb-8 pt-7">
-      <header>
-        <p className="text-sm text-slate-400">Relatório</p>
-        <h1 className="font-display text-2xl font-bold text-white">Detalhado</h1>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-slate-400">Relatório</p>
+          <h1 className="font-display text-2xl font-bold text-white">Detalhado</h1>
+        </div>
+        <button type="button" onClick={downloadReport} className="flex h-10 items-center gap-2 rounded-xl border border-sky-400/20 bg-sky-500/15 px-3 text-xs font-bold text-sky-200">
+          <Download size={16} /> Baixar
+        </button>
       </header>
 
       <MonthNavigator
@@ -259,33 +290,23 @@ export function ReportsView({
         </button>
       </div> : null}
 
-      <section className="mt-5 grid min-w-0 grid-cols-2 gap-3">
-        <article className="min-w-0 overflow-hidden rounded-[22px] border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold text-slate-400">Receitas</p>
-              <p className="mt-2 whitespace-nowrap font-display text-lg font-bold text-white">{formatCurrency(report.current.income)}</p>
-            </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
-              <TrendingUp size={19} />
-            </span>
-          </div>
-          <div className="mt-3"><ChangeBadge current={report.current.income} previous={report.previous.income} /></div>
-        </article>
-
-        <article className="min-w-0 overflow-hidden rounded-[22px] border border-rose-400/15 bg-rose-500/[0.07] p-3">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold text-slate-400">Despesas pessoais</p>
-              <p className="mt-2 whitespace-nowrap font-display text-lg font-bold text-white">{formatCurrency(report.current.expenses)}</p>
-            </div>
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300">
-              <TrendingDown size={19} />
-            </span>
-          </div>
-          <div className="mt-3"><ChangeBadge current={report.current.expenses} previous={report.previous.expenses} inverse /></div>
-        </article>
-      </section>
+      {reportWidgets.length > 0 ? <section className="mt-5 grid min-w-0 grid-cols-2 gap-3">
+        {reportWidgets.map((widget) => {
+          const item = widget === 'income'
+            ? ['Receitas', formatCurrency(report.current.income), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
+            : widget === 'expenses'
+              ? ['Despesas pessoais', formatCurrency(report.current.expenses), 'border-rose-400/15 bg-rose-500/[0.07] text-rose-300']
+              : widget === 'savings_rate'
+                ? ['Taxa de economia', `${savingsRate.toFixed(1).replace('.', ',')}%`, 'border-sky-400/15 bg-sky-500/[0.07] text-sky-300']
+                : ['Média de gastos (6 meses)', formatCurrency(averageExpenses), 'border-amber-400/15 bg-amber-500/[0.07] text-amber-300'];
+          return (
+            <article key={widget} className={`min-w-0 overflow-hidden rounded-[22px] border p-3 ${item[2]}`}>
+              <p className="text-xs font-semibold text-slate-400">{item[0]}</p>
+              <p className="mt-2 font-display text-lg font-bold">{item[1]}</p>
+            </article>
+          );
+        })}
+      </section> : null}
 
       <section className="mt-3 overflow-hidden rounded-[22px] border border-white/8 bg-[#101319]">
         <div className="grid grid-cols-2">

@@ -34,6 +34,7 @@ export function useAuthSession({ loadFinance, setAppError }: UseAuthSessionOptio
       savingsGoalAmount: 0,
       savingsGoalPercentage: 20,
       includePendingSalary: true,
+      reportWidgets: ['income', 'expenses', 'savings_rate', 'average_expenses'],
     });
 
     void profileRepository.getPreferences(sessionUser.id)

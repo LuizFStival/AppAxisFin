@@ -10,6 +10,8 @@ Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel
 - O progresso da meta mede o valor economizado no mês (`receitas - despesas pessoais`) e não depende de transferência ou aporte em conta de investimento.
 - Dashboard e Relatórios usam a mesma regra de meta, exibindo percentual, valor economizado, quanto falta e faixas visuais de risco/progresso.
 - Relatórios incluem evolução financeira dos últimos seis meses para comparar receitas, despesas pessoais e resultado mensal.
+- Os cards de indicadores de Relatórios podem ser ativados, ocultados e reordenados no Perfil. A ordem fica persistida em `profiles.report_widgets`, com validação dos IDs aceitos no cliente.
+- O relatório mensal pode ser exportado em CSV e inclui receitas, despesas pessoais, resultado, meta, valor economizado e taxa de economia.
 - O pagamento de fatura exibido no detalhe da conta é navegável e abre diretamente o cartão e o ciclo de fatura registrados nos metadados do pagamento.
 - Faturas destacam status, vencimento e reembolsos pendentes; transações diferenciam visualmente origens de conta e cartão.
 - A migration `20260704160259_add_monthly_savings_preferences.sql` adiciona as preferências da meta ao perfil com validações de modo, valor e percentual.
