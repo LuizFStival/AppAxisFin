@@ -144,7 +144,14 @@ export function ReimbursementsView({
 
   const reimbursementTransactions = useMemo(() => {
     if (!selectedPersonId) return modeTransactions;
-    return modeTransactions.filter((transaction) => (transaction.reimbursementPersonId ?? 'unknown') === selectedPersonId);
+    return modeTransactions
+      .filter((transaction) => (transaction.reimbursementPersonId ?? 'unknown') === selectedPersonId)
+      .sort((left, right) => {
+        if (left.reimbursementStatus !== right.reimbursementStatus) {
+          return left.reimbursementStatus === 'pending' ? -1 : 1;
+        }
+        return right.date.localeCompare(left.date);
+      });
   }, [modeTransactions, selectedPersonId]);
 
   const pendingTotal = reimbursementTransactions
@@ -218,14 +225,14 @@ export function ReimbursementsView({
       </section>
 
       {personSummaries.length > 0 ? (
-        <section className="mt-3 shrink-0">
+        <section className="mt-2 shrink-0 sm:mt-3">
           <div
             ref={peopleScrollerRef}
             onPointerDown={handlePeoplePointerDown}
             onPointerMove={handlePeoplePointerMove}
             onPointerUp={handlePeoplePointerEnd}
             onPointerCancel={handlePeoplePointerEnd}
-            className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-2 active:cursor-grabbing"
+            className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-1.5 overflow-x-auto px-4 pb-1.5 active:cursor-grabbing sm:gap-2 sm:pb-2"
           >
             {personSummaries.map((person) => (
               <button
@@ -239,18 +246,18 @@ export function ReimbursementsView({
                   setSelectedPersonId((current) => current === person.id ? null : person.id);
                 }}
                 aria-pressed={selectedPersonId === person.id}
-                className={`w-[112px] shrink-0 snap-start rounded-2xl border p-3 text-left transition ${
+                className={`grid h-11 w-[116px] shrink-0 snap-start grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 rounded-xl border px-2.5 py-1.5 text-left transition sm:block sm:h-auto sm:w-[112px] sm:rounded-2xl sm:p-3 ${
                   selectedPersonId === person.id
                     ? 'border-amber-300/60 bg-amber-400/15 ring-1 ring-amber-300/20'
                     : 'border-white/8 bg-[#101319] hover:border-amber-300/30'
                 }`}
               >
-                <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200">
+                <div className="hidden h-7 w-7 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200 sm:mb-2 sm:flex">
                   <UserRound size={14} />
                 </div>
-                <p className="truncate text-xs font-bold text-white">{person.name}</p>
-                <p className="mt-0.5 text-[10px] text-slate-500">{person.count} {person.count === 1 ? 'item' : 'itens'}</p>
-                <p className="mt-1.5 truncate font-mono text-[11px] font-bold text-amber-200">{formatCurrency(person.pending)}</p>
+                <p className="min-w-0 truncate text-xs font-bold text-white">{person.name}</p>
+                <p className="hidden text-[10px] text-slate-500 sm:mt-0.5 sm:block">{person.count} {person.count === 1 ? 'item' : 'itens'}</p>
+                <p className="truncate text-right font-mono text-[10px] font-bold text-amber-200 sm:mt-1.5 sm:text-left sm:text-[11px]">{formatCurrency(person.pending)}</p>
               </button>
             ))}
           </div>
