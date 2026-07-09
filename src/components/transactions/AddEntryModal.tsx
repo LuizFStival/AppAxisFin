@@ -747,6 +747,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                         if (nextStatus === 'received' && !reimbursementReceivedAccountId) {
                           setReimbursementReceivedAccountId(accountId || accounts[0]?.id || '');
                         }
+                        if (nextStatus === 'pending') {
+                          setReimbursementReceivedAccountId('');
+                        }
                       }}
                       className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300"
                     >

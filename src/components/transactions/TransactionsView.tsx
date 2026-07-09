@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound, X } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, isInvoiceCredit, isInvoicePayment, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, getPaymentSource, isCardInvoicePaid, isInvoiceCredit, isInvoicePayment, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
+import { getCardInvoiceInfoForClosingMonth, getCardInvoiceClosingMonth } from '../../lib/utils/cardInvoices';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { ExpenseViewFilter } from '../../lib/utils/expenseFilters';
@@ -80,10 +81,7 @@ function matchesDashboardFilter(transaction: Transaction, selectedMonth: string,
 
 function isPendingExpenseOrInvoice(transaction: Transaction) {
   if (transaction.flow !== 'expense' || isInvoicePayment(transaction) || isInvoiceCredit(transaction)) return false;
-  if (transaction.cardId) {
-    const meta = readTransactionMeta(transaction.notes);
-    return !Boolean(meta.paidAt && meta.paidFromAccountId);
-  }
+  if (transaction.cardId) return false;
   return transaction.status === 'pending';
 }
 
@@ -186,6 +184,38 @@ export function TransactionsView({
     setExpenseFilter('personal');
   }, [activeMonth, dashboardFilter]);
 
+  const pendingInvoiceSummaries = useMemo(() => {
+    if (movementFilter !== 'pending' || dashboardDetailFilter) return [];
+
+    return cards
+      .map((card) => {
+        const hasInvoicePayment = transactions.some((transaction) => {
+          const meta = readTransactionMeta(transaction.notes);
+          return isInvoicePayment(transaction)
+            && meta.invoicePaymentCardId === card.id
+            && meta.invoicePaymentPeriod === selectedMonth;
+        });
+        if (hasInvoicePayment) return null;
+
+        const invoiceTransactions = transactions.filter((transaction) => {
+          if (transaction.flow !== 'expense' || transaction.cardId !== card.id) return false;
+          return getCardInvoiceClosingMonth(card, transaction.date) === selectedMonth;
+        });
+        const invoiceItems = invoiceTransactions.filter((transaction) => !isInvoicePayment(transaction));
+        if (invoiceItems.length === 0 || isCardInvoicePaid(invoiceItems)) return null;
+        const invoice = getCardInvoiceInfoForClosingMonth(card, selectedMonth);
+        const total = invoiceItems.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
+        if (total <= 0) return null;
+        return {
+          card,
+          invoice,
+          itemCount: invoiceItems.length,
+          total,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }, [cards, dashboardDetailFilter, movementFilter, selectedMonth, transactions]);
+
   const sourceTransactions = useMemo(() => {
     return transactions
       .filter((transaction) => {
@@ -206,15 +236,20 @@ export function TransactionsView({
         : !isThirdPartyExpense(transaction))
       .filter((transaction) => matchesScopedExpenseFilter(transaction, expenseFilter));
   }, [expenseFilter, expenseScope, sourceTransactions]);
+  const pendingInvoiceTotal = useMemo(
+    () => pendingInvoiceSummaries.reduce((sum, invoice) => sum + invoice.total, 0),
+    [pendingInvoiceSummaries],
+  );
   const viewTotal = useMemo(() => {
-    return filteredTransactions.reduce((sum, transaction) => {
+    const transactionTotal = filteredTransactions.reduce((sum, transaction) => {
       if (isInvoicePayment(transaction)) return sum;
       if (transaction.flow === 'income') return sum + transaction.amount;
       if (isInvoiceCredit(transaction)) return sum + transaction.amount;
       if (transaction.flow === 'expense') return sum - transaction.amount;
       return sum;
     }, 0);
-  }, [filteredTransactions, movementFilter]);
+    return movementFilter === 'pending' ? transactionTotal - pendingInvoiceTotal : transactionTotal;
+  }, [filteredTransactions, movementFilter, pendingInvoiceTotal]);
   const spendingSummary = useMemo(() => {
     return sourceTransactions.reduce((summary, transaction) => {
       if (transaction.flow !== 'expense' || isInvoicePayment(transaction)) return summary;
@@ -251,6 +286,7 @@ export function TransactionsView({
   const totalInflows = incomeTotal + spendingSummary.others;
   const totalOutflows = spendingSummary.personal + spendingSummary.others;
   const monthlyBalance = totalInflows - totalOutflows;
+  const visibleItemCount = filteredTransactions.length + (movementFilter === 'pending' ? pendingInvoiceSummaries.length : 0);
   const totalLabel = movementFilter === 'income'
     ? 'Total de entradas'
     : movementFilter === 'expenses'
@@ -441,7 +477,7 @@ export function TransactionsView({
         <section className="mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] px-4 py-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{totalLabel}</p>
-            <p className="mt-0.5 text-xs text-slate-500">{filteredTransactions.length} lançamento{filteredTransactions.length === 1 ? '' : 's'}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{visibleItemCount} item{visibleItemCount === 1 ? '' : 's'}</p>
             {totalHint ? <p className="mt-1 truncate text-[10px] text-slate-600">{totalHint}</p> : null}
           </div>
           <p className={`whitespace-nowrap text-right font-mono text-base font-bold tracking-tight ${viewTotal >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
@@ -471,7 +507,33 @@ export function TransactionsView({
       ) : null}
 
       <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-        {filteredTransactions.length === 0 ? (
+        {movementFilter === 'pending' && pendingInvoiceSummaries.length > 0 ? (
+          <div className="space-y-3">
+            {pendingInvoiceSummaries.map(({ card, invoice, itemCount, total }) => (
+              <article key={`${card.id}:${invoice.period}`} className="relative flex items-center gap-3 overflow-hidden rounded-2xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.12] to-[#101319] p-4">
+                <span className="absolute inset-y-0 left-0 w-1 bg-violet-500" />
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300">
+                  <CreditCard size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="mb-1.5 inline-flex rounded-md border border-violet-400/20 bg-violet-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-violet-300">
+                    Fatura pendente
+                  </span>
+                  <p className="truncate text-sm font-bold text-white">{card.name} - {invoice.label}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {itemCount} lançamento{itemCount === 1 ? '' : 's'} • vence {invoice.dueDate.slice(8, 10)}/{invoice.dueDate.slice(5, 7)}
+                  </p>
+                  <span className="mt-2 inline-flex rounded-full border border-violet-400/20 bg-violet-500/15 px-2 py-0.5 text-[10px] font-bold text-violet-100">
+                    Pague pela aba Cartões
+                  </span>
+                </div>
+                <p className="shrink-0 text-right font-mono text-sm font-bold text-rose-300">-{formatCurrency(total)}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        {visibleItemCount === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
             <p className="text-sm font-bold text-white">Nenhum lançamento neste filtro</p>
             <p className="mt-1 text-xs text-slate-500">Escolha outro tipo de despesa ou limpe a busca.</p>
