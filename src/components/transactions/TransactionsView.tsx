@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound, X } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
 import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, isInvoiceCredit, isInvoicePayment, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
@@ -18,7 +18,7 @@ interface TransactionsViewProps {
   reimbursementPeople: ReimbursementPerson[];
   activeMonth: string;
   dashboardFilter: DashboardTransactionFilter | null;
-  onToggleStatus: (transaction: Transaction) => void;
+  onToggleStatus: (transaction: Transaction, paymentAccountId?: string) => void;
   onEdit: (transaction: Transaction) => void;
   onDelete: (transaction: Transaction) => void;
 }
@@ -52,11 +52,12 @@ const othersExpenseOptions: Array<{ id: ExpenseViewFilter; label: string }> = [
 ];
 
 type ExpenseScope = 'all' | 'personal' | 'others';
-type MovementFilter = 'all' | 'income' | 'expenses';
+type MovementFilter = 'all' | 'income' | 'expenses' | 'pending';
 
 const movementFilters: Array<{ id: MovementFilter; label: string }> = [
   { id: 'all', label: 'Todos' },
   { id: 'income', label: 'Entradas' },
+  { id: 'pending', label: 'Pendentes' },
   { id: 'expenses', label: 'Saídas' },
 ];
 
@@ -75,6 +76,22 @@ function matchesDashboardFilter(transaction: Transaction, selectedMonth: string,
   if (filter === 'result') return !isInvoicePayment(transaction);
   if (filter === 'received') return transaction.flow === 'income' && transaction.status === 'paid';
   return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId && !isThirdPartyExpense(transaction);
+}
+
+function isPendingExpenseOrInvoice(transaction: Transaction) {
+  if (transaction.flow !== 'expense' || isInvoicePayment(transaction) || isInvoiceCredit(transaction)) return false;
+  if (transaction.cardId) {
+    const meta = readTransactionMeta(transaction.notes);
+    return !Boolean(meta.paidAt && meta.paidFromAccountId);
+  }
+  return transaction.status === 'pending';
+}
+
+function matchesMovementFilter(transaction: Transaction, selectedMonth: string, filter: MovementFilter) {
+  if (getFinancialMonthKey(transaction) !== selectedMonth) return false;
+  if (filter === 'all') return true;
+  if (filter === 'pending') return isPendingExpenseOrInvoice(transaction);
+  return matchesDashboardFilter(transaction, selectedMonth, filter);
 }
 
 function getReimbursementPersonName(people: ReimbursementPerson[], personId?: string) {
@@ -127,6 +144,31 @@ export function TransactionsView({
   const [movementFilter, setMovementFilter] = useState<MovementFilter>('all');
   const [dashboardDetailFilter, setDashboardDetailFilter] = useState<DashboardTransactionFilter | null>(null);
   const [showMonthlyDetails, setShowMonthlyDetails] = useState(false);
+  const [paymentTransaction, setPaymentTransaction] = useState<Transaction | null>(null);
+  const [paymentAccountId, setPaymentAccountId] = useState('');
+  const [paymentError, setPaymentError] = useState('');
+
+  function openPaymentAccountPicker(transaction: Transaction) {
+    setPaymentTransaction(transaction);
+    setPaymentAccountId(transaction.accountId || accounts[0]?.id || '');
+    setPaymentError(accounts.length === 0 ? 'Cadastre uma conta antes de marcar como pago.' : '');
+  }
+
+  function closePaymentAccountPicker() {
+    setPaymentTransaction(null);
+    setPaymentAccountId('');
+    setPaymentError('');
+  }
+
+  function confirmPaymentAccount() {
+    if (!paymentTransaction) return;
+    if (!paymentAccountId) {
+      setPaymentError('Selecione de qual conta o saldo vai sair.');
+      return;
+    }
+    onToggleStatus(paymentTransaction, paymentAccountId);
+    closePaymentAccountPicker();
+  }
 
   useEffect(() => {
     setMovementFilter(
@@ -149,9 +191,7 @@ export function TransactionsView({
       .filter((transaction) => {
         const matchesView = dashboardDetailFilter
           ? matchesDashboardFilter(transaction, selectedMonth, dashboardDetailFilter)
-          : movementFilter === 'all'
-          ? getFinancialMonthKey(transaction) === selectedMonth
-          : matchesDashboardFilter(transaction, selectedMonth, movementFilter);
+          : matchesMovementFilter(transaction, selectedMonth, movementFilter);
         return matchesView && matchesTransactionSource(transaction, tab);
       })
       .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()))
@@ -215,6 +255,8 @@ export function TransactionsView({
     ? 'Total de entradas'
     : movementFilter === 'expenses'
       ? 'Total de saídas'
+      : movementFilter === 'pending'
+        ? 'Pendências do mês'
       : expenseScope === 'all'
       ? 'Resultado projetado'
     : expenseScope === 'others'
@@ -223,7 +265,9 @@ export function TransactionsView({
         ? 'Meu gasto'
         : 'Total filtrado';
   const totalHint = movementFilter === 'all' && expenseScope === 'all'
-      ? 'Inclui valores recebidos e ainda previstos'
+    ? 'Inclui valores recebidos e ainda previstos'
+    : movementFilter === 'pending'
+      ? 'Despesas em aberto e compras em fatura não paga'
       : null;
 
   return (
@@ -251,8 +295,8 @@ export function TransactionsView({
         ))}
       </div>
 
-      <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Movimentação confirmada</p>
-      <div className="mt-1.5 grid shrink-0 grid-cols-3 gap-1 rounded-xl border border-white/8 bg-[#101319] p-1">
+      <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Filtro de movimentações</p>
+      <div className="mt-1.5 grid shrink-0 grid-cols-4 gap-1 rounded-xl border border-white/8 bg-[#101319] p-1">
         {movementFilters.map((filter) => (
           <button
             key={filter.id}
@@ -272,7 +316,7 @@ export function TransactionsView({
         ))}
       </div>
 
-      {movementFilter === 'all' ? (
+      {movementFilter === 'all' || movementFilter === 'pending' ? (
         <div className="relative mt-3 flex min-h-10 min-w-0 shrink-0 items-start gap-2">
           <div className="w-0 flex-1 space-y-2">
             <ExpenseFilterChips
@@ -469,7 +513,14 @@ export function TransactionsView({
                   {isPayment ? (
                     <CheckCircle2 size={15} className="text-emerald-300" />
                   ) : isCardEntry ? null : (
-                    <button type="button" onClick={() => onToggleStatus(transaction)} className={`${isPaid ? 'text-emerald-300' : 'text-amber-300'}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isPaid || isTransfer) onToggleStatus(transaction);
+                        else openPaymentAccountPicker(transaction);
+                      }}
+                      className={`${isPaid ? 'text-emerald-300' : 'text-amber-300'}`}
+                    >
                       {isPaid ? <CheckCircle2 size={15} /> : <Circle size={15} />}
                     </button>
                   )}
@@ -539,6 +590,67 @@ export function TransactionsView({
           );
         })}
       </section>
+
+      {paymentTransaction ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-6">
+          <div className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#101319] p-5 shadow-2xl md:rounded-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">Confirmar pagamento</p>
+                <h2 className="mt-1 truncate text-lg font-bold text-white">{paymentTransaction.description}</h2>
+                <p className="mt-1 font-mono text-sm font-bold text-rose-300">-{formatCurrency(paymentTransaction.amount)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closePaymentAccountPicker}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                aria-label="Fechar"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <label className="mt-5 block text-xs font-bold text-slate-300">
+              De qual conta o saldo vai sair?
+              <select
+                value={paymentAccountId}
+                onChange={(event) => {
+                  setPaymentAccountId(event.target.value);
+                  setPaymentError('');
+                }}
+                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm font-semibold text-white outline-none focus:border-sky-400"
+              >
+                {accounts.length === 0 ? <option value="">Nenhuma conta cadastrada</option> : null}
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name} - {formatCurrency(account.balance)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {paymentError ? <p className="mt-3 text-xs font-semibold text-rose-300">{paymentError}</p> : null}
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={closePaymentAccountPicker}
+                className="h-11 rounded-lg border border-white/10 text-sm font-bold text-slate-300 transition hover:bg-white/5"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmPaymentAccount}
+                disabled={accounts.length === 0}
+                className="h-11 rounded-lg bg-sky-500 text-sm font-black text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+              >
+                Marcar como pago
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

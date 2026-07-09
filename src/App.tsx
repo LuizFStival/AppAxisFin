@@ -339,11 +339,21 @@ export default function App() {
     return saved;
   }
 
-  async function handleToggleStatus(transaction: Transaction) {
-    const nextStatus = transaction.status === 'paid' ? 'pending' : 'paid';
+  async function handleToggleStatus(transaction: Transaction, paymentAccountId?: string) {
+    const nextStatus: Transaction['status'] = transaction.status === 'paid' ? 'pending' : 'paid';
+    const shouldRequirePaymentAccount = nextStatus === 'paid'
+      && (transaction.flow === 'income' || transaction.flow === 'expense')
+      && !transaction.cardId;
+    if (shouldRequirePaymentAccount && !paymentAccountId) {
+      throw new Error('Selecione de qual conta o saldo vai sair.');
+    }
+    const nextTransaction = shouldRequirePaymentAccount
+      ? { ...transaction, status: nextStatus, accountId: paymentAccountId }
+      : { ...transaction, status: nextStatus };
+
     if (transaction.isProjected) {
-      const { id: _id, isProjected: _isProjected, ...input } = transaction;
-      const saved = await transactionRepository.create({ ...input, status: nextStatus });
+      const { id: _id, isProjected: _isProjected, ...input } = nextTransaction;
+      const saved = await transactionRepository.create(input);
       setSnapshot((current) => ({
         ...current,
         transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
@@ -352,12 +362,12 @@ export default function App() {
       return;
     }
 
-    await transactionRepository.updateStatus(transaction.id, nextStatus);
+    const saved = shouldRequirePaymentAccount
+      ? await transactionRepository.update(transaction.id, nextTransaction)
+      : await transactionRepository.updateStatus(transaction.id, nextStatus).then(() => nextTransaction);
     setSnapshot((current) => ({
       ...current,
-      transactions: current.transactions.map((item) =>
-        item.id === transaction.id ? { ...item, status: nextStatus } : item,
-      ),
+      transactions: current.transactions.map((item) => item.id === transaction.id ? saved : item),
     }));
     await refreshAccounts();
   }
@@ -805,8 +815,8 @@ export default function App() {
           reimbursementPeople={snapshot.reimbursementPeople}
           activeMonth={activeMonth}
           dashboardFilter={dashboardTransactionFilter}
-          onToggleStatus={(transaction) => runAppAction(
-            () => handleToggleStatus(transaction),
+          onToggleStatus={(transaction, paymentAccountId) => runAppAction(
+            () => handleToggleStatus(transaction, paymentAccountId),
             'Não foi possível atualizar o lançamento. Tente novamente.',
           )}
           onEdit={(transaction) => {
