@@ -48,6 +48,19 @@ export function getFinancialMonthKey(transaction: Transaction): string {
   return getMonthKey(transaction.date);
 }
 
+export function getTransactionCompetenceMonth(transaction: Transaction, cards: Card[] = []): string {
+  if (
+    transaction.flow === 'expense'
+    && transaction.cardId
+    && !isInvoicePayment(transaction)
+  ) {
+    const card = cards.find((item) => item.id === transaction.cardId);
+    if (card) return getCardInvoiceClosingMonth(card, transaction.date);
+  }
+
+  return getFinancialMonthKey(transaction);
+}
+
 export function getCategoryName(categories: Category[], categoryId?: string): string {
   if (!categoryId) return 'Transferência';
   return categories.find((category) => category.id === categoryId)?.name ?? 'Outros';
@@ -208,8 +221,15 @@ function splitInvoicePaymentAmount(payment: Transaction, transactions: Transacti
   };
 }
 
-export function summarizeDashboard(accounts: Account[], transactions: Transaction[], month: string, cards: Card[] = []): DashboardSummary {
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
+export function summarizeDashboard(
+  accounts: Account[],
+  transactions: Transaction[],
+  month: string,
+  cards: Card[] = [],
+  options: { includeReimbursements?: boolean } = {},
+): DashboardSummary {
+  const includeReimbursements = options.includeReimbursements ?? true;
+  const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month);
   const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
   const expenseTransactions = monthTransactions.filter((transaction) =>
     transaction.flow === 'expense'
@@ -218,9 +238,9 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
   );
   const reimbursementTransactions = transactions
     .filter(isThirdPartyExpense)
-    .filter((transaction) => cards.length > 0
+    .filter((transaction) => includeReimbursements && (cards.length > 0
       ? getReimbursementMonthKey(transaction, cards) === month
-      : getFinancialMonthKey(transaction) === month);
+      : getFinancialMonthKey(transaction) === month));
 
   const income = roundMoney(incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
   const expenses = roundMoney(expenseTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
@@ -248,7 +268,7 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
       return totals;
     }, { personal: 0, thirdParty: 0 });
   const paid = roundMoney(accountOutflowByOwner.personal);
-  const thirdPartyAccountOutflow = roundMoney(accountOutflowByOwner.thirdParty);
+  const thirdPartyAccountOutflow = includeReimbursements ? roundMoney(accountOutflowByOwner.thirdParty) : 0;
   const reimbursementsPending = roundMoney(reimbursementTransactions
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
@@ -266,8 +286,8 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
     accountInflow: roundMoney(received + accountReimbursementsReceived),
     accountInflowPersonal: received,
     accountInflowThirdParty: accountReimbursementsReceived,
-    accountOutflow: roundMoney(paid + thirdPartyAccountOutflow),
-    accountOutflowPersonal: paid,
+    accountOutflow: includeReimbursements ? roundMoney(paid + thirdPartyAccountOutflow) : roundMoney(paid + accountOutflowByOwner.thirdParty),
+    accountOutflowPersonal: includeReimbursements ? paid : roundMoney(paid + accountOutflowByOwner.thirdParty),
     accountOutflowThirdParty: thirdPartyAccountOutflow,
     income,
     expenses,
@@ -281,13 +301,19 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
   };
 }
 
-export function summarizeMonthlyResult(transactions: Transaction[], month: string, cards: Card[] = []) {
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
+export function summarizeMonthlyResult(
+  transactions: Transaction[],
+  month: string,
+  cards: Card[] = [],
+  options: { includeReimbursements?: boolean } = {},
+) {
+  const includeReimbursements = options.includeReimbursements ?? true;
+  const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month);
   const reimbursementTransactions = transactions
     .filter(isThirdPartyExpense)
-    .filter((transaction) => cards.length > 0
+    .filter((transaction) => includeReimbursements && (cards.length > 0
       ? getReimbursementMonthKey(transaction, cards) === month
-      : getFinancialMonthKey(transaction) === month);
+      : getFinancialMonthKey(transaction) === month));
   const income = roundMoney(monthTransactions
     .filter((transaction) => transaction.flow === 'income')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
@@ -327,6 +353,7 @@ export function summarizeMonthlyInvestmentGoal(
     percentage?: number;
     includePendingSalary?: boolean;
     cards?: Card[];
+    includeReimbursements?: boolean;
   } = {},
 ) {
   const normalize = (value: string) => value
@@ -352,7 +379,9 @@ export function summarizeMonthlyInvestmentGoal(
     .filter((transaction) => transaction.status === 'paid')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
   const salaryConsidered = roundMoney(salaryTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
-  const monthlyResult = summarizeMonthlyResult(transactions, month, options.cards ?? []);
+  const monthlyResult = summarizeMonthlyResult(transactions, month, options.cards ?? [], {
+    includeReimbursements: options.includeReimbursements,
+  });
   const saved = roundMoney(Math.max(0, monthlyResult.result));
   const target = options.mode === 'fixed'
     ? roundMoney(Math.max(0, options.fixedAmount ?? 0))
@@ -368,11 +397,11 @@ export function summarizeMonthlyInvestmentGoal(
   };
 }
 
-export function expensesByCategory(transactions: Transaction[], categories: Category[], month: string) {
+export function expensesByCategory(transactions: Transaction[], categories: Category[], month: string, cards: Card[] = []) {
   const totals = new Map<string, { name: string; value: number; color: string }>();
 
   transactions
-    .filter((transaction) => transaction.flow === 'expense' && getFinancialMonthKey(transaction) === month)
+    .filter((transaction) => transaction.flow === 'expense' && getTransactionCompetenceMonth(transaction, cards) === month)
     .filter((transaction) => !isThirdPartyExpense(transaction))
     .filter((transaction) => !isInvoicePayment(transaction))
     .forEach((transaction) => {

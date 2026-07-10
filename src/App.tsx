@@ -141,8 +141,10 @@ export default function App() {
   });
 
   const summary = useMemo(
-    () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth, snapshot.cards),
-    [activeMonth, snapshot.accounts, snapshot.cards, snapshot.transactions],
+    () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth, snapshot.cards, {
+      includeReimbursements: user.reimbursementsEnabled,
+    }),
+    [activeMonth, snapshot.accounts, snapshot.cards, snapshot.transactions, user.reimbursementsEnabled],
   );
 
   async function handleSaveAccount(input: {
@@ -706,6 +708,7 @@ export default function App() {
           activeMonth={activeMonth}
           summary={summary}
           savingsPreferences={user}
+          reimbursementsEnabled={user.reimbursementsEnabled}
           showBalances={showBalances}
           notificationCount={unreadCount}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}

@@ -10,10 +10,11 @@ Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel
 - Pagamentos de fatura são rateados entre gastos pessoais e valores de terceiros a partir dos itens da fatura, evitando que toda a saída da conta seja atribuída ao usuário.
 - Reembolsos recebidos contam como entrada de terceiros no mês do reembolso mesmo em registros históricos sem conta de recebimento preenchida; a conta continua sendo usada para conciliação de saldo quando disponível.
 - O card `Resultado do mês`, a meta mensal para investir, Relatórios e o resumo `Todas` de Transações usam a regra de competência mensal: receitas + reembolsos esperados - despesas pessoais - valores de terceiros.
+- Despesas de cartão entram na competência do mês da fatura pelo fechamento do cartão. Uma compra em maio que pertence à fatura de junho não pode deixar maio negativo no Dashboard, Transações ou Relatórios.
 - A tela de Transações preserva o mês ativo vindo do Dashboard ou de qualquer outra tela, em vez de voltar automaticamente para o mês atual.
 - Em `Entradas`, reembolsos recebidos aparecem agrupados por pessoa/empresa e abrem a tela de Reembolsos já filtrada no mês ativo.
 - A tela de Contas possui visão mensal com entradas, saídas, resultado, quantidade de movimentos e detalhe por conta, mantendo o saldo atual como caixa real.
-- A navegação desktop exibe a marca AxisFin no menu lateral e mantém o item Reembolsos estável; a preferência de reembolsos controla novos lançamentos/campos, não a existência do histórico no menu.
+- A navegação desktop exibe a marca AxisFin no menu lateral. Quando a preferência de reembolsos está desativada, o menu Reembolsos e os blocos/filtros de terceiros ficam ocultos no Dashboard, Transações e Relatórios.
 - A migration `20260709183704_relax_paid_card_invoice_items.sql` ajusta o pagamento de faturas para permitir itens de cartão com status pago quando ainda não possuem metadados de fatura quitada, preservando a proteção contra pagamento duplicado.
 
 Regras financeiras reafirmadas:

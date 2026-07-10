@@ -31,6 +31,7 @@ interface DashboardViewProps {
   activeMonth: string;
   summary: DashboardSummary;
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
+  reimbursementsEnabled: boolean;
   showBalances: boolean;
   notificationCount: number;
   onPreviousMonth: () => void;
@@ -122,6 +123,7 @@ export function DashboardView({
   activeMonth,
   summary,
   savingsPreferences,
+  reimbursementsEnabled,
   showBalances,
   notificationCount,
   onPreviousMonth,
@@ -150,11 +152,17 @@ export function DashboardView({
     (sum, { invoice }) => sum + (isCardInvoicePaid(invoice.transactions) ? 0 : invoice.total),
     0,
   );
-  const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1), cards);
+  const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1), cards, {
+    includeReimbursements: reimbursementsEnabled,
+  });
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
   const previousReimbursementsTotal = previousSummary.reimbursementsPending + previousSummary.reimbursementsReceived;
-  const monthResult = summarizeMonthlyResult(transactions, activeMonth, cards).result;
-  const previousMonthResult = summarizeMonthlyResult(transactions, shiftMonthKey(activeMonth, -1), cards).result;
+  const monthResult = summarizeMonthlyResult(transactions, activeMonth, cards, {
+    includeReimbursements: reimbursementsEnabled,
+  }).result;
+  const previousMonthResult = summarizeMonthlyResult(transactions, shiftMonthKey(activeMonth, -1), cards, {
+    includeReimbursements: reimbursementsEnabled,
+  }).result;
   const incomeComparison = formatMonthComparison(summary.income, previousSummary.income);
   const expenseComparison = formatMonthComparison(summary.expenses, previousSummary.expenses);
   const reimbursementComparison = formatMonthComparison(reimbursementsTotal, previousReimbursementsTotal);
@@ -165,6 +173,7 @@ export function DashboardView({
     percentage: savingsPreferences.savingsGoalPercentage,
     includePendingSalary: savingsPreferences.includePendingSalary,
     cards,
+    includeReimbursements: reimbursementsEnabled,
   });
   const investmentZone = investmentGoal.progress >= 100
     ? { label: 'Meta atingida', color: 'bg-emerald-400', text: 'text-emerald-300' }
@@ -333,15 +342,17 @@ export function DashboardView({
           details={<><span className="block">Quitado {formatCurrency(summary.settledExpenses)}</span><span className="block">Falta quitar {formatCurrency(summary.pendingExpenses)}</span></>}
           onClick={() => onViewDashboardTransactions('pending')}
         />
-        <StatCard
-          label="Dos outros"
-          value={hiddenMoney(showBalances, reimbursementsTotal)}
-          tone="expense"
-          icon={HandCoins}
-          hint={reimbursementComparison}
-          details={<><span className="block">Reembolsado {formatCurrency(summary.reimbursementsReceived)}</span><span className="block">Falta receber {formatCurrency(summary.reimbursementsPending)}</span></>}
-          onClick={onViewReimbursements}
-        />
+        {reimbursementsEnabled ? (
+          <StatCard
+            label="Dos outros"
+            value={hiddenMoney(showBalances, reimbursementsTotal)}
+            tone="expense"
+            icon={HandCoins}
+            hint={reimbursementComparison}
+            details={<><span className="block">Reembolsado {formatCurrency(summary.reimbursementsReceived)}</span><span className="block">Falta receber {formatCurrency(summary.reimbursementsPending)}</span></>}
+            onClick={onViewReimbursements}
+          />
+        ) : null}
         <StatCard
           label="Resultado do mês"
           value={hiddenMoney(showBalances, monthResult)}

@@ -8,6 +8,7 @@ import {
   getCurrentMonthKey,
   isCardInvoicePaid,
   getPaymentSource,
+  getTransactionCompetenceMonth,
   shiftMonthKey,
   summarizeDashboard,
   summarizeMonthlyInvestmentGoal,
@@ -203,7 +204,7 @@ const paidInvoiceDashboard = summarizeDashboard(accounts, [
     amount: 100,
     flow: 'expense',
     status: 'paid',
-    date: '2026-06-18',
+    date: '2026-05-28',
     categoryId: 'cat-food',
     cardId: 'card-main',
     notes: writeTransactionNotes(undefined, {
@@ -300,6 +301,37 @@ const monthlyResultWithReimbursements = summarizeMonthlyResult([
   },
 ], '2026-06');
 assert.equal(monthlyResultWithReimbursements.result, 300);
+const cardReimbursementByInvoiceMonth = summarizeMonthlyResult([
+  {
+    id: 'may-third-party-card',
+    description: 'Compra terceiro no cartao',
+    amount: 375.97,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-05-31',
+    categoryId: 'cat-food',
+    cardId: splitCard.id,
+    isReimbursable: true,
+    reimbursementStatus: 'pending',
+  },
+], '2026-05', [splitCard]);
+assert.equal(cardReimbursementByInvoiceMonth.reimbursementsExpected, 0);
+assert.equal(cardReimbursementByInvoiceMonth.thirdPartyExpenses, 0);
+assert.equal(cardReimbursementByInvoiceMonth.totalInflows, 0);
+assert.equal(summarizeMonthlyResult([
+  {
+    id: 'may-third-party-card',
+    description: 'Compra terceiro no cartao',
+    amount: 375.97,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-05-31',
+    categoryId: 'cat-food',
+    cardId: splitCard.id,
+    isReimbursable: true,
+    reimbursementStatus: 'pending',
+  },
+], '2026-06', [splitCard]).reimbursementsExpected, 375.97);
 assert.equal(summarizeMonthlyInvestmentGoal(accounts, categories, [
   {
     id: 'salary-result',
@@ -378,6 +410,21 @@ assert.deepEqual(getCardInvoiceInfoForClosingMonth(closesOnTwentySix, '2026-06',
 });
 
 assert.equal(getCardInvoiceClosingMonth(closesOnTwentySix, '2026-05-26'), '2026-06');
+const lateMayCardExpense: Transaction = {
+  id: 'late-may-card-expense',
+  description: 'Compra de maio na fatura de junho',
+  amount: 946.89,
+  flow: 'expense',
+  status: 'paid',
+  date: '2026-05-31',
+  categoryId: 'cat-food',
+  cardId: closesOnTwentySix.id,
+};
+assert.equal(getTransactionCompetenceMonth(lateMayCardExpense, [closesOnTwentySix]), '2026-06');
+assert.equal(summarizeDashboard(accounts, [lateMayCardExpense], '2026-05', [closesOnTwentySix]).expenses, 0);
+assert.equal(summarizeDashboard(accounts, [lateMayCardExpense], '2026-06', [closesOnTwentySix]).expenses, 946.89);
+assert.equal(summarizeMonthlyResult([lateMayCardExpense], '2026-05', [closesOnTwentySix]).personalExpenses, 0);
+assert.equal(summarizeMonthlyResult([lateMayCardExpense], '2026-06', [closesOnTwentySix]).personalExpenses, 946.89);
 assert.equal(getFinancialMonthKey({
   id: 'tx-cycle-boundary',
   description: 'Compra no fechamento',

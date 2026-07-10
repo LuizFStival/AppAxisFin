@@ -40,7 +40,7 @@ import {
   formatCurrency,
   formatMonthLabel,
   getExpenseSignedAmount,
-  getFinancialMonthKey,
+  getTransactionCompetenceMonth,
   isInvoicePayment,
   isThirdPartyExpense,
   shiftMonthKey,
@@ -127,7 +127,7 @@ export function ReportsView({
   const previousMonth = shiftMonthKey(month, -1);
   const report = useMemo(() => {
     const summarize = (period: string) => {
-      const periodTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === period);
+      const periodTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period);
       return periodTransactions.reduce((totals, transaction) => {
         if (transaction.flow === 'income') totals.income += transaction.amount;
         if (transaction.flow === 'expense' && !isInvoicePayment(transaction)) {
@@ -155,10 +155,14 @@ export function ReportsView({
     };
 
     return { current: summarize(month), previous: summarize(previousMonth) };
-  }, [month, previousMonth, transactions]);
+  }, [cards, month, previousMonth, transactions]);
 
-  const currentMonthlyResult = summarizeMonthlyResult(transactions, month, cards);
-  const previousMonthlyResult = summarizeMonthlyResult(transactions, previousMonth, cards);
+  const currentMonthlyResult = summarizeMonthlyResult(transactions, month, cards, {
+    includeReimbursements: reimbursementsEnabled,
+  });
+  const previousMonthlyResult = summarizeMonthlyResult(transactions, previousMonth, cards, {
+    includeReimbursements: reimbursementsEnabled,
+  });
   const totalInflows = currentMonthlyResult.totalInflows;
   const totalOutflows = currentMonthlyResult.totalOutflows;
   const visibleInflows = effectiveReportScope === 'general' ? totalInflows : report.current.income;
@@ -167,7 +171,7 @@ export function ReportsView({
   const previousBalance = effectiveReportScope === 'general'
     ? previousMonthlyResult.result
     : report.previous.income - report.previous.expenses;
-  const categoryData = expensesByCategory(transactions, categories, month).map((item, index) => {
+  const categoryData = expensesByCategory(transactions, categories, month, cards).map((item, index) => {
     const category = categories.find((candidate) => candidate.name === item.name);
     return {
       ...item,
@@ -175,11 +179,11 @@ export function ReportsView({
       Icon: CATEGORY_ICONS[category?.icon ?? ''] ?? Tags,
     };
   });
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
+  const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month);
   const monthlyEvolution = useMemo(() => {
     return Array.from({ length: 6 }, (_, index) => shiftMonthKey(month, index - 5)).map((period) => {
       const totals = transactions
-        .filter((transaction) => getFinancialMonthKey(transaction) === period)
+        .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period)
         .reduce((current, transaction) => {
           if (transaction.flow === 'income') current.income += transaction.amount;
           if (
@@ -199,13 +203,14 @@ export function ReportsView({
         Resultado: totals.income - totals.expenses,
       };
     });
-  }, [month, transactions]);
+  }, [cards, month, transactions]);
   const savingsGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, month, {
     mode: savingsPreferences.savingsGoalMode,
     fixedAmount: savingsPreferences.savingsGoalAmount,
     percentage: savingsPreferences.savingsGoalPercentage,
     includePendingSalary: savingsPreferences.includePendingSalary,
     cards,
+    includeReimbursements: reimbursementsEnabled,
   });
   const savingsZone = savingsGoal.progress >= 100
     ? { label: 'Meta atingida', bar: 'bg-emerald-400', text: 'text-emerald-300' }

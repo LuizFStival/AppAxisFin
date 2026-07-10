@@ -25,7 +25,9 @@ const desktopItems = [
 ];
 
 export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd, children }: AppShellProps) {
-  const visibleDesktopItems = desktopItems;
+  const visibleDesktopItems = reimbursementsEnabled
+    ? desktopItems
+    : desktopItems.filter((item) => item.id !== 'reimbursements');
 
   return (
     <main className="app-viewport overflow-hidden bg-[#050608] text-[#E0E0E0] selection:bg-[#3B82F6] selection:text-white md:p-5 lg:p-6">
