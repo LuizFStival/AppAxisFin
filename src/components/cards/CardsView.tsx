@@ -314,7 +314,7 @@ export function CardsView({
           </section>
 
           <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, reimbursementPending, invoiceCreditTotal }) => {
+            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, reimbursementPending, invoiceCreditTotal, personalTotal }) => {
               const progress = card.limit > 0 ? Math.max(0, Math.min(100, (total / card.limit) * 100)) : 0;
               const displayStatus = getInvoiceDisplayStatus(invoice.status, invoiceTransactions);
               const statusClass = displayStatus === 'Paga'
@@ -369,9 +369,18 @@ export function CardsView({
                       <span className="font-mono font-bold text-white">{formatCurrency(total)}</span>
                       <span className="text-slate-500">{invoiceTransactions.length} lançamento{invoiceTransactions.length === 1 ? '' : 's'}</span>
                     </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/10 px-3 py-2">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-emerald-200">Meu</p>
+                        <p className="mt-1 truncate font-mono text-xs font-bold text-white">{formatCurrency(personalTotal)}</p>
+                      </div>
+                      <div className="rounded-xl border border-amber-400/15 bg-amber-500/10 px-3 py-2">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-amber-200">Terceiros</p>
+                        <p className="mt-1 truncate font-mono text-xs font-bold text-white">{formatCurrency(reimbursementTotal)}</p>
+                      </div>
+                    </div>
                     {reimbursementTotal > 0 ? (
                       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold">
-                        <span className="text-amber-200">Reembolsos: {formatCurrency(reimbursementTotal)}</span>
                         <span className={reimbursementPending > 0 ? 'text-rose-300' : 'text-emerald-300'}>
                           Pendente: {formatCurrency(reimbursementPending)}
                         </span>

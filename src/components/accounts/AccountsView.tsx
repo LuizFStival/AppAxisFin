@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CreditCard, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
+import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CreditCard, Pencil, Plus, Trash2, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { Account, Card, Category, Transaction } from '../../types';
-import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCategoryName, getPaymentSource } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCategoryName, getPaymentSource, shiftMonthKey } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { MonthNavigator } from '../shared/MonthNavigator';
@@ -78,6 +78,33 @@ export function AccountsView({
   const monthlyOutflow = accountMonthlySummaries.reduce((sum, item) => sum + item.outflow, 0);
   const monthlyNet = monthlyInflow - monthlyOutflow;
   const monthlyMovementCount = accountMonthlySummaries.reduce((sum, item) => sum + item.count, 0);
+  const accountCashEvolution = useMemo(() => {
+    return Array.from({ length: 6 }, (_, index) => {
+      const month = shiftMonthKey(activeMonth, index - 5);
+      const entries = accounts.flatMap((account) =>
+        transactions.flatMap((transaction) =>
+          getAccountMovementEntries(transaction, account.id, cards)
+            .filter((entry) => entry.month === month)
+            .map((entry) => entry.amount),
+        ),
+      );
+      const inflow = entries.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
+      const outflow = Math.abs(entries.reduce((sum, amount) => amount < 0 ? sum + amount : sum, 0));
+
+      return {
+        month,
+        label: formatMonthLabel(month).slice(0, 3),
+        inflow,
+        outflow,
+        net: inflow - outflow,
+      };
+    });
+  }, [accounts, activeMonth, cards, transactions]);
+  const previousCashNet = accountCashEvolution.at(-2)?.net ?? 0;
+  const currentCashNet = accountCashEvolution.at(-1)?.net ?? 0;
+  const cashTrendDelta = currentCashNet - previousCashNet;
+  const cashTrendImproved = cashTrendDelta >= 0;
+  const maxCashNet = Math.max(1, ...accountCashEvolution.map((item) => Math.abs(item.net)));
   const selectedMovements = useMemo(() => {
     if (!selectedAccount) return [];
     return transactions
@@ -158,6 +185,37 @@ export function AccountsView({
                 <div className="rounded-xl border border-rose-400/15 bg-rose-500/10 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-200">Saiu</p>
                   <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(monthlyOutflow)}</p>
+                </div>
+              </div>
+              <div className="mt-3 rounded-xl border border-white/8 bg-black/15 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Tendencia de caixa</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-300">
+                      {cashTrendImproved ? 'Melhorou contra o mes anterior' : 'Piorou contra o mes anterior'}
+                    </p>
+                  </div>
+                  <span className={`flex shrink-0 items-center gap-1 font-mono text-xs font-bold ${cashTrendImproved ? 'text-emerald-300' : 'text-rose-300'}`}>
+                    {cashTrendImproved ? <TrendingUp size={15} /> : <TrendingDown size={15} />}
+                    {cashTrendDelta >= 0 ? '+' : '-'}{formatCurrency(Math.abs(cashTrendDelta))}
+                  </span>
+                </div>
+                <div className="mt-4 flex h-24 items-end gap-2">
+                  {accountCashEvolution.map((item) => {
+                    const height = Math.max(8, Math.round((Math.abs(item.net) / maxCashNet) * 76));
+                    return (
+                      <div key={item.month} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                        <div className="flex h-20 w-full items-end justify-center rounded-lg bg-white/[0.03] px-1">
+                          <div
+                            className={`w-full max-w-8 rounded-t-md ${item.net >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`}
+                            style={{ height }}
+                            title={`${item.label}: ${item.net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(item.net))}`}
+                          />
+                        </div>
+                        <span className="truncate text-[9px] font-bold uppercase text-slate-500">{item.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

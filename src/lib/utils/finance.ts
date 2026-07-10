@@ -393,7 +393,7 @@ export function summarizeMonthlyInvestmentGoal(
     target,
     saved,
     remaining: roundMoney(Math.max(0, target - saved)),
-    progress: target > 0 ? Math.min(100, roundMoney((saved / target) * 100)) : 0,
+    progress: target > 0 ? roundMoney((saved / target) * 100) : 0,
   };
 }
 

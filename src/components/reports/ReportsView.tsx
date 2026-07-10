@@ -165,6 +165,9 @@ export function ReportsView({
   });
   const totalInflows = currentMonthlyResult.totalInflows;
   const totalOutflows = currentMonthlyResult.totalOutflows;
+  const reimbursementExpected = currentMonthlyResult.reimbursementsExpected;
+  const reimbursementReceived = Math.min(reimbursementExpected, report.current.reimbursementsReceived);
+  const reimbursementPending = Math.max(0, reimbursementExpected - reimbursementReceived);
   const visibleInflows = effectiveReportScope === 'general' ? totalInflows : report.current.income;
   const visibleOutflows = effectiveReportScope === 'general' ? totalOutflows : report.current.expenses;
   const balance = visibleInflows - visibleOutflows;
@@ -182,19 +185,24 @@ export function ReportsView({
   const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month);
   const monthlyEvolution = useMemo(() => {
     return Array.from({ length: 6 }, (_, index) => shiftMonthKey(month, index - 5)).map((period) => {
-      const totals = transactions
-        .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period)
-        .reduce((current, transaction) => {
-          if (transaction.flow === 'income') current.income += transaction.amount;
-          if (
-            transaction.flow === 'expense'
-            && !isThirdPartyExpense(transaction)
-            && !isInvoicePayment(transaction)
-          ) {
-            current.expenses += getExpenseSignedAmount(transaction);
-          }
-          return current;
-        }, { income: 0, expenses: 0 });
+      const result = summarizeMonthlyResult(transactions, period, cards, {
+        includeReimbursements: reimbursementsEnabled,
+      });
+      const totals = effectiveReportScope === 'general'
+        ? { income: result.totalInflows, expenses: result.totalOutflows }
+        : transactions
+          .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period)
+          .reduce((current, transaction) => {
+            if (transaction.flow === 'income') current.income += transaction.amount;
+            if (
+              transaction.flow === 'expense'
+              && !isThirdPartyExpense(transaction)
+              && !isInvoicePayment(transaction)
+            ) {
+              current.expenses += getExpenseSignedAmount(transaction);
+            }
+            return current;
+          }, { income: 0, expenses: 0 });
 
       return {
         month: formatMonthLabel(period).slice(0, 3),
@@ -203,7 +211,7 @@ export function ReportsView({
         Resultado: totals.income - totals.expenses,
       };
     });
-  }, [cards, month, transactions]);
+  }, [cards, effectiveReportScope, month, reimbursementsEnabled, transactions]);
   const savingsGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, month, {
     mode: savingsPreferences.savingsGoalMode,
     fixedAmount: savingsPreferences.savingsGoalAmount,
@@ -219,8 +227,8 @@ export function ReportsView({
       : savingsGoal.progress >= 50
         ? { label: 'Zona de atenção', bar: 'bg-amber-400', text: 'text-amber-300' }
         : { label: 'Zona de perigo', bar: 'bg-rose-400', text: 'text-rose-300' };
-  const savingsRate = report.current.income > 0
-    ? Math.max(0, currentMonthlyResult.result / report.current.income * 100)
+  const savingsRate = visibleInflows > 0
+    ? Math.max(0, balance / visibleInflows * 100)
     : 0;
   const averageExpenses = monthlyEvolution.reduce((sum, item) => sum + item.Despesas, 0) / monthlyEvolution.length;
 
@@ -305,10 +313,12 @@ export function ReportsView({
 
       {reportWidgets.length > 0 ? <section className="mt-5 grid min-w-0 grid-cols-2 gap-3">
         {reportWidgets.map((widget) => {
+          const incomeLabel = effectiveReportScope === 'general' ? 'Total de entradas' : 'Receitas';
+          const expenseLabel = effectiveReportScope === 'general' ? 'Total de saídas' : 'Despesas pessoais';
           const item = widget === 'income'
-            ? ['Receitas', formatCurrency(report.current.income), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
+            ? [incomeLabel, formatCurrency(visibleInflows), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
             : widget === 'expenses'
-              ? ['Despesas pessoais', formatCurrency(report.current.expenses), 'border-rose-400/15 bg-rose-500/[0.07] text-rose-300']
+              ? [expenseLabel, formatCurrency(visibleOutflows), 'border-rose-400/15 bg-rose-500/[0.07] text-rose-300']
               : widget === 'savings_rate'
                 ? ['Taxa de economia', `${savingsRate.toFixed(1).replace('.', ',')}%`, 'border-sky-400/15 bg-sky-500/[0.07] text-sky-300']
                 : ['Média de gastos (6 meses)', formatCurrency(averageExpenses), 'border-amber-400/15 bg-amber-500/[0.07] text-amber-300'];
@@ -366,7 +376,7 @@ export function ReportsView({
           </span>
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
-          <div className={`h-full rounded-full ${savingsZone.bar}`} style={{ width: `${savingsGoal.progress}%` }} />
+          <div className={`h-full rounded-full ${savingsZone.bar}`} style={{ width: `${Math.min(100, savingsGoal.progress)}%` }} />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 text-[10px]">
           <span className="text-slate-500">Economizado <strong className="text-slate-300">{formatCurrency(savingsGoal.saved)}</strong></span>
@@ -399,11 +409,11 @@ export function ReportsView({
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
                   Reembolsos
                 </span>
-                <span className="font-mono font-bold text-white">{formatCurrency(report.current.reimbursementsReceived + report.current.reimbursementsPending)}</span>
+                <span className="font-mono font-bold text-white">{formatCurrency(reimbursementExpected)}</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-3 text-xs">
-                <div><p className="text-slate-500">Concluídos</p><p className="mt-1 font-mono font-bold text-emerald-300">{formatCurrency(report.current.reimbursementsReceived)}</p></div>
-                <div><p className="text-slate-500">Pendentes</p><p className="mt-1 font-mono font-bold text-amber-300">{formatCurrency(report.current.reimbursementsPending)}</p></div>
+                <div><p className="text-slate-500">Concluídos</p><p className="mt-1 font-mono font-bold text-emerald-300">{formatCurrency(reimbursementReceived)}</p></div>
+                <div><p className="text-slate-500">Pendentes</p><p className="mt-1 font-mono font-bold text-amber-300">{formatCurrency(reimbursementPending)}</p></div>
               </div>
             </article> : null}
           </div>
@@ -437,7 +447,7 @@ export function ReportsView({
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
                 Valores de terceiros
               </span>
-              <span className="font-mono font-bold text-white">{formatCurrency(report.current.thirdParty)}</span>
+              <span className="font-mono font-bold text-white">{formatCurrency(currentMonthlyResult.thirdPartyExpenses)}</span>
             </article> : null}
           </div>
         </section>

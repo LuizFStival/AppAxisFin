@@ -369,7 +369,7 @@ export function DashboardView({
                 <>
                   <span className="block">Meta {formatCurrency(investmentGoal.target)} • Economizado {formatCurrency(investmentGoal.saved)}</span>
                   <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/10">
-                    <span className={`block h-full rounded-full ${investmentZone.color}`} style={{ width: `${investmentGoal.progress}%` }} />
+                    <span className={`block h-full rounded-full ${investmentZone.color}`} style={{ width: `${Math.min(100, investmentGoal.progress)}%` }} />
                   </span>
                   <span className={`mt-1 block font-bold ${investmentZone.text}`}>
                     {investmentGoal.progress.toFixed(0)}% • {investmentZone.label}

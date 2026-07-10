@@ -58,7 +58,7 @@ assert.deepEqual(summarizeMonthlyInvestmentGoal(investmentAccounts, categories, 
   target: 600,
   saved: 3000,
   remaining: 0,
-  progress: 100,
+  progress: 500,
 });
 
 const pendingSalaryTransactions: Transaction[] = [

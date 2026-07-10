@@ -35,7 +35,6 @@ export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd
         <aside className="hidden border-r border-white/8 bg-[#080A0F]/85 px-4 py-5 md:flex md:min-h-0 md:flex-col">
           <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
             <AxisFinLogo showWordmark className="[&_svg]:h-9 [&_svg]:w-9 [&_span]:text-lg" />
-            <p className="mt-2 text-xs text-slate-500">Painel financeiro</p>
           </div>
           <nav className="mt-7 flex flex-1 flex-col gap-1">
             {visibleDesktopItems.map((item) => {
