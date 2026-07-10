@@ -323,6 +323,21 @@ export function ReportsView({
         {reportWidgets.map((widget) => {
           const incomeLabel = effectiveReportScope === 'general' ? 'Total de entradas' : 'Receitas';
           const expenseLabel = effectiveReportScope === 'general' ? 'Total de saídas' : 'Despesas pessoais';
+          const breakdown = widget === 'income'
+            ? effectiveReportScope === 'general'
+              ? [
+                ['Meu', report.current.income, 'text-emerald-200'],
+                ['Terceiros', reimbursementExpected, 'text-amber-200'],
+              ]
+              : [['Meu', report.current.income, 'text-emerald-200']]
+            : widget === 'expenses'
+              ? effectiveReportScope === 'general'
+                ? [
+                  ['Meu', report.current.expenses, 'text-rose-200'],
+                  ['Terceiros', currentMonthlyResult.thirdPartyExpenses, 'text-amber-200'],
+                ]
+                : [['Meu', report.current.expenses, 'text-rose-200']]
+              : null;
           const item = widget === 'income'
             ? [incomeLabel, formatCurrency(visibleInflows), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
             : widget === 'expenses'
@@ -334,6 +349,16 @@ export function ReportsView({
             <article key={widget} className={`min-w-0 overflow-hidden rounded-[22px] border p-3 ${item[2]}`}>
               <p className="text-xs font-semibold text-slate-400">{item[0]}</p>
               <p className="mt-2 font-display text-lg font-bold">{item[1]}</p>
+              {breakdown ? (
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-2">
+                  {breakdown.map(([label, value, tone]) => (
+                    <div key={label}>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
+                      <p className={`mt-1 truncate font-mono text-xs font-bold ${tone}`}>{formatCurrency(Number(value))}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </article>
           );
         })}
@@ -394,7 +419,7 @@ export function ReportsView({
         </div>
       </section>
 
-      <div className="mt-6 grid gap-5">
+      <div className="hidden">
         <section>
           <div className="flex items-end justify-between gap-3">
             <div>
