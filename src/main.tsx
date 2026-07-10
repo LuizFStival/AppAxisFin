@@ -10,6 +10,6 @@ registerPwa();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
-    <SpeedInsights />
+    {import.meta.env.PROD ? <SpeedInsights /> : null}
   </StrictMode>,
 );
