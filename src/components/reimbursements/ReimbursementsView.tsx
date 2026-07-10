@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
 import { Account, Card, ReimbursementPerson, Transaction } from '../../types';
 import { formatCurrency } from '../../lib/utils/finance';
@@ -12,6 +12,7 @@ interface ReimbursementsViewProps {
   cards: Card[];
   transactions: Transaction[];
   activeMonth: string;
+  initialPersonId?: string | null;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   onCurrentMonth: () => void;
@@ -41,6 +42,7 @@ export function ReimbursementsView({
   cards,
   transactions,
   activeMonth,
+  initialPersonId,
   onPreviousMonth,
   onNextMonth,
   onCurrentMonth,
@@ -55,6 +57,12 @@ export function ReimbursementsView({
   const peopleScrollerRef = useRef<HTMLDivElement | null>(null);
   const peopleDragRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0, didMove: false });
   const today = formatLocalDate(new Date());
+
+  useEffect(() => {
+    if (initialPersonId === undefined) return;
+    setMode('month');
+    setSelectedPersonId(initialPersonId);
+  }, [activeMonth, initialPersonId]);
 
   function handlePeoplePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (event.pointerType !== 'mouse') return;

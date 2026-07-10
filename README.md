@@ -33,17 +33,17 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 ## Funcionalidades Atuais
 
 - Autenticação com Supabase.
-- Dashboard com saldo atual, receitas, despesas do mês, recebido, pago, contas e cartões.
+- Dashboard com saldo atual, entradas/saídas reais de conta separadas entre valores próprios e de terceiros, receitas, despesas do mês, contas e cartões.
 - Cards de resumo do dashboard abrem a lista de transações filtrada.
-- Contas com visão geral e detalhe por conta, incluindo entradas, saídas e transações do mês; pagamentos de fatura abrem diretamente o cartão e o ciclo correspondentes.
+- Contas com visão mensal, resumo de entradas, saídas, resultado e detalhe por conta; pagamentos de fatura abrem diretamente o cartão e o ciclo correspondentes.
 - Cartões com fatura por ciclo de fechamento, valor atual, status, pagamento de fatura e ações de edição/exclusão.
 - Cartões com bandeira e cor personalizáveis, refletidas nos resumos e faturas.
 - Lançamentos de receita, despesa, transferência, despesa fixa recorrente e despesa parcelada.
 - Despesas fixas recorrentes com projeções pendentes, edição de tipo e exclusão somente da ocorrência ou desta em diante.
 - Reembolsos vinculados a pessoas, com estados pendente/recebido e conta de recebimento.
-- Reembolsos são um recurso opcional por usuário, habilitado nas configurações do Perfil.
+- Reembolsos são um recurso opcional por usuário para novos lançamentos, mas a tela e o menu permanecem acessíveis para histórico.
 - Transações mensais separadas entre todas, gastos pessoais e gastos de terceiros, com filtros por tipo e balanço auditável.
-- Balanço mensal com receitas, reembolsos, gastos pessoais e valores de terceiros discriminados.
+- Balanço mensal com receitas, reembolsos esperados, gastos pessoais e valores de terceiros discriminados; a navegação preserva o mês ativo entre Dashboard, Transações, Contas, Cartões, Reembolsos e Relatórios.
 - Categorias com ícones, cores, criação, edição, exclusão e separação entre entradas e despesas.
 - Relatório detalhado mensal com visão Geral/Apenas meu, totais de entradas e saídas, balanço, reembolsos, meta mensal para investir, evolução diária, comparação dos últimos seis meses e gastos por categoria.
 - Indicadores do relatório podem ser ativados, ocultados e reordenados no Perfil; a organização é persistida por usuário e o resumo mensal pode ser baixado em CSV.

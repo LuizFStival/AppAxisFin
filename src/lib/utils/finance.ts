@@ -1,4 +1,6 @@
 import { Account, Card, Category, DashboardSummary, Transaction } from '../../types';
+import { getCardInvoiceClosingMonth, getCardInvoiceInfoForClosingMonth } from './cardInvoices';
+import { getReimbursementMonthKey } from './reimbursements';
 import { readTransactionMeta } from './transactionMeta';
 
 export const currency = new Intl.NumberFormat('pt-BR', {
@@ -62,13 +64,37 @@ export function getPaymentSource(accounts: Account[], cards: Card[], transaction
   return 'Sem origem';
 }
 
+export function getAccountMovementEntries(transaction: Transaction, accountId: string, cards: Card[] = []): Array<{ month: string; amount: number }> {
+  const entries: Array<{ month: string; amount: number }> = [];
+
+  if (transaction.status === 'paid') {
+    if (transaction.flow === 'income' && transaction.accountId === accountId) {
+      entries.push({ month: getFinancialMonthKey(transaction), amount: transaction.amount });
+    } else if (transaction.flow === 'expense' && transaction.accountId === accountId) {
+      entries.push({ month: getFinancialMonthKey(transaction), amount: -transaction.amount });
+    } else if (transaction.flow === 'transfer' && transaction.toAccountId === accountId) {
+      entries.push({ month: getFinancialMonthKey(transaction), amount: transaction.amount });
+    } else if (transaction.flow === 'transfer' && transaction.fromAccountId === accountId) {
+      entries.push({ month: getFinancialMonthKey(transaction), amount: -transaction.amount });
+    }
+  }
+
+  if (
+    transaction.isReimbursable
+    && transaction.reimbursementStatus === 'received'
+    && transaction.reimbursementReceivedAccountId === accountId
+  ) {
+    entries.push({
+      month: cards.length > 0 ? getReimbursementMonthKey(transaction, cards) : getFinancialMonthKey(transaction),
+      amount: transaction.amount,
+    });
+  }
+
+  return entries;
+}
+
 export function getAccountSignedAmount(transaction: Transaction, accountId: string): number {
-  if (transaction.status !== 'paid') return 0;
-  if (transaction.flow === 'income' && transaction.accountId === accountId) return transaction.amount;
-  if (transaction.flow === 'expense' && transaction.accountId === accountId) return -transaction.amount;
-  if (transaction.flow === 'transfer' && transaction.toAccountId === accountId) return transaction.amount;
-  if (transaction.flow === 'transfer' && transaction.fromAccountId === accountId) return -transaction.amount;
-  return 0;
+  return roundMoney(getAccountMovementEntries(transaction, accountId).reduce((sum, entry) => sum + entry.amount, 0));
 }
 
 export function isThirdPartyExpense(transaction: Transaction): boolean {
@@ -87,6 +113,66 @@ export function getExpenseSignedAmount(transaction: Transaction): number {
   return isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
 }
 
+export interface PendingInvoiceSummary {
+  card: Card;
+  invoice: ReturnType<typeof getCardInvoiceInfoForClosingMonth>;
+  itemCount: number;
+  total: number;
+}
+
+export function hasCardInvoicePayment(transactions: Transaction[], cardId: string, period: string): boolean {
+  return transactions.some((transaction) => {
+    const meta = readTransactionMeta(transaction.notes);
+    return isInvoicePayment(transaction)
+      && meta.invoicePaymentCardId === cardId
+      && meta.invoicePaymentPeriod === period;
+  });
+}
+
+export function getCardInvoiceTransactions(card: Card, transactions: Transaction[], closingMonth: string): Transaction[] {
+  return transactions.filter((transaction) => {
+    if (transaction.flow !== 'expense' || transaction.cardId !== card.id) return false;
+    return getCardInvoiceClosingMonth(card, transaction.date) === closingMonth;
+  });
+}
+
+export function getPendingInvoiceSummaries(cards: Card[], transactions: Transaction[], month: string): PendingInvoiceSummary[] {
+  return cards
+    .map((card) => {
+      if (hasCardInvoicePayment(transactions, card.id, month)) return null;
+      const invoiceItems = getCardInvoiceTransactions(card, transactions, month)
+        .filter((transaction) => !isInvoicePayment(transaction));
+      if (invoiceItems.length === 0 || isCardInvoicePaid(invoiceItems)) return null;
+      const total = roundMoney(invoiceItems.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+      if (total <= 0) return null;
+      return {
+        card,
+        invoice: getCardInvoiceInfoForClosingMonth(card, month),
+        itemCount: invoiceItems.length,
+        total,
+      };
+    })
+    .filter((item): item is PendingInvoiceSummary => Boolean(item));
+}
+
+export function isPendingAccountExpense(transaction: Transaction, month: string): boolean {
+  return transaction.flow === 'expense'
+    && !transaction.cardId
+    && !isInvoicePayment(transaction)
+    && !isInvoiceCredit(transaction)
+    && transaction.status === 'pending'
+    && getFinancialMonthKey(transaction) === month;
+}
+
+export function getPendingPaymentTotal(cards: Card[], transactions: Transaction[], month: string): number {
+  const pendingInvoices = getPendingInvoiceSummaries(cards, transactions, month)
+    .reduce((sum, invoice) => sum + invoice.total, 0);
+  const pendingAccountExpenses = transactions
+    .filter((transaction) => isPendingAccountExpense(transaction, month))
+    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
+  return roundMoney(pendingInvoices + pendingAccountExpenses);
+}
+
 export function isCardInvoicePaid(transactions: Transaction[]): boolean {
   if (transactions.length === 0) return false;
 
@@ -96,7 +182,33 @@ export function isCardInvoicePaid(transactions: Transaction[]): boolean {
   });
 }
 
-export function summarizeDashboard(accounts: Account[], transactions: Transaction[], month: string): DashboardSummary {
+function splitInvoicePaymentAmount(payment: Transaction, transactions: Transaction[], cards: Card[]) {
+  const meta = readTransactionMeta(payment.notes);
+  const card = cards.find((item) => item.id === meta.invoicePaymentCardId);
+  if (!card || !meta.invoicePaymentPeriod) {
+    return { personal: payment.amount, thirdParty: 0 };
+  }
+
+  const invoiceItems = getCardInvoiceTransactions(card, transactions, meta.invoicePaymentPeriod)
+    .filter((transaction) => !isInvoicePayment(transaction));
+  const personalTotal = roundMoney(invoiceItems
+    .filter((transaction) => !isThirdPartyExpense(transaction))
+    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+  const thirdPartyTotal = roundMoney(invoiceItems
+    .filter(isThirdPartyExpense)
+    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+  const invoiceTotal = roundMoney(personalTotal + thirdPartyTotal);
+  if (invoiceTotal <= 0) return { personal: payment.amount, thirdParty: 0 };
+
+  const ratio = payment.amount / invoiceTotal;
+  const thirdParty = roundMoney(thirdPartyTotal * ratio);
+  return {
+    personal: roundMoney(payment.amount - thirdParty),
+    thirdParty,
+  };
+}
+
+export function summarizeDashboard(accounts: Account[], transactions: Transaction[], month: string, cards: Card[] = []): DashboardSummary {
   const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
   const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
   const expenseTransactions = monthTransactions.filter((transaction) =>
@@ -104,7 +216,11 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
     && !isThirdPartyExpense(transaction)
     && !isInvoicePayment(transaction),
   );
-  const reimbursementTransactions = monthTransactions.filter(isThirdPartyExpense);
+  const reimbursementTransactions = transactions
+    .filter(isThirdPartyExpense)
+    .filter((transaction) => cards.length > 0
+      ? getReimbursementMonthKey(transaction, cards) === month
+      : getFinancialMonthKey(transaction) === month);
 
   const income = roundMoney(incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
   const expenses = roundMoney(expenseTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
@@ -117,26 +233,86 @@ export function summarizeDashboard(accounts: Account[], transactions: Transactio
       && (!transaction.cardId || Boolean(readTransactionMeta(transaction.notes).paidAt)),
     )
     .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0)));
-  const paid = roundMoney(monthTransactions
+  const accountOutflowByOwner = monthTransactions
     .filter((transaction) => transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId)
-    .filter((transaction) => !isThirdPartyExpense(transaction))
+    .reduce((totals, transaction) => {
+      if (isInvoicePayment(transaction)) {
+        const split = splitInvoicePaymentAmount(transaction, transactions, cards);
+        totals.personal += split.personal;
+        totals.thirdParty += split.thirdParty;
+      } else if (isThirdPartyExpense(transaction)) {
+        totals.thirdParty += transaction.amount;
+      } else {
+        totals.personal += transaction.amount;
+      }
+      return totals;
+    }, { personal: 0, thirdParty: 0 });
+  const paid = roundMoney(accountOutflowByOwner.personal);
+  const thirdPartyAccountOutflow = roundMoney(accountOutflowByOwner.thirdParty);
+  const reimbursementsPending = roundMoney(reimbursementTransactions
+    .filter((transaction) => transaction.reimbursementStatus !== 'received')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const reimbursementsReceived = roundMoney(reimbursementTransactions
+      .filter((transaction) => transaction.reimbursementStatus === 'received')
+      .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const accountReimbursementsReceived = reimbursementsReceived;
+  const pendingExpenses = cards.length > 0
+    ? getPendingPaymentTotal(cards, transactions, month)
+    : roundMoney(Math.max(0, expenses - settledExpenses));
+  const effectiveSettledExpenses = roundMoney(Math.max(0, expenses - pendingExpenses));
 
   return {
     currentBalance: roundMoney(accounts.reduce((sum, account) => sum + account.balance, 0)),
+    accountInflow: roundMoney(received + accountReimbursementsReceived),
+    accountInflowPersonal: received,
+    accountInflowThirdParty: accountReimbursementsReceived,
+    accountOutflow: roundMoney(paid + thirdPartyAccountOutflow),
+    accountOutflowPersonal: paid,
+    accountOutflowThirdParty: thirdPartyAccountOutflow,
     income,
     expenses,
-    settledExpenses,
+    settledExpenses: effectiveSettledExpenses,
     received,
     paid,
     pendingIncome: roundMoney(income - received),
-    pendingExpenses: roundMoney(Math.max(0, expenses - settledExpenses)),
-    reimbursementsPending: roundMoney(reimbursementTransactions
-      .filter((transaction) => transaction.reimbursementStatus !== 'received')
-      .reduce((sum, transaction) => sum + transaction.amount, 0)),
-    reimbursementsReceived: roundMoney(reimbursementTransactions
-      .filter((transaction) => transaction.reimbursementStatus === 'received')
-      .reduce((sum, transaction) => sum + transaction.amount, 0)),
+    pendingExpenses,
+    reimbursementsPending,
+    reimbursementsReceived,
+  };
+}
+
+export function summarizeMonthlyResult(transactions: Transaction[], month: string, cards: Card[] = []) {
+  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
+  const reimbursementTransactions = transactions
+    .filter(isThirdPartyExpense)
+    .filter((transaction) => cards.length > 0
+      ? getReimbursementMonthKey(transaction, cards) === month
+      : getFinancialMonthKey(transaction) === month);
+  const income = roundMoney(monthTransactions
+    .filter((transaction) => transaction.flow === 'income')
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const personalExpenses = roundMoney(monthTransactions
+    .filter((transaction) =>
+      transaction.flow === 'expense'
+      && !isThirdPartyExpense(transaction)
+      && !isInvoicePayment(transaction),
+    )
+    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+  const reimbursementsExpected = roundMoney(reimbursementTransactions
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const thirdPartyExpenses = roundMoney(reimbursementTransactions
+    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+  const totalInflows = roundMoney(income + reimbursementsExpected);
+  const totalOutflows = roundMoney(personalExpenses + thirdPartyExpenses);
+
+  return {
+    income,
+    reimbursementsExpected,
+    personalExpenses,
+    thirdPartyExpenses,
+    totalInflows,
+    totalOutflows,
+    result: roundMoney(totalInflows - totalOutflows),
   };
 }
 
@@ -150,6 +326,7 @@ export function summarizeMonthlyInvestmentGoal(
     fixedAmount?: number;
     percentage?: number;
     includePendingSalary?: boolean;
+    cards?: Card[];
   } = {},
 ) {
   const normalize = (value: string) => value
@@ -175,18 +352,8 @@ export function summarizeMonthlyInvestmentGoal(
     .filter((transaction) => transaction.status === 'paid')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
   const salaryConsidered = roundMoney(salaryTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
-  const income = roundMoney(transactions
-    .filter((transaction) => transaction.flow === 'income' && getFinancialMonthKey(transaction) === month)
-    .reduce((sum, transaction) => sum + transaction.amount, 0));
-  const expenses = roundMoney(transactions
-    .filter((transaction) =>
-      transaction.flow === 'expense'
-      && getFinancialMonthKey(transaction) === month
-      && !isThirdPartyExpense(transaction)
-      && !isInvoicePayment(transaction),
-    )
-    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
-  const saved = roundMoney(Math.max(0, income - expenses));
+  const monthlyResult = summarizeMonthlyResult(transactions, month, options.cards ?? []);
+  const saved = roundMoney(Math.max(0, monthlyResult.result));
   const target = options.mode === 'fixed'
     ? roundMoney(Math.max(0, options.fixedAmount ?? 0))
     : roundMoney(salaryConsidered * Math.max(0, options.percentage ?? 20) / 100);

@@ -15,7 +15,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction, UserProfile } from '../../types';
-import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, isCardInvoicePaid, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCurrentMonthKey, getExpenseSignedAmount, isCardInvoicePaid, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { StatCard } from '../shared/StatCard';
@@ -97,9 +97,12 @@ function getInvoiceSummary(card: Card, transactions: Transaction[], closingMonth
   };
 }
 
-function getAccountMonthSummary(account: Account, transactions: Transaction[], month: string) {
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
-  const signedAmounts = monthTransactions.map((transaction) => getAccountSignedAmount(transaction, account.id));
+function getAccountMonthSummary(account: Account, transactions: Transaction[], month: string, cards: Card[]) {
+  const signedAmounts = transactions.flatMap((transaction) =>
+    getAccountMovementEntries(transaction, account.id, cards)
+      .filter((entry) => entry.month === month)
+      .map((entry) => entry.amount),
+  );
   const inflow = signedAmounts.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
   const outflow = Math.abs(signedAmounts.reduce((sum, amount) => amount < 0 ? sum + amount : sum, 0));
 
@@ -147,11 +150,11 @@ export function DashboardView({
     (sum, { invoice }) => sum + (isCardInvoicePaid(invoice.transactions) ? 0 : invoice.total),
     0,
   );
-  const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1));
+  const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1), cards);
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
   const previousReimbursementsTotal = previousSummary.reimbursementsPending + previousSummary.reimbursementsReceived;
-  const monthResult = summary.income - summary.expenses;
-  const previousMonthResult = previousSummary.income - previousSummary.expenses;
+  const monthResult = summarizeMonthlyResult(transactions, activeMonth, cards).result;
+  const previousMonthResult = summarizeMonthlyResult(transactions, shiftMonthKey(activeMonth, -1), cards).result;
   const incomeComparison = formatMonthComparison(summary.income, previousSummary.income);
   const expenseComparison = formatMonthComparison(summary.expenses, previousSummary.expenses);
   const reimbursementComparison = formatMonthComparison(reimbursementsTotal, previousReimbursementsTotal);
@@ -161,6 +164,7 @@ export function DashboardView({
     fixedAmount: savingsPreferences.savingsGoalAmount,
     percentage: savingsPreferences.savingsGoalPercentage,
     includePendingSalary: savingsPreferences.includePendingSalary,
+    cards,
   });
   const investmentZone = investmentGoal.progress >= 100
     ? { label: 'Meta atingida', color: 'bg-emerald-400', text: 'text-emerald-300' }
@@ -291,13 +295,19 @@ export function DashboardView({
             <button type="button" onClick={() => onViewDashboardTransactions('received')} className="border-r border-[#1A1C22] pr-3 text-left transition hover:opacity-80" title="Ver entradas confirmadas">
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Entrou nas contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-emerald-400">
-                {hiddenMoney(showBalances, summary.received)}
+                {hiddenMoney(showBalances, summary.accountInflow)}
+              </p>
+              <p className="mt-1 truncate text-[10px] text-slate-500">
+                Meu {hiddenMoney(showBalances, summary.accountInflowPersonal)} • Terceiros {hiddenMoney(showBalances, summary.accountInflowThirdParty)}
               </p>
             </button>
             <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="pl-4 text-left transition hover:opacity-80" title="Ver saídas confirmadas">
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Saiu das contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-red-400">
-                {hiddenMoney(showBalances, summary.paid)}
+                {hiddenMoney(showBalances, summary.accountOutflow)}
+              </p>
+              <p className="mt-1 truncate text-[10px] text-slate-500">
+                Meu {hiddenMoney(showBalances, summary.accountOutflowPersonal)} • Terceiros {hiddenMoney(showBalances, summary.accountOutflowThirdParty)}
               </p>
             </button>
           </div>
@@ -321,7 +331,7 @@ export function DashboardView({
           icon={TrendingDown}
           hint={expenseComparison}
           details={<><span className="block">Quitado {formatCurrency(summary.settledExpenses)}</span><span className="block">Falta quitar {formatCurrency(summary.pendingExpenses)}</span></>}
-          onClick={() => onViewDashboardTransactions('expenses')}
+          onClick={() => onViewDashboardTransactions('pending')}
         />
         <StatCard
           label="Dos outros"
@@ -386,7 +396,7 @@ export function DashboardView({
           className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-3 pt-1 active:cursor-grabbing"
         >
           {accounts.map((account) => {
-            const accountMonth = getAccountMonthSummary(account, transactions, activeMonth);
+            const accountMonth = getAccountMonthSummary(account, transactions, activeMonth, cards);
             return (
               <button
                 type="button"

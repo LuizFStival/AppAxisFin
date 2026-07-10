@@ -34,7 +34,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Account, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
+import { Account, Card, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
 import {
   expensesByCategory,
   formatCurrency,
@@ -45,6 +45,7 @@ import {
   isThirdPartyExpense,
   shiftMonthKey,
   summarizeMonthlyInvestmentGoal,
+  summarizeMonthlyResult,
 } from '../../lib/utils/finance';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { BudgetSection } from './BudgetSection';
@@ -54,6 +55,7 @@ interface ReportsViewProps {
   transactions: Transaction[];
   categories: Category[];
   accounts: Account[];
+  cards: Card[];
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
   reportWidgets: ReportWidgetId[];
   reimbursementsEnabled: boolean;
@@ -112,6 +114,7 @@ export function ReportsView({
   transactions,
   categories,
   accounts,
+  cards,
   savingsPreferences,
   reportWidgets,
   reimbursementsEnabled,
@@ -154,12 +157,16 @@ export function ReportsView({
     return { current: summarize(month), previous: summarize(previousMonth) };
   }, [month, previousMonth, transactions]);
 
-  const totalInflows = report.current.income + report.current.thirdParty;
-  const totalOutflows = report.current.expenses + report.current.thirdParty;
+  const currentMonthlyResult = summarizeMonthlyResult(transactions, month, cards);
+  const previousMonthlyResult = summarizeMonthlyResult(transactions, previousMonth, cards);
+  const totalInflows = currentMonthlyResult.totalInflows;
+  const totalOutflows = currentMonthlyResult.totalOutflows;
   const visibleInflows = effectiveReportScope === 'general' ? totalInflows : report.current.income;
   const visibleOutflows = effectiveReportScope === 'general' ? totalOutflows : report.current.expenses;
   const balance = visibleInflows - visibleOutflows;
-  const previousBalance = report.previous.income - report.previous.expenses;
+  const previousBalance = effectiveReportScope === 'general'
+    ? previousMonthlyResult.result
+    : report.previous.income - report.previous.expenses;
   const categoryData = expensesByCategory(transactions, categories, month).map((item, index) => {
     const category = categories.find((candidate) => candidate.name === item.name);
     return {
@@ -198,6 +205,7 @@ export function ReportsView({
     fixedAmount: savingsPreferences.savingsGoalAmount,
     percentage: savingsPreferences.savingsGoalPercentage,
     includePendingSalary: savingsPreferences.includePendingSalary,
+    cards,
   });
   const savingsZone = savingsGoal.progress >= 100
     ? { label: 'Meta atingida', bar: 'bg-emerald-400', text: 'text-emerald-300' }
@@ -207,7 +215,7 @@ export function ReportsView({
         ? { label: 'Zona de atenção', bar: 'bg-amber-400', text: 'text-amber-300' }
         : { label: 'Zona de perigo', bar: 'bg-rose-400', text: 'text-rose-300' };
   const savingsRate = report.current.income > 0
-    ? Math.max(0, (report.current.income - report.current.expenses) / report.current.income * 100)
+    ? Math.max(0, currentMonthlyResult.result / report.current.income * 100)
     : 0;
   const averageExpenses = monthlyEvolution.reduce((sum, item) => sum + item.Despesas, 0) / monthlyEvolution.length;
 
@@ -216,7 +224,7 @@ export function ReportsView({
       ['Indicador', 'Valor'],
       ['Receitas', report.current.income],
       ['Despesas pessoais', report.current.expenses],
-      ['Resultado', report.current.income - report.current.expenses],
+      ['Resultado', balance],
       ['Meta mensal para investir', savingsGoal.target],
       ['Economizado', savingsGoal.saved],
       ['Taxa de economia (%)', savingsRate.toFixed(2)],
@@ -386,7 +394,7 @@ export function ReportsView({
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
                   Reembolsos
                 </span>
-                <span className="font-mono font-bold text-white">{formatCurrency(report.current.thirdParty)}</span>
+                <span className="font-mono font-bold text-white">{formatCurrency(report.current.reimbursementsReceived + report.current.reimbursementsPending)}</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-3 text-xs">
                 <div><p className="text-slate-500">Concluídos</p><p className="mt-1 font-mono font-bold text-emerald-300">{formatCurrency(report.current.reimbursementsReceived)}</p></div>

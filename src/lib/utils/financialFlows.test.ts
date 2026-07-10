@@ -21,6 +21,12 @@ const transactions: Transaction[] = [
 
 assert.deepEqual(summarizeDashboard(accounts, transactions, '2026-06'), {
   currentBalance: 900,
+  accountInflow: 1100,
+  accountInflowPersonal: 1000,
+  accountInflowThirdParty: 100,
+  accountOutflow: 1100,
+  accountOutflowPersonal: 800,
+  accountOutflowThirdParty: 300,
   income: 1000,
   expenses: 250,
   settledExpenses: 250,

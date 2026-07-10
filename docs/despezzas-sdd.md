@@ -4,6 +4,24 @@ Versão: 1.2
 Status: documento vivo do produto  
 Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel  
 
+## Status de atualização - 2026-07-10
+
+- O Dashboard separa caixa real de balanço mensal: `Entrou nas contas` e `Saiu das contas` refletem movimentos confirmados em contas, com subtotais `Meu` e `Terceiros`.
+- Pagamentos de fatura são rateados entre gastos pessoais e valores de terceiros a partir dos itens da fatura, evitando que toda a saída da conta seja atribuída ao usuário.
+- Reembolsos recebidos contam como entrada de terceiros no mês do reembolso mesmo em registros históricos sem conta de recebimento preenchida; a conta continua sendo usada para conciliação de saldo quando disponível.
+- O card `Resultado do mês`, a meta mensal para investir, Relatórios e o resumo `Todas` de Transações usam a regra de competência mensal: receitas + reembolsos esperados - despesas pessoais - valores de terceiros.
+- A tela de Transações preserva o mês ativo vindo do Dashboard ou de qualquer outra tela, em vez de voltar automaticamente para o mês atual.
+- Em `Entradas`, reembolsos recebidos aparecem agrupados por pessoa/empresa e abrem a tela de Reembolsos já filtrada no mês ativo.
+- A tela de Contas possui visão mensal com entradas, saídas, resultado, quantidade de movimentos e detalhe por conta, mantendo o saldo atual como caixa real.
+- A navegação desktop exibe a marca AxisFin no menu lateral e mantém o item Reembolsos estável; a preferência de reembolsos controla novos lançamentos/campos, não a existência do histórico no menu.
+- A migration `20260709183704_relax_paid_card_invoice_items.sql` ajusta o pagamento de faturas para permitir itens de cartão com status pago quando ainda não possuem metadados de fatura quitada, preservando a proteção contra pagamento duplicado.
+
+Regras financeiras reafirmadas:
+
+- `Saldo atual` e entradas/saídas de conta são caixa real confirmado.
+- `Balanço do mês` e meta mensal são competência mensal e incluem reembolsos esperados, inclusive pendentes.
+- Compras de terceiros no cartão só viram saída de conta quando a fatura é paga; até lá compõem valores de terceiros e reembolsos do mês.
+
 ## Status de atualização - 2026-07-04
 
 - A preferência `Meta mensal para investir` fica persistida no perfil do usuário e pode usar valor fixo ou percentual do salário, incluindo opcionalmente salário ainda pendente.
@@ -397,9 +415,10 @@ Deve exibir:
 Regras:
 
 - Saldo atual deve refletir dinheiro real em contas.
-- Recebido representa receitas confirmadas.
-- Pago representa despesas confirmadas.
+- Entrou nas contas representa receitas confirmadas e reembolsos recebidos, separados entre `Meu` e `Terceiros`.
+- Saiu das contas representa saídas confirmadas de conta, separadas entre `Meu` e `Terceiros`; pagamento de fatura deve ser rateado pelos itens originais da fatura.
 - Pendente/previsto nao deve ser misturado com caixa real.
+- Resultado do mês não é saldo de conta: usa receitas + reembolsos esperados - despesas pessoais - valores de terceiros.
 
 ### Transacoes
 
@@ -411,6 +430,17 @@ Deve exibir:
 - Lista agrupada por data.
 - Status de lancamento.
 - Origem: conta ou cartao.
+- Deve preservar o mês ativo selecionado em outras telas.
+- Em Entradas, reembolsos recebidos devem aparecer agrupados por pessoa/empresa e abrir Reembolsos no mês ativo.
+
+### Contas
+
+Deve exibir:
+
+- Saldo atual como caixa real por conta.
+- Visão mensal com entradas, saídas, resultado e quantidade de movimentos.
+- Detalhe por conta no mês ativo.
+- Pagamentos de fatura navegáveis para o cartão e ciclo correspondentes.
 
 ### Adicionar Receita/Despesa/Transferencia
 

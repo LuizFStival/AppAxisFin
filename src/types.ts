@@ -8,7 +8,7 @@ export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
 export type CardNetwork = 'mastercard' | 'visa' | 'elo' | 'other';
 export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'goals' | 'reports' | 'notifications' | 'profile';
 export type TransactionTab = 'general' | 'cards' | 'accounts';
-export type DashboardTransactionFilter = 'income' | 'expenses' | 'reimbursements' | 'result' | 'received' | 'paid';
+export type DashboardTransactionFilter = 'income' | 'expenses' | 'reimbursements' | 'result' | 'received' | 'paid' | 'pending';
 export type SavingsGoalMode = 'fixed' | 'salary_percentage';
 export type ReportWidgetId = 'income' | 'expenses' | 'savings_rate' | 'average_expenses';
 
@@ -168,6 +168,12 @@ export interface UserProfile {
 
 export interface DashboardSummary {
   currentBalance: number;
+  accountInflow: number;
+  accountInflowPersonal: number;
+  accountInflowThirdParty: number;
+  accountOutflow: number;
+  accountOutflowPersonal: number;
+  accountOutflowThirdParty: number;
   income: number;
   expenses: number;
   settledExpenses: number;

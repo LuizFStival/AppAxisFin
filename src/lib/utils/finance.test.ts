@@ -10,6 +10,8 @@ import {
   getPaymentSource,
   shiftMonthKey,
   summarizeDashboard,
+  summarizeMonthlyInvestmentGoal,
+  summarizeMonthlyResult,
 } from './finance';
 import { getCardInvoiceClosingMonth, getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth, getCardInvoiceInfoForPeriod } from './cardInvoices';
 import { writeTransactionNotes } from './transactionMeta';
@@ -144,6 +146,12 @@ const summary = summarizeDashboard(accounts, transactions, '2026-06');
 
 assert.deepEqual(summary, {
   currentBalance: 1500,
+  accountInflow: 5000,
+  accountInflowPersonal: 5000,
+  accountInflowThirdParty: 0,
+  accountOutflow: 350,
+  accountOutflowPersonal: 350,
+  accountOutflowThirdParty: 0,
   income: 5800,
   expenses: 1682.64,
   settledExpenses: 350,
@@ -168,6 +176,162 @@ assert.equal(getAccountSignedAmount(transactions[0], 'acc-main'), 5000);
 assert.equal(getAccountSignedAmount(transactions[1], 'acc-main'), 0);
 assert.equal(getAccountSignedAmount(transactions[2], 'acc-main'), -350);
 assert.equal(getAccountSignedAmount(transactions[3], 'acc-main'), 0);
+
+const receivedReimbursement: Transaction = {
+  id: 'tx-third-party-received',
+  description: 'Conta dividida recebida',
+  amount: 90,
+  flow: 'expense',
+  status: 'paid',
+  date: '2026-05-29',
+  categoryId: 'cat-food',
+  cardId: 'card-main',
+  isReimbursable: true,
+  reimbursementPersonId: 'person-ana',
+  reimbursementStatus: 'received',
+  reimbursementReceivedAccountId: 'acc-main',
+};
+const summaryWithReimbursement = summarizeDashboard(accounts, [...transactions, receivedReimbursement], '2026-06', cards);
+assert.equal(summaryWithReimbursement.accountInflow, 5090);
+assert.equal(getAccountSignedAmount(receivedReimbursement, 'acc-main'), 90);
+
+const paidInvoiceDashboard = summarizeDashboard(accounts, [
+  transactions[0],
+  {
+    id: 'paid-card-item',
+    description: 'Compra quitada no cartao',
+    amount: 100,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-18',
+    categoryId: 'cat-food',
+    cardId: 'card-main',
+    notes: writeTransactionNotes(undefined, {
+      paidAt: '2026-07-10',
+      paidFromAccountId: 'acc-main',
+    }),
+  },
+], '2026-06', cards);
+assert.equal(paidInvoiceDashboard.expenses, 100);
+assert.equal(paidInvoiceDashboard.pendingExpenses, 0);
+assert.equal(paidInvoiceDashboard.settledExpenses, 100);
+
+const splitCard: Card = {
+  id: 'split-card',
+  name: 'Cartao split',
+  accountId: 'acc-main',
+  limit: 3000,
+  used: 0,
+  dueDay: 2,
+  closingDay: 26,
+  color: '#8B5CF6',
+  network: 'mastercard',
+};
+const splitInvoicePaymentDashboard = summarizeDashboard(accounts, [
+  {
+    id: 'split-personal-card',
+    description: 'Compra minha',
+    amount: 100,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-20',
+    categoryId: 'cat-food',
+    cardId: splitCard.id,
+  },
+  {
+    id: 'split-third-card',
+    description: 'Compra terceiro',
+    amount: 200,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-21',
+    categoryId: 'cat-food',
+    cardId: splitCard.id,
+    isReimbursable: true,
+    reimbursementStatus: 'received',
+  },
+  {
+    id: 'split-invoice-payment',
+    description: 'Pagamento fatura',
+    amount: 300,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-30',
+    accountId: 'acc-main',
+    notes: writeTransactionNotes(undefined, {
+      invoicePaymentCardId: splitCard.id,
+      invoicePaymentPeriod: '2026-06',
+    }),
+  },
+], '2026-06', [splitCard]);
+assert.equal(splitInvoicePaymentDashboard.accountOutflow, 300);
+assert.equal(splitInvoicePaymentDashboard.accountOutflowPersonal, 100);
+assert.equal(splitInvoicePaymentDashboard.accountOutflowThirdParty, 200);
+
+const monthlyResultWithReimbursements = summarizeMonthlyResult([
+  {
+    id: 'income-result',
+    description: 'Receita',
+    amount: 1000,
+    flow: 'income',
+    status: 'paid',
+    date: '2026-06-01',
+    accountId: 'acc-main',
+  },
+  {
+    id: 'personal-result',
+    description: 'Despesa pessoal',
+    amount: 700,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-02',
+    accountId: 'acc-main',
+  },
+  {
+    id: 'third-party-result',
+    description: 'Despesa reembolsavel',
+    amount: 250,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-03',
+    accountId: 'acc-main',
+    isReimbursable: true,
+    reimbursementStatus: 'pending',
+  },
+], '2026-06');
+assert.equal(monthlyResultWithReimbursements.result, 300);
+assert.equal(summarizeMonthlyInvestmentGoal(accounts, categories, [
+  {
+    id: 'salary-result',
+    description: 'Salario',
+    amount: 1000,
+    flow: 'income',
+    status: 'paid',
+    date: '2026-06-01',
+    categoryId: 'cat-income',
+    accountId: 'acc-main',
+  },
+  {
+    id: 'personal-goal',
+    description: 'Despesa pessoal',
+    amount: 700,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-02',
+    accountId: 'acc-main',
+  },
+  {
+    id: 'third-party-goal',
+    description: 'Despesa reembolsavel',
+    amount: 250,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-03',
+    accountId: 'acc-main',
+    isReimbursable: true,
+    reimbursementStatus: 'pending',
+  },
+], '2026-06', { mode: 'fixed', fixedAmount: 500 }).saved, 300);
 
 assert.deepEqual(expensesByCategory(transactions, categories, '2026-06'), [
   { name: 'Moradia', value: 1200, color: '#6366F1' },

@@ -80,6 +80,7 @@ export default function App() {
   const [newCategoryFlow, setNewCategoryFlow] = useState<Category['flow']>('expense');
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [selectedCardId, setSelectedCardId] = useState('');
+  const [selectedReimbursementPersonId, setSelectedReimbursementPersonId] = useState<string | null>(null);
   const [dashboardTransactionFilter, setDashboardTransactionFilter] = useState<DashboardTransactionFilter | null>(null);
   const [showBalances, setShowBalances] = useState(true);
   const [activeMonth, setActiveMonth] = useState(getCurrentMonthKey);
@@ -140,8 +141,8 @@ export default function App() {
   });
 
   const summary = useMemo(
-    () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth),
-    [activeMonth, snapshot.accounts, snapshot.transactions],
+    () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth, snapshot.cards),
+    [activeMonth, snapshot.accounts, snapshot.cards, snapshot.transactions],
   );
 
   async function handleSaveAccount(input: {
@@ -674,6 +675,7 @@ export default function App() {
         setDashboardTransactionFilter(null);
         if (view === 'accounts') setSelectedAccountId('');
         if (view === 'cards') setSelectedCardId('');
+        setSelectedReimbursementPersonId(null);
       }}
       onAdd={() => {
         setEditingTransaction(null);
@@ -732,7 +734,10 @@ export default function App() {
             setSelectedCardId(cardId ?? '');
             setCurrentView('cards');
           }}
-          onViewReimbursements={() => setCurrentView('reimbursements')}
+          onViewReimbursements={() => {
+            setSelectedReimbursementPersonId(null);
+            setCurrentView('reimbursements');
+          }}
           onViewDashboardTransactions={(filter) => {
             setDashboardTransactionFilter(filter);
             setCurrentView('transactions');
@@ -770,6 +775,9 @@ export default function App() {
             setActiveMonth(period);
             setCurrentView('cards');
           }}
+          onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
+          onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
+          onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
         />
       ) : null}
 
@@ -827,6 +835,10 @@ export default function App() {
             () => handleDeleteTransaction(transaction),
             'Não foi possível excluir o lançamento. Tente novamente.',
           )}
+          onOpenReimbursements={(personId) => {
+            setSelectedReimbursementPersonId(personId);
+            setCurrentView('reimbursements');
+          }}
         />
       ) : null}
 
@@ -837,6 +849,7 @@ export default function App() {
           cards={snapshot.cards}
           transactions={snapshot.transactions}
           activeMonth={activeMonth}
+          initialPersonId={selectedReimbursementPersonId}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
           onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
@@ -855,6 +868,7 @@ export default function App() {
         <ReportsView
           month={activeMonth}
           accounts={snapshot.accounts}
+          cards={snapshot.cards}
           transactions={snapshot.transactions}
           categories={snapshot.categories}
           savingsPreferences={user}

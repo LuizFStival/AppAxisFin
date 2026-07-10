@@ -25,9 +25,7 @@ const moreItems = [
 
 export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigate, onAdd }: BottomNavigationProps) {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  const visibleMoreItems = reimbursementsEnabled
-    ? moreItems
-    : moreItems.filter((item) => item.id !== 'reimbursements');
+  const visibleMoreItems = reimbursementsEnabled ? moreItems : moreItems;
   const isMoreActive = visibleMoreItems.some((item) => item.id === currentView);
 
   function handleNavigate(view: AppView) {

@@ -3,6 +3,7 @@ import { ArrowLeftRight, BarChart3, CreditCard, HandCoins, Home, Plus, Target, U
 import { AppView } from '../../types';
 import { BottomNavigation } from './BottomNavigation';
 import { PwaInstallPrompt } from '../pwa/PwaInstallPrompt';
+import { AxisFinLogo } from '../shared/AxisFinLogo';
 
 interface AppShellProps {
   currentView: AppView;
@@ -24,20 +25,15 @@ const desktopItems = [
 ];
 
 export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd, children }: AppShellProps) {
-  const contentScrollClass = currentView === 'transactions' || currentView === 'cards' || currentView === 'reimbursements' || currentView === 'goals' || currentView === 'notifications'
-    ? 'overflow-hidden md:overflow-y-auto'
-    : 'overflow-y-auto';
-  const visibleDesktopItems = reimbursementsEnabled
-    ? desktopItems
-    : desktopItems.filter((item) => item.id !== 'reimbursements');
+  const visibleDesktopItems = desktopItems;
 
   return (
     <main className="app-viewport overflow-hidden bg-[#050608] text-[#E0E0E0] selection:bg-[#3B82F6] selection:text-white md:p-5 lg:p-6">
       <div className="app-safe-shell cosmic-bg relative w-full overflow-hidden bg-[#050608] md:grid md:h-[calc(100dvh-2.5rem)] md:grid-cols-[236px_minmax(0,1fr)] md:rounded-3xl md:border md:border-[#15171C] md:shadow-[0_25px_60px_rgba(0,0,0,0.9)] lg:h-[calc(100dvh-3rem)]">
         <aside className="hidden border-r border-white/8 bg-[#080A0F]/85 px-4 py-5 md:flex md:min-h-0 md:flex-col">
-          <div className="px-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-sky-300">AxisFin</p>
-            <p className="mt-1 text-xs text-slate-500">Painel financeiro</p>
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+            <AxisFinLogo showWordmark className="[&_svg]:h-9 [&_svg]:w-9 [&_span]:text-lg" />
+            <p className="mt-2 text-xs text-slate-500">Painel financeiro</p>
           </div>
           <nav className="mt-7 flex flex-1 flex-col gap-1">
             {visibleDesktopItems.map((item) => {
@@ -67,7 +63,7 @@ export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd
             <span>Novo lançamento</span>
           </button>
         </aside>
-        <div className={`relative mx-auto flex h-full min-h-0 w-full flex-col pb-24 md:pb-0 ${contentScrollClass}`}>
+        <div className="relative mx-auto flex h-full min-h-0 w-full flex-col overflow-y-auto pb-24 md:pb-0">
           {children}
         </div>
         <div className="md:hidden">

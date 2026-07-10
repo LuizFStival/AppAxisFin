@@ -1151,6 +1151,8 @@ declare
   signed_amount numeric(14,2);
   result_transactions jsonb;
   payment_meta jsonb;
+  encoded_meta text;
+  existing_meta jsonb;
 begin
   if current_user_id is null then raise exception 'Usuário não autenticado.'; end if;
   if p_payment_date is null then raise exception 'Informe a data do pagamento.'; end if;
@@ -1205,7 +1207,19 @@ begin
       or transaction_row.amount <> abs(signed_amount) then
       raise exception 'A fatura mudou durante o pagamento. Recarregue os dados e tente novamente.';
     end if;
-    if transaction_row.status = 'paid' then
+    existing_meta := '{}'::jsonb;
+    encoded_meta := substring(coalesce(transaction_row.notes, '') from '\[axisfin-meta:([A-Za-z0-9+/=]+)\]');
+    if encoded_meta is not null then
+      begin
+        existing_meta := convert_from(decode(encoded_meta, 'base64'), 'UTF8')::jsonb;
+      exception when others then
+        existing_meta := '{}'::jsonb;
+      end;
+    end if;
+
+    if transaction_row.status = 'paid'
+      and existing_meta ? 'paidAt'
+      and existing_meta ? 'paidFromAccountId' then
       raise exception 'Esta fatura já possui lançamentos pagos. Recarregue os dados antes de tentar novamente.';
     end if;
 

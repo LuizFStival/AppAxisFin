@@ -99,7 +99,11 @@ function authMessage(code: string, message: string): string | null {
   return null;
 }
 
-function databaseMessage(code: string, status: unknown, message: string): string | null {
+function databaseMessage(code: string, status: unknown, message: string, rawMessage?: unknown): string | null {
+  if (code === 'p0001' && typeof rawMessage === 'string') {
+    return rawMessage;
+  }
+
   if (code === '23503') {
     return 'Este item está sendo usado em outro cadastro e não pode ser alterado ou excluído agora.';
   }
@@ -143,6 +147,6 @@ export function getUserFriendlyError(error: unknown, fallback: string): string {
   if (isServiceUnavailable(errorLike.status, code, message)) return SERVICE_MESSAGE;
 
   return authMessage(code, message)
-    ?? databaseMessage(code, errorLike.status, message)
+    ?? databaseMessage(code, errorLike.status, message, errorLike.message)
     ?? fallback;
 }

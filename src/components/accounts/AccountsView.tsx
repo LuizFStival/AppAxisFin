@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CreditCard, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { Account, Card, Category, Transaction } from '../../types';
-import { formatCurrency, getAccountSignedAmount, getCategoryName, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCategoryName, getPaymentSource } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
+import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface AccountsViewProps {
   accounts: Account[];
@@ -17,6 +18,9 @@ interface AccountsViewProps {
   onEditAccount: (account: Account) => void;
   onDeleteAccount: (account: Account) => void;
   onOpenInvoice: (cardId: string, period: string) => void;
+  onPreviousMonth: () => void;
+  onNextMonth: () => void;
+  onCurrentMonth: () => void;
 }
 
 const accountTypeLabels: Record<Account['type'], string> = {
@@ -27,7 +31,10 @@ const accountTypeLabels: Record<Account['type'], string> = {
 };
 
 function isAccountTransaction(transaction: Transaction, accountId: string) {
-  return transaction.accountId === accountId || transaction.fromAccountId === accountId || transaction.toAccountId === accountId;
+  return transaction.accountId === accountId
+    || transaction.fromAccountId === accountId
+    || transaction.toAccountId === accountId
+    || transaction.reimbursementReceivedAccountId === accountId;
 }
 
 export function AccountsView({
@@ -42,23 +49,51 @@ export function AccountsView({
   onEditAccount,
   onDeleteAccount,
   onOpenInvoice,
+  onPreviousMonth,
+  onNextMonth,
+  onCurrentMonth,
 }: AccountsViewProps) {
   const totalBalance = accounts.reduce((sum, account) => sum + account.balance, 0);
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? null;
-  const selectedTransactions = useMemo(() => {
+  const accountMonthlySummaries = useMemo(() => {
+    return accounts.map((account) => {
+      const entries = transactions.flatMap((transaction) =>
+        getAccountMovementEntries(transaction, account.id, cards)
+          .filter((entry) => entry.month === activeMonth)
+          .map((entry) => entry.amount),
+      );
+      const monthlyInflow = entries.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
+      const monthlyOutflow = Math.abs(entries.reduce((sum, amount) => amount < 0 ? sum + amount : sum, 0));
+
+      return {
+        account,
+        inflow: monthlyInflow,
+        outflow: monthlyOutflow,
+        net: monthlyInflow - monthlyOutflow,
+        count: entries.length,
+      };
+    });
+  }, [accounts, activeMonth, cards, transactions]);
+  const monthlyInflow = accountMonthlySummaries.reduce((sum, item) => sum + item.inflow, 0);
+  const monthlyOutflow = accountMonthlySummaries.reduce((sum, item) => sum + item.outflow, 0);
+  const monthlyNet = monthlyInflow - monthlyOutflow;
+  const monthlyMovementCount = accountMonthlySummaries.reduce((sum, item) => sum + item.count, 0);
+  const selectedMovements = useMemo(() => {
     if (!selectedAccount) return [];
     return transactions
-      .filter((transaction) => getFinancialMonthKey(transaction) === activeMonth && isAccountTransaction(transaction, selectedAccount.id))
-      .filter((transaction) => getAccountSignedAmount(transaction, selectedAccount.id) !== 0)
-      .sort((left, right) => right.date.localeCompare(left.date));
-  }, [activeMonth, selectedAccount, transactions]);
-  const inflow = selectedTransactions.reduce((sum, transaction) => {
-    const signedAmount = getAccountSignedAmount(transaction, selectedAccount?.id ?? '');
-    return signedAmount > 0 ? sum + signedAmount : sum;
+      .filter((transaction) => isAccountTransaction(transaction, selectedAccount.id))
+      .flatMap((transaction) =>
+        getAccountMovementEntries(transaction, selectedAccount.id, cards)
+          .filter((entry) => entry.month === activeMonth)
+          .map((entry) => ({ transaction, signedAmount: entry.amount })),
+      )
+      .sort((left, right) => right.transaction.date.localeCompare(left.transaction.date));
+  }, [activeMonth, cards, selectedAccount, transactions]);
+  const inflow = selectedMovements.reduce((sum, movement) => {
+    return movement.signedAmount > 0 ? sum + movement.signedAmount : sum;
   }, 0);
-  const outflow = Math.abs(selectedTransactions.reduce((sum, transaction) => {
-    const signedAmount = getAccountSignedAmount(transaction, selectedAccount?.id ?? '');
-    return signedAmount < 0 ? sum + signedAmount : sum;
+  const outflow = Math.abs(selectedMovements.reduce((sum, movement) => {
+    return movement.signedAmount < 0 ? sum + movement.signedAmount : sum;
   }, 0));
 
   return (
@@ -90,11 +125,42 @@ export function AccountsView({
         </div>
       </header>
 
+      <MonthNavigator
+        month={activeMonth}
+        onPreviousMonth={onPreviousMonth}
+        onNextMonth={onNextMonth}
+        onCurrentMonth={onCurrentMonth}
+        className="mt-4 shrink-0"
+      />
+
       {!selectedAccount ? (
         <>
-          <section className="mt-5 shrink-0 rounded-2xl border border-white/8 bg-[#101319] p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo total em contas</p>
-            <p className="mt-2 font-display text-3xl font-bold text-white">{formatCurrency(totalBalance)}</p>
+          <section className="mt-5 shrink-0 overflow-hidden rounded-2xl border border-white/8 bg-[#101319]">
+            <div className="px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo atual em contas</p>
+              <p className="mt-2 font-display text-3xl font-bold text-white">{formatCurrency(totalBalance)}</p>
+            </div>
+            <div className="border-t border-white/8 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-300">Movimento de {formatMonthLabel(activeMonth)}</p>
+                  <p className="mt-0.5 text-[10px] text-slate-500">{monthlyMovementCount} movimento{monthlyMovementCount === 1 ? '' : 's'} nas contas</p>
+                </div>
+                <p className={`font-mono text-base font-bold ${monthlyNet >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {monthlyNet >= 0 ? '+' : '-'}{formatCurrency(Math.abs(monthlyNet))}
+                </p>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/10 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-200">Entrou</p>
+                  <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(monthlyInflow)}</p>
+                </div>
+                <div className="rounded-xl border border-rose-400/15 bg-rose-500/10 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-rose-200">Saiu</p>
+                  <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(monthlyOutflow)}</p>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
@@ -105,7 +171,7 @@ export function AccountsView({
                 <p className="mt-1 text-xs text-slate-500">Adicione suas contas reais para o saldo do app nascer correto.</p>
               </div>
             ) : (
-              accounts.map((account) => (
+              accountMonthlySummaries.map(({ account, net, count }) => (
                 <article key={account.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] p-4">
                   <button type="button" onClick={() => onSelectAccount(account.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                     <BankLogo account={account} />
@@ -113,6 +179,9 @@ export function AccountsView({
                       <p className="truncate text-sm font-bold text-white">{account.name}</p>
                       <p className="mt-1 truncate text-xs text-slate-500">
                         {accountTypeLabels[account.type]} - {account.institution}
+                      </p>
+                      <p className={`mt-1 font-mono text-[11px] font-bold ${net >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        Mês {net >= 0 ? '+' : '-'}{formatCurrency(Math.abs(net))} • {count} mov.
                       </p>
                     </div>
                   </button>
@@ -173,25 +242,24 @@ export function AccountsView({
             <div className="rounded-2xl border border-sky-400/15 bg-sky-500/10 p-3">
               <ArrowRightLeft size={16} className="text-sky-300" />
               <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-sky-200">Movimento</p>
-              <p className="mt-1 font-mono text-xs font-bold text-white">{selectedTransactions.length}</p>
+              <p className="mt-1 font-mono text-xs font-bold text-white">{selectedMovements.length}</p>
             </div>
           </section>
 
           <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-            {selectedTransactions.length === 0 ? (
+            {selectedMovements.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-5 text-center">
                 <Wallet size={22} className="mx-auto mb-2 text-slate-500" />
                 <p className="text-sm font-semibold text-slate-300">Sem transações nesta conta</p>
                 <p className="mt-1 text-xs text-slate-500">O resumo respeita o mês selecionado no app.</p>
               </div>
             ) : (
-              selectedTransactions.map((transaction) => {
-                const signedAmount = getAccountSignedAmount(transaction, selectedAccount.id);
+              selectedMovements.map(({ transaction, signedAmount }) => {
                 const meta = readTransactionMeta(transaction.notes);
                 const isInvoicePayment = Boolean(meta.invoicePaymentCardId && meta.invoicePaymentPeriod);
                 return (
                   <button
-                    key={transaction.id}
+                    key={`${transaction.id}-${signedAmount}`}
                     type="button"
                     onClick={isInvoicePayment
                       ? () => onOpenInvoice(meta.invoicePaymentCardId!, meta.invoicePaymentPeriod!)
