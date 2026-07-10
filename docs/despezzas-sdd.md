@@ -13,9 +13,9 @@ Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel
 - Despesas de cartão entram na competência do mês da fatura pelo fechamento do cartão. Uma compra em maio que pertence à fatura de junho não pode deixar maio negativo no Dashboard, Transações ou Relatórios.
 - A tela de Transações preserva o mês ativo vindo do Dashboard ou de qualquer outra tela, em vez de voltar automaticamente para o mês atual.
 - Em `Entradas`, reembolsos recebidos aparecem agrupados por pessoa/empresa e abrem a tela de Reembolsos já filtrada no mês ativo.
-- A tela de Contas possui visão mensal com entradas, saídas, resultado, quantidade de movimentos, tendência de caixa dos últimos seis meses e detalhe por conta, mantendo o saldo atual como caixa real.
+- A tela de Contas possui visão mensal com entradas, saídas, resultado, quantidade de movimentos, tendência de caixa dos últimos seis meses com barras separadas para entrada e saída, e detalhe por conta, mantendo o saldo atual como caixa real.
 - A tela de Cartões mostra o total da fatura separado entre valor próprio e valor de terceiros, além de pendências de reembolso e descontos/estornos quando existirem.
-- Em Relatórios, o escopo `Geral` usa total de entradas e total de saídas com terceiros/reembolsos; o escopo `Apenas meu` mostra receitas e despesas pessoais. A meta mensal para investir exibe progresso real acima de 100% quando o usuário supera a meta.
+- Em Relatórios, o escopo `Geral` usa total de entradas e total de saídas com terceiros/reembolsos; o escopo `Apenas meu` mostra receitas e despesas pessoais. Entradas e saídas possuem composição expansível para separar valores próprios e de terceiros. A meta mensal para investir exibe progresso real acima de 100% quando o usuário supera a meta.
 - A navegação desktop exibe a marca AxisFin no menu lateral. Quando a preferência de reembolsos está desativada, o menu Reembolsos e os blocos/filtros de terceiros ficam ocultos no Dashboard, Transações e Relatórios.
 - A migration `20260709183704_relax_paid_card_invoice_items.sql` ajusta o pagamento de faturas para permitir itens de cartão com status pago quando ainda não possuem metadados de fatura quitada, preservando a proteção contra pagamento duplicado.
 

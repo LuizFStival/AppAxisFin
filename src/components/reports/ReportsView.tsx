@@ -16,6 +16,8 @@ import {
   BarChart3,
   Briefcase,
   Car,
+  ChevronDown,
+  ChevronUp,
   Compass,
   CreditCard,
   Download,
@@ -123,6 +125,8 @@ export function ReportsView({
   onCurrentMonth,
 }: ReportsViewProps) {
   const [reportScope, setReportScope] = useState<'general' | 'personal'>('general');
+  const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
+  const [showOutflowBreakdown, setShowOutflowBreakdown] = useState(false);
   const effectiveReportScope = reimbursementsEnabled ? reportScope : 'personal';
   const previousMonth = shiftMonthKey(month, -1);
   const report = useMemo(() => {
@@ -269,6 +273,9 @@ export function ReportsView({
   const hasDailyData = dailyData.some((item) => item.income !== 0 || item.expenses !== 0);
   const largestCategory = categoryData[0];
   const categoryTotal = categoryData.reduce((sum, item) => sum + item.value, 0);
+  const scopeHint = effectiveReportScope === 'general'
+    ? 'Geral: meu + terceiros'
+    : 'Apenas meus valores';
 
   return (
     <div className="no-scrollbar h-full w-full min-w-0 overflow-x-hidden overflow-y-auto px-4 pb-8 pt-7">
@@ -310,6 +317,7 @@ export function ReportsView({
           Apenas meu
         </button>
       </div> : null}
+      <p className="mt-2 text-xs font-semibold text-slate-500">{scopeHint}</p>
 
       {reportWidgets.length > 0 ? <section className="mt-5 grid min-w-0 grid-cols-2 gap-3">
         {reportWidgets.map((widget) => {
@@ -389,13 +397,33 @@ export function ReportsView({
       <div className="mt-6 grid gap-5">
         <section>
           <div className="flex items-end justify-between gap-3">
-            <h2 className="font-display text-lg font-bold text-white">Entradas</h2>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white">Entradas</h2>
+              <p className="mt-1 text-xs text-slate-500">{scopeHint}</p>
+            </div>
             <div className="text-right">
               <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Total</p>
               <p className="font-mono text-sm font-bold text-emerald-300">{formatCurrency(visibleInflows)}</p>
             </div>
           </div>
           <div className="mt-3 grid gap-2">
+            <button
+              type="button"
+              onClick={() => setShowIncomeBreakdown((current) => !current)}
+              className="flex items-center justify-between rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-4 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-emerald-100">Total de entradas</span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {effectiveReportScope === 'general' ? 'Receitas + reembolsos de terceiros' : 'Somente receitas pessoais'}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-sm font-bold text-white">{formatCurrency(visibleInflows)}</span>
+                {showIncomeBreakdown ? <ChevronUp size={16} className="text-emerald-300" /> : <ChevronDown size={16} className="text-emerald-300" />}
+              </span>
+            </button>
+            {showIncomeBreakdown ? <>
             <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"><Wallet size={18} /></span>
@@ -416,18 +444,39 @@ export function ReportsView({
                 <div><p className="text-slate-500">Pendentes</p><p className="mt-1 font-mono font-bold text-amber-300">{formatCurrency(reimbursementPending)}</p></div>
               </div>
             </article> : null}
+            </> : null}
           </div>
         </section>
 
         <section>
           <div className="flex items-end justify-between gap-3">
-            <h2 className="font-display text-lg font-bold text-white">Saídas</h2>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white">Saídas</h2>
+              <p className="mt-1 text-xs text-slate-500">{scopeHint}</p>
+            </div>
             <div className="text-right">
               <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Total</p>
               <p className="font-mono text-sm font-bold text-rose-300">{formatCurrency(visibleOutflows)}</p>
             </div>
           </div>
           <div className="mt-3 grid gap-2">
+            <button
+              type="button"
+              onClick={() => setShowOutflowBreakdown((current) => !current)}
+              className="flex items-center justify-between rounded-2xl border border-rose-400/15 bg-rose-500/[0.07] p-4 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-rose-100">Total de saídas</span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {effectiveReportScope === 'general' ? 'Meus gastos + valores de terceiros' : 'Somente meus gastos'}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-sm font-bold text-white">{formatCurrency(visibleOutflows)}</span>
+                {showOutflowBreakdown ? <ChevronUp size={16} className="text-rose-300" /> : <ChevronDown size={16} className="text-rose-300" />}
+              </span>
+            </button>
+            {showOutflowBreakdown ? <>
             {effectiveReportScope === 'general' || !reimbursementsEnabled ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300"><Landmark size={18} /></span>
@@ -449,6 +498,7 @@ export function ReportsView({
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(currentMonthlyResult.thirdPartyExpenses)}</span>
             </article> : null}
+            </> : null}
           </div>
         </section>
       </div>

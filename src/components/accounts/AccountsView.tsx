@@ -104,7 +104,7 @@ export function AccountsView({
   const currentCashNet = accountCashEvolution.at(-1)?.net ?? 0;
   const cashTrendDelta = currentCashNet - previousCashNet;
   const cashTrendImproved = cashTrendDelta >= 0;
-  const maxCashNet = Math.max(1, ...accountCashEvolution.map((item) => Math.abs(item.net)));
+  const maxCashFlow = Math.max(1, ...accountCashEvolution.flatMap((item) => [item.inflow, item.outflow]));
   const selectedMovements = useMemo(() => {
     if (!selectedAccount) return [];
     return transactions
@@ -200,16 +200,26 @@ export function AccountsView({
                     {cashTrendDelta >= 0 ? '+' : '-'}{formatCurrency(Math.abs(cashTrendDelta))}
                   </span>
                 </div>
-                <div className="mt-4 flex h-24 items-end gap-2">
+                <div className="mt-3 flex items-center gap-3 text-[10px] font-semibold">
+                  <span className="inline-flex items-center gap-1 text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Entrou</span>
+                  <span className="inline-flex items-center gap-1 text-rose-300"><span className="h-2 w-2 rounded-full bg-rose-400" /> Saiu</span>
+                </div>
+                <div className="mt-3 flex h-28 items-end gap-2">
                   {accountCashEvolution.map((item) => {
-                    const height = Math.max(8, Math.round((Math.abs(item.net) / maxCashNet) * 76));
+                    const inflowHeight = Math.max(6, Math.round((item.inflow / maxCashFlow) * 80));
+                    const outflowHeight = Math.max(6, Math.round((item.outflow / maxCashFlow) * 80));
                     return (
                       <div key={item.month} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                        <div className="flex h-20 w-full items-end justify-center rounded-lg bg-white/[0.03] px-1">
+                        <div className="flex h-24 w-full items-end justify-center gap-1 rounded-lg bg-white/[0.03] px-1">
                           <div
-                            className={`w-full max-w-8 rounded-t-md ${item.net >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`}
-                            style={{ height }}
-                            title={`${item.label}: ${item.net >= 0 ? '+' : '-'}${formatCurrency(Math.abs(item.net))}`}
+                            className="w-full max-w-4 rounded-t-md bg-emerald-400"
+                            style={{ height: inflowHeight }}
+                            title={`${item.label} entrou: ${formatCurrency(item.inflow)}`}
+                          />
+                          <div
+                            className="w-full max-w-4 rounded-t-md bg-rose-400"
+                            style={{ height: outflowHeight }}
+                            title={`${item.label} saiu: ${formatCurrency(item.outflow)}`}
                           />
                         </div>
                         <span className="truncate text-[9px] font-bold uppercase text-slate-500">{item.label}</span>
