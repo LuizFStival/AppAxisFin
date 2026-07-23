@@ -41,8 +41,9 @@ import {
   expensesByCategory,
   formatCurrency,
   formatMonthLabel,
-  getExpenseSignedAmount,
+  getPersonalExpenseSignedAmount,
   getTransactionCompetenceMonth,
+  getTransactionReimbursementAmount,
   isInvoicePayment,
   isThirdPartyExpense,
   shiftMonthKey,
@@ -135,16 +136,16 @@ export function ReportsView({
       return periodTransactions.reduce((totals, transaction) => {
         if (transaction.flow === 'income') totals.income += transaction.amount;
         if (transaction.flow === 'expense' && !isInvoicePayment(transaction)) {
-          const amount = getExpenseSignedAmount(transaction);
           if (isThirdPartyExpense(transaction)) {
+            const amount = getTransactionReimbursementAmount(transaction);
             totals.thirdParty += amount;
             if (transaction.reimbursementStatus === 'received') totals.reimbursementsReceived += amount;
             else totals.reimbursementsPending += amount;
-          } else {
-            totals.expenses += amount;
-            if (transaction.cardId) totals.cardExpenses += amount;
-            else totals.accountExpenses += amount;
           }
+          const personalAmount = getPersonalExpenseSignedAmount(transaction);
+          totals.expenses += personalAmount;
+          if (transaction.cardId) totals.cardExpenses += personalAmount;
+          else totals.accountExpenses += personalAmount;
         }
         return totals;
       }, {
@@ -200,10 +201,9 @@ export function ReportsView({
             if (transaction.flow === 'income') current.income += transaction.amount;
             if (
               transaction.flow === 'expense'
-              && !isThirdPartyExpense(transaction)
               && !isInvoicePayment(transaction)
             ) {
-              current.expenses += getExpenseSignedAmount(transaction);
+              current.expenses += getPersonalExpenseSignedAmount(transaction);
             }
             return current;
           }, { income: 0, expenses: 0 });
@@ -258,11 +258,11 @@ export function ReportsView({
   const dailyData = useMemo(() => {
     const totals = new Map<number, { income: number; expenses: number }>();
     monthTransactions.forEach((transaction) => {
-      if (transaction.flow === 'transfer' || isThirdPartyExpense(transaction) || isInvoicePayment(transaction)) return;
+      if (transaction.flow === 'transfer' || isInvoicePayment(transaction)) return;
       const day = Number(transaction.date.slice(8, 10));
       const current = totals.get(day) ?? { income: 0, expenses: 0 };
       if (transaction.flow === 'income') current.income += transaction.amount;
-      if (transaction.flow === 'expense') current.expenses += getExpenseSignedAmount(transaction);
+      if (transaction.flow === 'expense') current.expenses += getPersonalExpenseSignedAmount(transaction);
       totals.set(day, current);
     });
     return Array.from(totals.entries())

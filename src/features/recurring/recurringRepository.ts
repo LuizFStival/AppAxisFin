@@ -20,13 +20,16 @@ function toRecurringInsert(userId: string, transaction: Omit<Transaction, 'id'>,
     card_id: shouldUseCard ? transaction.cardId ?? null : null,
     notes: transaction.notes ?? null,
     is_reimbursable: transaction.isReimbursable ?? false,
+    split_mode: transaction.splitMode ?? (transaction.isReimbursable ? 'third_party_full' : 'none'),
+    personal_amount: transaction.personalAmount ?? null,
+    reimbursement_amount: transaction.reimbursementAmount ?? null,
     reimbursement_person_id: transaction.isReimbursable ? transaction.reimbursementPersonId ?? null : null,
     reimbursement_status: transaction.isReimbursable ? transaction.reimbursementStatus ?? 'pending' : null,
     is_active: true,
   };
 }
 
-const recurringSelect = 'id, description, amount, flow, status, start_date, end_date, interval_months, category_id, account_id, card_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, is_active';
+const recurringSelect = 'id, description, amount, flow, status, start_date, end_date, interval_months, category_id, account_id, card_id, notes, is_reimbursable, split_mode, personal_amount, reimbursement_amount, reimbursement_person_id, reimbursement_status, is_active';
 
 export const recurringRepository = {
   async createFromTransaction(transaction: Omit<Transaction, 'id'>, endDate?: string): Promise<RecurringTransaction> {
@@ -88,5 +91,28 @@ export const recurringRepository = {
       .eq('user_id', userId);
 
     if (error) throw error;
+  },
+
+  async updateManyNotes(items: Array<{ id: string; notes?: string }>): Promise<RecurringTransaction[]> {
+    const saved: RecurringTransaction[] = [];
+    if (items.length === 0) return saved;
+
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+
+    for (const item of items) {
+      const { data, error } = await client
+        .from('recurring_transactions')
+        .update({ notes: item.notes ?? null })
+        .eq('id', item.id)
+        .eq('user_id', userId)
+        .select(recurringSelect)
+        .single();
+
+      if (error) throw error;
+      saved.push(mapRecurringTransaction(data));
+    }
+
+    return saved;
   },
 };

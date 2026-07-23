@@ -34,7 +34,10 @@ const breakdownConfig: Array<Omit<ExpenseBreakdownItem, 'total' | 'count'>> = [
   },
 ];
 
-export function summarizeExpenseBreakdown(transactions: Transaction[]): ExpenseBreakdownItem[] {
+export function summarizeExpenseBreakdown(
+  transactions: Transaction[],
+  getAmount: (transaction: Transaction) => number = getExpenseSignedAmount,
+): ExpenseBreakdownItem[] {
   const initialTotals = new Map<ExpenseBreakdownKey, { total: number; count: number }>(
     breakdownConfig.map((item) => [item.key, { total: 0, count: 0 }]),
   );
@@ -48,7 +51,7 @@ export function summarizeExpenseBreakdown(transactions: Transaction[]): ExpenseB
       const current = initialTotals.get(key) ?? { total: 0, count: 0 };
 
       initialTotals.set(key, {
-        total: current.total + getExpenseSignedAmount(transaction),
+        total: current.total + getAmount(transaction),
         count: current.count + 1,
       });
     });

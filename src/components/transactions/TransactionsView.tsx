@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound, X } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getCategoryName, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, getPaymentSource, getPendingInvoiceSummaries, getTransactionCompetenceMonth, isInvoiceCredit, isInvoicePayment, isPendingAccountExpense, isThirdPartyExpense, shiftMonthKey, summarizeMonthlyResult } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, getPendingInvoiceSummaries, getPersonalExpenseSignedAmount, getTransactionCompetenceMonth, getTransactionPersonalAmount, getTransactionReimbursementAmount, isInvoiceCredit, isInvoicePayment, isPendingAccountExpense, isThirdPartyExpense, shiftMonthKey, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { ExpenseViewFilter } from '../../lib/utils/expenseFilters';
@@ -76,7 +76,7 @@ function matchesDashboardFilter(transaction: Transaction, selectedMonth: string,
   }
   if (getTransactionCompetenceMonth(transaction, cards) !== selectedMonth) return false;
   if (filter === 'income') return transaction.flow === 'income';
-  if (filter === 'expenses') return transaction.flow === 'expense' && !isThirdPartyExpense(transaction) && !isInvoicePayment(transaction);
+  if (filter === 'expenses') return transaction.flow === 'expense' && getTransactionPersonalAmount(transaction) > 0 && !isInvoicePayment(transaction);
   if (filter === 'reimbursements') return isThirdPartyExpense(transaction);
   if (filter === 'result') return !isInvoicePayment(transaction);
   return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId;
@@ -214,7 +214,7 @@ export function TransactionsView({
       .filter((transaction) => transaction.flow === 'expense')
       .filter((transaction) => expenseScope === 'others'
         ? isThirdPartyExpense(transaction)
-        : !isThirdPartyExpense(transaction))
+        : getTransactionPersonalAmount(transaction) > 0)
       .filter((transaction) => matchesScopedExpenseFilter(transaction, expenseFilter));
   }, [expenseFilter, expenseScope, sourceTransactions]);
   const receivedReimbursementGroups = useMemo(() => {
@@ -233,7 +233,7 @@ export function TransactionsView({
         const name = getReimbursementPersonName(reimbursementPeople, transaction.reimbursementPersonId);
         if (term && !name.toLowerCase().includes(term) && !transaction.description.toLowerCase().includes(term)) return;
         const current = groups.get(key) ?? { id: key, name, total: 0, count: 0 };
-        current.total += transaction.amount;
+        current.total += getTransactionReimbursementAmount(transaction);
         current.count += 1;
         groups.set(key, current);
       });
@@ -263,6 +263,8 @@ export function TransactionsView({
       if (isInvoicePayment(transaction)) return sum;
       if (transaction.flow === 'income') return sum + transaction.amount;
       if (isInvoiceCredit(transaction)) return sum + transaction.amount;
+      if (transaction.flow === 'expense' && expenseScope === 'personal') return sum - getPersonalExpenseSignedAmount(transaction);
+      if (transaction.flow === 'expense' && expenseScope === 'others') return sum - getTransactionReimbursementAmount(transaction);
       if (transaction.flow === 'expense') return sum - transaction.amount;
       return sum;
     }, 0);
@@ -270,13 +272,12 @@ export function TransactionsView({
       return transactionTotal + receivedReimbursementGroups.reduce((sum, group) => sum + group.total, 0);
     }
     return movementFilter === 'pending' ? transactionTotal - pendingInvoiceTotal : transactionTotal;
-  }, [dashboardDetailFilter, filteredTransactions, movementFilter, pendingInvoiceTotal, receivedReimbursementGroups]);
+  }, [dashboardDetailFilter, expenseScope, filteredTransactions, movementFilter, pendingInvoiceTotal, receivedReimbursementGroups]);
   const spendingSummary = useMemo(() => {
     return sourceTransactions.reduce((summary, transaction) => {
       if (transaction.flow !== 'expense' || isInvoicePayment(transaction)) return summary;
-      const amount = isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
-      if (isThirdPartyExpense(transaction)) summary.others += amount;
-      else summary.personal += amount;
+      summary.personal += getPersonalExpenseSignedAmount(transaction);
+      summary.others += getTransactionReimbursementAmount(transaction);
       return summary;
     }, { personal: 0, others: 0 });
   }, [sourceTransactions]);
@@ -289,7 +290,7 @@ export function TransactionsView({
   const reimbursementSummary = useMemo(() => {
     return sourceTransactions.reduce((summary, transaction) => {
       if (!isThirdPartyExpense(transaction)) return summary;
-      const amount = isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
+      const amount = getTransactionReimbursementAmount(transaction);
       if (transaction.reimbursementStatus === 'received') summary.received += amount;
       else summary.pending += amount;
       return summary;
@@ -297,11 +298,14 @@ export function TransactionsView({
   }, [sourceTransactions]);
   const scopedExpenseTransactions = useMemo(() => {
     if (expenseScope === 'others') return sourceTransactions.filter(isThirdPartyExpense);
-    return sourceTransactions.filter((transaction) => transaction.flow === 'expense' && !isThirdPartyExpense(transaction) && !isInvoicePayment(transaction));
+    return sourceTransactions.filter((transaction) => transaction.flow === 'expense' && getTransactionPersonalAmount(transaction) > 0 && !isInvoicePayment(transaction));
   }, [expenseScope, sourceTransactions]);
   const expenseBreakdown = useMemo(
-    () => summarizeExpenseBreakdown(scopedExpenseTransactions),
-    [scopedExpenseTransactions],
+    () => summarizeExpenseBreakdown(
+      scopedExpenseTransactions,
+      expenseScope === 'others' ? getTransactionReimbursementAmount : getPersonalExpenseSignedAmount,
+    ),
+    [expenseScope, scopedExpenseTransactions],
   );
   const hasExpenseBreakdown = expenseScope !== 'all' && expenseBreakdown.some((item) => item.count > 0);
   const monthlyResult = useMemo(

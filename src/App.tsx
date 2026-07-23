@@ -137,6 +137,7 @@ export default function App() {
     currentView,
     runAction: runAppAction,
     setSnapshot,
+    recurringTransactions: snapshot.recurringTransactions,
     transactions: snapshot.transactions,
   });
 
@@ -894,7 +895,7 @@ export default function App() {
       ) : null}
 
       {currentView === 'goals' ? (
-        <GoalsView categories={snapshot.categories} />
+        <GoalsView categories={snapshot.categories} reimbursementPeople={snapshot.reimbursementPeople} />
       ) : null}
 
         {currentView === 'profile' ? (
@@ -956,6 +957,7 @@ export default function App() {
             reimbursementPeople={snapshot.reimbursementPeople}
             reimbursementsEnabled={user.reimbursementsEnabled}
             transaction={editingTransaction}
+            preferredCardId={currentView === 'cards' ? (selectedCardId || snapshot.cards[0]?.id) : undefined}
             onCreateCategory={handleCreateCategoryFromEntry}
             onCreateReimbursementPerson={handleCreateReimbursementPerson}
             onCreateRecurring={handleCreateRecurring}

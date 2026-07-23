@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, Trash2, UserRound } from 'lucide-react';
 import { Account, Card, Category, ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency, getCategoryName, getExpenseSignedAmount, isCardInvoicePaid, isInvoiceCredit } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getExpenseSignedAmount, getPersonalExpenseSignedAmount, getTransactionReimbursementAmount, isCardInvoicePaid, isInvoiceCredit } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate, formatShortDatePtBr } from '../../lib/utils/date';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
@@ -144,21 +144,24 @@ export function CardsView({
     return cards.map((card) => {
       const invoice = getCardInvoiceInfoForClosingMonth(card, activeMonth, formatLocalDate(new Date()));
       const invoiceTransactions = getInvoiceTransactions(card, transactions, activeMonth);
-      const total = invoiceTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
+      const total = invoiceTransactions.reduce((sum, transaction) => sum + (isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount), 0);
       const invoiceCreditTotal = invoiceTransactions
         .filter((transaction) => isInvoiceCredit(transaction))
         .reduce((sum, transaction) => sum + transaction.amount, 0);
       const reimbursementTotal = invoiceTransactions
         .filter((transaction) => transaction.isReimbursable)
-        .reduce((sum, transaction) => sum + transaction.amount, 0);
+        .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
       const reimbursementPending = invoiceTransactions
         .filter((transaction) => transaction.isReimbursable && transaction.reimbursementStatus !== 'received')
-        .reduce((sum, transaction) => sum + transaction.amount, 0);
-      const personalTransactions = invoiceTransactions.filter((transaction) => !transaction.isReimbursable);
+        .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
+      const personalTransactions = invoiceTransactions.filter((transaction) => !transaction.isReimbursable || getPersonalExpenseSignedAmount(transaction) > 0);
       const reimbursementTransactions = invoiceTransactions.filter((transaction) => transaction.isReimbursable);
-      const personalTotal = personalTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
-      const personalBreakdown = summarizeExpenseBreakdown(personalTransactions.filter((transaction) => !isInvoiceCredit(transaction)));
-      const reimbursementBreakdown = summarizeExpenseBreakdown(reimbursementTransactions);
+      const personalTotal = personalTransactions.reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0);
+      const personalBreakdown = summarizeExpenseBreakdown(
+        personalTransactions.filter((transaction) => !isInvoiceCredit(transaction)),
+        getPersonalExpenseSignedAmount,
+      );
+      const reimbursementBreakdown = summarizeExpenseBreakdown(reimbursementTransactions, getTransactionReimbursementAmount);
 
       return {
         card,
@@ -234,7 +237,7 @@ export function CardsView({
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, transaction: Transaction) {
-    if (transaction.isProjected || event.button !== 0) return;
+    if (event.button !== 0) return;
 
     pointerDragRef.current = {
       transactionId: transaction.id,
@@ -249,6 +252,8 @@ export function CardsView({
     } catch {
       // Some browsers may release capture during scroll/gesture negotiation.
     }
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
@@ -535,17 +540,12 @@ export function CardsView({
                 >
                   <button
                     type="button"
-                    disabled={transaction.isProjected}
                     onPointerDown={(event) => handlePointerDown(event, transaction)}
                     onPointerMove={handlePointerMove}
                     onPointerUp={(event) => void handlePointerUp(event)}
                     onPointerCancel={handlePointerCancel}
-                    className={`flex h-9 w-5 shrink-0 touch-none items-center justify-center rounded-lg text-slate-600 ${
-                      transaction.isProjected
-                        ? 'cursor-not-allowed opacity-30'
-                        : 'cursor-grab hover:bg-white/5 hover:text-slate-300 active:cursor-grabbing'
-                    }`}
-                    title={transaction.isProjected ? 'Ocorrências projetadas não podem ser reordenadas' : 'Arraste para reordenar'}
+                    className="flex h-9 w-5 shrink-0 touch-none items-center justify-center rounded-lg text-slate-600 cursor-grab hover:bg-white/5 hover:text-slate-300 active:cursor-grabbing"
+                    title="Arraste para reordenar"
                     aria-label={`Reordenar ${transaction.description}`}
                   >
                     <GripVertical size={16} />

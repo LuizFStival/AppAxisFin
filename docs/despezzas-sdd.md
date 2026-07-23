@@ -6,6 +6,14 @@ Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel
 
 ## Status de atualização - 2026-07-10
 
+- Fase 1 de divisao de despesa adicionada ao cadastro de lancamentos: `none` (so minha), `shared` (conta dividida) e `third_party_full` (100% de terceiro).
+- Em `shared`, o lancamento continua unico e `amount` representa o total que saiu da conta/fatura; `personal_amount` entra nos gastos pessoais e `reimbursement_amount` entra automaticamente em Reembolsos.
+- Em `third_party_full`, `personal_amount = 0` e `reimbursement_amount = amount`, preservando o comportamento historico de despesa de terceiro.
+- Reembolso recebido movimenta caixa somente pelo `reimbursement_amount`; a saida da conta/fatura continua usando o `amount` total.
+- Fase 2 implementada: a aba `Metas` passa a ser `Metas & Compromissos`, separando `Juntar dinheiro` das metas atuais e `Compromissos` para financiamento do ap, carro, reforma ou dividas compartilhadas.
+- Compromissos persistem em `commitments` com valor total, minha cota percentual, pessoa vinculada de Reembolsos, parcela mensal, total de parcelas, inicio, valor ja pago, cor e status.
+- O progresso do compromisso nesta fase usa `paid_amount` manual e mostra minha cota, pago, falta, parcela e pessoa vinculada; a ligacao automatica com despesas divididas fica para a Fase 3.
+- Roadmap desta frente: Fase 3 vincula despesas ao compromisso e Fase 4 sugere recorrencia com divisao.
 - O Dashboard separa caixa real de balanço mensal: `Entrou nas contas` e `Saiu das contas` refletem movimentos confirmados em contas, com subtotais `Meu` e `Terceiros`.
 - Pagamentos de fatura são rateados entre gastos pessoais e valores de terceiros a partir dos itens da fatura, evitando que toda a saída da conta seja atribuída ao usuário.
 - Reembolsos recebidos contam como entrada de terceiros no mês do reembolso mesmo em registros históricos sem conta de recebimento preenchida; a conta continua sendo usada para conciliação de saldo quando disponível.
@@ -550,6 +558,10 @@ Parcelas derivadas de compras parceladas.
 
 Metas financeiras.
 
+### commitments
+
+Compromissos financeiros de longo prazo, como financiamento do ap, carro, reforma ou divida compartilhada.
+
 ### budgets
 
 Orcamentos mensais por categoria.
@@ -575,6 +587,8 @@ Alertas e lembretes.
 - `installments.transaction_id` -> `transactions.id`.
 - `installments.invoice_id` -> `invoices.id`.
 - `goals.user_id` -> `auth.users.id`.
+- `commitments.user_id` -> `auth.users.id`.
+- `commitments.partner_person_id` -> `reimbursement_people.id`.
 - `budgets.category_id` -> `categories.id`.
 - `notifications.user_id` -> `auth.users.id`.
 

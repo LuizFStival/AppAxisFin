@@ -113,6 +113,9 @@ create table if not exists public.transactions (
   to_account_id uuid references public.accounts(id) on delete set null,
   notes text,
   is_reimbursable boolean not null default false,
+  split_mode text not null default 'none',
+  personal_amount numeric(14,2),
+  reimbursement_amount numeric(14,2),
   reimbursement_person_id uuid references public.reimbursement_people(id) on delete set null,
   reimbursement_status text check (reimbursement_status in ('pending', 'received')),
   reimbursement_received_at date,
@@ -165,6 +168,29 @@ create table if not exists public.transactions (
         )
       )
     )
+  ),
+  constraint transactions_split_amounts_check check (
+    (
+      is_reimbursable = false
+      and split_mode = 'none'
+      and personal_amount is null
+      and reimbursement_amount is null
+    )
+    or
+    (
+      is_reimbursable = true
+      and flow = 'expense'
+      and split_mode in ('shared', 'third_party_full')
+      and personal_amount is not null
+      and reimbursement_amount is not null
+      and personal_amount >= 0
+      and reimbursement_amount > 0
+      and personal_amount + reimbursement_amount = amount
+      and (
+        (split_mode = 'shared' and personal_amount > 0)
+        or (split_mode = 'third_party_full' and personal_amount = 0)
+      )
+    )
   )
 );
 
@@ -183,6 +209,9 @@ create table if not exists public.recurring_transactions (
   card_id uuid references public.cards(id) on delete set null,
   notes text,
   is_reimbursable boolean not null default false,
+  split_mode text not null default 'none',
+  personal_amount numeric(14,2),
+  reimbursement_amount numeric(14,2),
   reimbursement_person_id uuid references public.reimbursement_people(id) on delete set null,
   reimbursement_status text check (reimbursement_status in ('pending', 'received')),
   is_active boolean not null default true,
@@ -205,6 +234,30 @@ create table if not exists public.recurring_transactions (
       and flow = 'expense'
       and reimbursement_person_id is not null
       and reimbursement_status = 'pending'
+    )
+  ),
+  constraint recurring_transactions_split_amounts_check check (
+    (
+      is_reimbursable = false
+      and split_mode = 'none'
+      and personal_amount is null
+      and reimbursement_amount is null
+    )
+    or
+    (
+      is_reimbursable = true
+      and flow = 'expense'
+      and split_mode in ('shared', 'third_party_full')
+      and personal_amount is not null
+      and reimbursement_amount is not null
+      and personal_amount >= 0
+      and reimbursement_amount > 0
+      and personal_amount + reimbursement_amount = amount
+      and reimbursement_status = 'pending'
+      and (
+        (split_mode = 'shared' and personal_amount > 0)
+        or (split_mode = 'third_party_full' and personal_amount = 0)
+      )
     )
   )
 );
@@ -268,6 +321,23 @@ create table if not exists public.goal_movements (
   created_at timestamptz not null default now(),
   constraint goal_movements_goal_owner_fk
     foreign key (goal_id, user_id) references public.goals(id, user_id) on delete cascade
+);
+
+create table if not exists public.commitments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  total_value numeric(14,2) not null check (total_value > 0),
+  my_share_percent numeric(5,2) not null default 50 check (my_share_percent > 0 and my_share_percent <= 100),
+  partner_person_id uuid references public.reimbursement_people(id) on delete set null,
+  monthly_amount numeric(14,2) check (monthly_amount is null or monthly_amount > 0),
+  installment_count int check (installment_count is null or installment_count > 0),
+  start_date date,
+  paid_amount numeric(14,2) not null default 0 check (paid_amount >= 0),
+  color text not null default '#8B5CF6',
+  status text not null default 'active' check (status in ('active', 'completed', 'archived')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create or replace function public.apply_goal_movement()
@@ -358,6 +428,9 @@ create index if not exists installments_transaction_id_idx on public.installment
 create index if not exists installments_invoice_id_idx on public.installments(invoice_id);
 create index if not exists goals_user_id_idx on public.goals(user_id);
 create index if not exists goal_movements_user_goal_idx on public.goal_movements(user_id, goal_id, created_at desc);
+create index if not exists commitments_user_id_idx on public.commitments(user_id);
+create index if not exists commitments_partner_person_id_idx on public.commitments(partner_person_id);
+create index if not exists commitments_user_status_idx on public.commitments(user_id, status);
 create index if not exists budgets_user_id_period_idx on public.budgets(user_id, period);
 create index if not exists budgets_category_id_idx on public.budgets(category_id);
 create index if not exists notifications_user_id_created_at_idx on public.notifications(user_id, created_at desc);
@@ -419,7 +492,7 @@ begin
     and old.reimbursement_status = 'received'
     and old.reimbursement_received_account_id is not null then
     update public.accounts
-    set balance = balance - old.amount
+    set balance = balance - coalesce(old.reimbursement_amount, old.amount)
     where id = old.reimbursement_received_account_id and user_id = old.user_id;
   end if;
 
@@ -439,7 +512,7 @@ begin
     and new.reimbursement_status = 'received'
     and new.reimbursement_received_account_id is not null then
     update public.accounts
-    set balance = balance + new.amount
+    set balance = balance + coalesce(new.reimbursement_amount, new.amount)
     where id = new.reimbursement_received_account_id and user_id = new.user_id;
   end if;
 
@@ -476,6 +549,11 @@ create trigger goals_set_updated_at
 before update on public.goals
 for each row execute function public.set_updated_at();
 
+drop trigger if exists commitments_set_updated_at on public.commitments;
+create trigger commitments_set_updated_at
+before update on public.commitments
+for each row execute function public.set_updated_at();
+
 drop trigger if exists budgets_set_updated_at on public.budgets;
 create trigger budgets_set_updated_at
 before update on public.budgets
@@ -497,6 +575,7 @@ alter table public.invoices enable row level security;
 alter table public.installments enable row level security;
 alter table public.goals enable row level security;
 alter table public.goal_movements enable row level security;
+alter table public.commitments enable row level security;
 alter table public.budgets enable row level security;
 alter table public.notifications enable row level security;
 
@@ -711,6 +790,27 @@ for insert to authenticated
 with check ((select auth.uid()) = user_id);
 
 grant select, insert on public.goal_movements to authenticated;
+
+drop policy if exists commitments_select_own on public.commitments;
+create policy commitments_select_own on public.commitments
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists commitments_insert_own on public.commitments;
+create policy commitments_insert_own on public.commitments
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists commitments_update_own on public.commitments;
+create policy commitments_update_own on public.commitments
+for update to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists commitments_delete_own on public.commitments;
+create policy commitments_delete_own on public.commitments
+for delete to authenticated
+using ((select auth.uid()) = user_id);
 
 drop policy if exists budgets_select_own on public.budgets;
 create policy budgets_select_own on public.budgets
@@ -1009,6 +1109,16 @@ begin
 end;
 $$;
 
+create or replace function public.validate_commitment_owner_refs()
+returns trigger
+language plpgsql
+as $$
+begin
+  perform public.assert_owned_reimbursement_person(new.partner_person_id, new.user_id);
+  return new;
+end;
+$$;
+
 drop trigger if exists cards_validate_owner_refs on public.cards;
 create trigger cards_validate_owner_refs
 before insert or update on public.cards
@@ -1039,6 +1149,11 @@ create trigger budgets_validate_owner_refs
 before insert or update on public.budgets
 for each row execute function public.validate_budget_owner_refs();
 
+drop trigger if exists commitments_validate_owner_refs on public.commitments;
+create trigger commitments_validate_owner_refs
+before insert or update on public.commitments
+for each row execute function public.validate_commitment_owner_refs();
+
 create or replace function public.validate_goal_owner_refs()
 returns trigger
 language plpgsql
@@ -1068,10 +1183,12 @@ alter function public.validate_recurring_transaction_owner_refs() set search_pat
 alter function public.validate_invoice_owner_refs() set search_path = public, pg_temp;
 alter function public.validate_installment_owner_refs() set search_path = public, pg_temp;
 alter function public.validate_budget_owner_refs() set search_path = public, pg_temp;
+alter function public.validate_commitment_owner_refs() set search_path = public, pg_temp;
 alter function public.sync_account_balance_from_transaction() set search_path = public, pg_temp;
 
 revoke execute on function public.create_profile_for_new_user() from public, anon, authenticated;
 revoke execute on function public.validate_goal_owner_refs() from public, anon, authenticated;
+revoke execute on function public.validate_commitment_owner_refs() from public, anon, authenticated;
 
 do $$
 declare
@@ -1079,7 +1196,7 @@ declare
   finance_tables constant text[] := array[
     'profiles', 'accounts', 'cards', 'categories', 'reimbursement_people',
     'transactions', 'recurring_transactions', 'invoices', 'installments',
-    'goals', 'goal_movements', 'budgets', 'notifications'
+    'goals', 'goal_movements', 'commitments', 'budgets', 'notifications'
   ];
 begin
   foreach table_name in array finance_tables loop
@@ -1092,7 +1209,7 @@ $$;
 grant select, insert, update, delete on table
   public.accounts, public.cards, public.categories,
   public.reimbursement_people, public.transactions, public.recurring_transactions,
-  public.invoices, public.installments, public.goals, public.budgets,
+  public.invoices, public.installments, public.goals, public.commitments, public.budgets,
   public.notifications
 to authenticated;
 
@@ -1114,6 +1231,7 @@ begin
 
   delete from public.notifications where user_id = current_user_id;
   delete from public.budgets where user_id = current_user_id;
+  delete from public.commitments where user_id = current_user_id;
   delete from public.goals where user_id = current_user_id;
   delete from public.recurring_transactions where user_id = current_user_id;
   delete from public.transactions where user_id = current_user_id;
@@ -1179,7 +1297,8 @@ begin
       insert into public.transactions (
         user_id, description, amount, flow, status, transaction_date,
         category_id, account_id, card_id, from_account_id, to_account_id, notes,
-        is_reimbursable, reimbursement_person_id, reimbursement_status,
+        is_reimbursable, split_mode, personal_amount, reimbursement_amount,
+        reimbursement_person_id, reimbursement_status,
         reimbursement_received_at, reimbursement_received_account_id
       )
       values (
@@ -1187,6 +1306,9 @@ begin
         item->>'flow', 'pending', (item->>'transaction_date')::date,
         nullif(item->>'category_id', '')::uuid, null, p_card_id, null, null,
         nullif(item->>'notes', ''), coalesce((item->>'is_reimbursable')::boolean, false),
+        coalesce(nullif(item->>'split_mode', ''), case when coalesce((item->>'is_reimbursable')::boolean, false) then 'third_party_full' else 'none' end),
+        nullif(item->>'personal_amount', '')::numeric,
+        nullif(item->>'reimbursement_amount', '')::numeric,
         nullif(item->>'reimbursement_person_id', '')::uuid,
         nullif(item->>'reimbursement_status', ''),
         nullif(item->>'reimbursement_received_at', '')::date,

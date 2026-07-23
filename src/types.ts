@@ -4,6 +4,7 @@ export type ExpenseEntryMode = 'variable' | 'fixed' | 'installment';
 export type EditSeriesScope = 'single' | 'forward';
 export type ExpenseNeed = 'essential' | 'superfluous';
 export type ReimbursementStatus = 'pending' | 'received';
+export type ExpenseSplitMode = 'none' | 'shared' | 'third_party_full';
 export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
 export type CardNetwork = 'mastercard' | 'visa' | 'elo' | 'other';
 export type AppView = 'home' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'goals' | 'reports' | 'notifications' | 'profile';
@@ -62,6 +63,20 @@ export interface Goal {
   status: 'active' | 'completed' | 'archived';
 }
 
+export interface Commitment {
+  id: string;
+  name: string;
+  totalValue: number;
+  mySharePercent: number;
+  partnerPersonId?: string;
+  monthlyAmount?: number;
+  installmentCount?: number;
+  startDate?: string;
+  paidAmount: number;
+  color: string;
+  status: 'active' | 'completed' | 'archived';
+}
+
 export interface Budget {
   id: string;
   categoryId: string;
@@ -95,6 +110,9 @@ export interface Transaction {
   toAccountId?: string;
   notes?: string;
   isReimbursable?: boolean;
+  splitMode?: ExpenseSplitMode;
+  personalAmount?: number;
+  reimbursementAmount?: number;
   reimbursementPersonId?: string;
   reimbursementStatus?: ReimbursementStatus;
   reimbursementReceivedAt?: string;
@@ -119,6 +137,9 @@ export interface RecurringTransaction {
   cardId?: string;
   notes?: string;
   isReimbursable?: boolean;
+  splitMode?: ExpenseSplitMode;
+  personalAmount?: number;
+  reimbursementAmount?: number;
   reimbursementPersonId?: string;
   reimbursementStatus?: ReimbursementStatus;
   reimbursementReceivedAccountId?: string;

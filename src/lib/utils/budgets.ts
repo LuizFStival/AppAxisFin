@@ -1,5 +1,5 @@
 import type { Transaction } from '../../types';
-import { getExpenseSignedAmount, getFinancialMonthKey, isThirdPartyExpense } from './finance';
+import { getFinancialMonthKey, getPersonalExpenseSignedAmount } from './finance';
 
 export type BudgetAlertLevel = 'safe' | 'warning-70' | 'warning-90' | 'limit-100';
 
@@ -16,10 +16,11 @@ export function getPersonalCategorySpending(transactions: Transaction[], period:
     if (
       transaction.flow !== 'expense'
       || !transaction.categoryId
-      || isThirdPartyExpense(transaction)
       || getFinancialMonthKey(transaction) !== period
     ) return;
-    totals.set(transaction.categoryId, (totals.get(transaction.categoryId) ?? 0) + getExpenseSignedAmount(transaction));
+    const amount = getPersonalExpenseSignedAmount(transaction);
+    if (amount <= 0) return;
+    totals.set(transaction.categoryId, (totals.get(transaction.categoryId) ?? 0) + amount);
   });
   return totals;
 }

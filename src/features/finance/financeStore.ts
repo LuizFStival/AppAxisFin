@@ -60,6 +60,9 @@ type TransactionRow = {
   to_account_id: string | null;
   notes: string | null;
   is_reimbursable?: boolean | null;
+  split_mode?: Transaction['splitMode'] | null;
+  personal_amount?: number | string | null;
+  reimbursement_amount?: number | string | null;
   reimbursement_person_id?: string | null;
   reimbursement_status?: Transaction['reimbursementStatus'] | null;
   reimbursement_received_at?: string | null;
@@ -88,6 +91,9 @@ type RecurringTransactionRow = {
   card_id: string | null;
   notes: string | null;
   is_reimbursable?: boolean | null;
+  split_mode?: RecurringTransaction['splitMode'] | null;
+  personal_amount?: number | string | null;
+  reimbursement_amount?: number | string | null;
   reimbursement_person_id?: string | null;
   reimbursement_status?: RecurringTransaction['reimbursementStatus'] | null;
   is_active: boolean;
@@ -144,6 +150,9 @@ export function mapTransaction(row: TransactionRow): Transaction {
     toAccountId: row.to_account_id ?? undefined,
     notes: row.notes ?? undefined,
     isReimbursable: Boolean(row.is_reimbursable),
+    splitMode: row.split_mode ?? undefined,
+    personalAmount: row.personal_amount == null ? undefined : Number(row.personal_amount),
+    reimbursementAmount: row.reimbursement_amount == null ? undefined : Number(row.reimbursement_amount),
     reimbursementPersonId: row.reimbursement_person_id ?? undefined,
     reimbursementStatus: row.reimbursement_status ?? undefined,
     reimbursementReceivedAt: row.reimbursement_received_at ?? undefined,
@@ -167,6 +176,9 @@ export function mapRecurringTransaction(row: RecurringTransactionRow): Recurring
     cardId: row.card_id ?? undefined,
     notes: row.notes ?? undefined,
     isReimbursable: Boolean(row.is_reimbursable),
+    splitMode: row.split_mode ?? undefined,
+    personalAmount: row.personal_amount == null ? undefined : Number(row.personal_amount),
+    reimbursementAmount: row.reimbursement_amount == null ? undefined : Number(row.reimbursement_amount),
     reimbursementPersonId: row.reimbursement_person_id ?? undefined,
     reimbursementStatus: row.reimbursement_status ?? undefined,
     isActive: row.is_active,
@@ -227,6 +239,9 @@ function expandRecurringTransactions(rules: RecurringTransaction[], transactions
               recurringOccurrenceDate: occurrenceDate,
             }),
             isReimbursable: rule.isReimbursable,
+            splitMode: rule.splitMode,
+            personalAmount: rule.personalAmount,
+            reimbursementAmount: rule.reimbursementAmount,
             reimbursementPersonId: rule.reimbursementPersonId,
             reimbursementStatus: rule.isReimbursable ? rule.reimbursementStatus ?? 'pending' : undefined,
             recurringTransactionId: rule.id,
@@ -355,12 +370,12 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
     client.from('reimbursement_people').select('id, name, phone, notes').eq('user_id', userId).order('name'),
     client
       .from('recurring_transactions')
-      .select('id, description, amount, flow, status, start_date, end_date, interval_months, category_id, account_id, card_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, is_active')
+      .select('id, description, amount, flow, status, start_date, end_date, interval_months, category_id, account_id, card_id, notes, is_reimbursable, split_mode, personal_amount, reimbursement_amount, reimbursement_person_id, reimbursement_status, is_active')
       .eq('user_id', userId)
       .order('start_date', { ascending: false }),
     client
       .from('transactions')
-      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at')
+      .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, split_mode, personal_amount, reimbursement_amount, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at')
       .eq('user_id', userId)
       .order('transaction_date', { ascending: false })
       .order('created_at', { ascending: false }),

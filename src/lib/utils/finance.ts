@@ -16,6 +16,19 @@ function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+export function getTransactionPersonalAmount(transaction: Transaction): number {
+  if (transaction.flow !== 'expense' || isInvoiceCredit(transaction)) return 0;
+  if (!transaction.isReimbursable) return transaction.amount;
+  if (typeof transaction.personalAmount === 'number') return roundMoney(transaction.personalAmount);
+  return 0;
+}
+
+export function getTransactionReimbursementAmount(transaction: Transaction): number {
+  if (transaction.flow !== 'expense' || !transaction.isReimbursable) return 0;
+  if (typeof transaction.reimbursementAmount === 'number') return roundMoney(transaction.reimbursementAmount);
+  return transaction.amount;
+}
+
 export function getMonthKey(date: string): string {
   return date.slice(0, 7);
 }
@@ -99,7 +112,7 @@ export function getAccountMovementEntries(transaction: Transaction, accountId: s
   ) {
     entries.push({
       month: cards.length > 0 ? getReimbursementMonthKey(transaction, cards) : getFinancialMonthKey(transaction),
-      amount: transaction.amount,
+      amount: getTransactionReimbursementAmount(transaction),
     });
   }
 
@@ -111,7 +124,7 @@ export function getAccountSignedAmount(transaction: Transaction, accountId: stri
 }
 
 export function isThirdPartyExpense(transaction: Transaction): boolean {
-  return transaction.flow === 'expense' && Boolean(transaction.isReimbursable);
+  return transaction.flow === 'expense' && getTransactionReimbursementAmount(transaction) > 0;
 }
 
 export function isInvoiceCredit(transaction: Transaction): boolean {
@@ -124,6 +137,11 @@ export function isInvoicePayment(transaction: Transaction): boolean {
 
 export function getExpenseSignedAmount(transaction: Transaction): number {
   return isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
+}
+
+export function getPersonalExpenseSignedAmount(transaction: Transaction): number {
+  if (isInvoiceCredit(transaction)) return -transaction.amount;
+  return getTransactionPersonalAmount(transaction);
 }
 
 export interface PendingInvoiceSummary {
@@ -205,11 +223,10 @@ function splitInvoicePaymentAmount(payment: Transaction, transactions: Transacti
   const invoiceItems = getCardInvoiceTransactions(card, transactions, meta.invoicePaymentPeriod)
     .filter((transaction) => !isInvoicePayment(transaction));
   const personalTotal = roundMoney(invoiceItems
-    .filter((transaction) => !isThirdPartyExpense(transaction))
-    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+    .reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0));
   const thirdPartyTotal = roundMoney(invoiceItems
     .filter(isThirdPartyExpense)
-    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const invoiceTotal = roundMoney(personalTotal + thirdPartyTotal);
   if (invoiceTotal <= 0) return { personal: payment.amount, thirdParty: 0 };
 
@@ -233,7 +250,6 @@ export function summarizeDashboard(
   const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
   const expenseTransactions = monthTransactions.filter((transaction) =>
     transaction.flow === 'expense'
-    && !isThirdPartyExpense(transaction)
     && !isInvoicePayment(transaction),
   );
   const reimbursementTransactions = transactions
@@ -243,7 +259,7 @@ export function summarizeDashboard(
       : getFinancialMonthKey(transaction) === month));
 
   const income = roundMoney(incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0));
-  const expenses = roundMoney(expenseTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+  const expenses = roundMoney(expenseTransactions.reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0));
   const received = roundMoney(incomeTransactions
     .filter((transaction) => transaction.status === 'paid')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
@@ -252,7 +268,7 @@ export function summarizeDashboard(
       transaction.status === 'paid'
       && (!transaction.cardId || Boolean(readTransactionMeta(transaction.notes).paidAt)),
     )
-    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0)));
+    .reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0)));
   const accountOutflowByOwner = monthTransactions
     .filter((transaction) => transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId)
     .reduce((totals, transaction) => {
@@ -261,7 +277,8 @@ export function summarizeDashboard(
         totals.personal += split.personal;
         totals.thirdParty += split.thirdParty;
       } else if (isThirdPartyExpense(transaction)) {
-        totals.thirdParty += transaction.amount;
+        totals.thirdParty += getTransactionReimbursementAmount(transaction);
+        totals.personal += getTransactionPersonalAmount(transaction);
       } else {
         totals.personal += transaction.amount;
       }
@@ -271,10 +288,10 @@ export function summarizeDashboard(
   const thirdPartyAccountOutflow = includeReimbursements ? roundMoney(accountOutflowByOwner.thirdParty) : 0;
   const reimbursementsPending = roundMoney(reimbursementTransactions
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
-    .reduce((sum, transaction) => sum + transaction.amount, 0));
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const reimbursementsReceived = roundMoney(reimbursementTransactions
       .filter((transaction) => transaction.reimbursementStatus === 'received')
-      .reduce((sum, transaction) => sum + transaction.amount, 0));
+      .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const accountReimbursementsReceived = reimbursementsReceived;
   const pendingExpenses = cards.length > 0
     ? getPendingPaymentTotal(cards, transactions, month)
@@ -320,14 +337,13 @@ export function summarizeMonthlyResult(
   const personalExpenses = roundMoney(monthTransactions
     .filter((transaction) =>
       transaction.flow === 'expense'
-      && !isThirdPartyExpense(transaction)
       && !isInvoicePayment(transaction),
     )
-    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+    .reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0));
   const reimbursementsExpected = roundMoney(reimbursementTransactions
-    .reduce((sum, transaction) => sum + transaction.amount, 0));
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const thirdPartyExpenses = roundMoney(reimbursementTransactions
-    .reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const totalInflows = roundMoney(income + reimbursementsExpected);
   const totalOutflows = roundMoney(personalExpenses + thirdPartyExpenses);
 
@@ -402,9 +418,10 @@ export function expensesByCategory(transactions: Transaction[], categories: Cate
 
   transactions
     .filter((transaction) => transaction.flow === 'expense' && getTransactionCompetenceMonth(transaction, cards) === month)
-    .filter((transaction) => !isThirdPartyExpense(transaction))
     .filter((transaction) => !isInvoicePayment(transaction))
     .forEach((transaction) => {
+      const amount = getPersonalExpenseSignedAmount(transaction);
+      if (amount === 0) return;
       const category = categories.find((item) => item.id === transaction.categoryId);
       const key = category?.id ?? 'other';
       const current = totals.get(key) ?? {
@@ -413,7 +430,7 @@ export function expensesByCategory(transactions: Transaction[], categories: Cate
         color: category?.color ?? '#64748B',
       };
 
-      totals.set(key, { ...current, value: roundMoney(current.value + getExpenseSignedAmount(transaction)) });
+      totals.set(key, { ...current, value: roundMoney(current.value + amount) });
     });
 
   return Array.from(totals.values())

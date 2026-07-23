@@ -18,7 +18,7 @@ const primaryItems = [
 const moreItems = [
   { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
   { id: 'accounts' as const, label: 'Contas', icon: Wallet },
-  { id: 'goals' as const, label: 'Metas', icon: Target },
+  { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },
   { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
   { id: 'profile' as const, label: 'Perfil', icon: User },
 ];

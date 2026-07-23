@@ -117,7 +117,7 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
                 <button
                   key={dateValue}
                   type="button"
-                  onPointerDown={(event) => {
+                  onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
                     handleSelect(date);

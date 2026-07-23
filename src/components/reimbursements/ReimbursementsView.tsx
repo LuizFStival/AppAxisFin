@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
 import { Account, Card, ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency } from '../../lib/utils/finance';
+import { formatCurrency, getTransactionReimbursementAmount } from '../../lib/utils/finance';
 import { formatLocalDate } from '../../lib/utils/date';
 import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
 import { MonthNavigator } from '../shared/MonthNavigator';
@@ -140,9 +140,9 @@ export function ReimbursementsView({
         count: 0,
       };
       if (transaction.reimbursementStatus === 'received') {
-        current.received += transaction.amount;
+        current.received += getTransactionReimbursementAmount(transaction);
       } else {
-        current.pending += transaction.amount;
+        current.pending += getTransactionReimbursementAmount(transaction);
       }
       current.count += 1;
       totals.set(key, current);
@@ -164,11 +164,11 @@ export function ReimbursementsView({
 
   const pendingTotal = reimbursementTransactions
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
   const receivedTotal = reimbursementTransactions
     .filter((transaction) => transaction.reimbursementStatus === 'received')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const overdueTotal = overduePending.reduce((sum, transaction) => sum + transaction.amount, 0);
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
+  const overdueTotal = overduePending.reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
   const emptyMessage = mode === 'month'
     ? 'Nenhum reembolso neste mês'
     : mode === 'pending'
@@ -334,7 +334,7 @@ export function ReimbursementsView({
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="font-mono text-sm font-bold text-white">{formatCurrency(transaction.amount)}</p>
+                  <p className="font-mono text-sm font-bold text-white">{formatCurrency(getTransactionReimbursementAmount(transaction))}</p>
                   <div className="mt-1.5 flex justify-end gap-1">
                     {!received ? (
                       <button
