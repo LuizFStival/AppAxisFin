@@ -213,7 +213,8 @@ function expandRecurringTransactions(rules: RecurringTransaction[], transactions
   return rules.flatMap((rule) => {
     if (!rule.isActive) return [];
     const occurrences: Transaction[] = [];
-    const excludedDates = new Set(readTransactionMeta(rule.notes).recurringExcludedDates ?? []);
+    const ruleMeta = readTransactionMeta(rule.notes);
+    const excludedDates = new Set(ruleMeta.recurringExcludedDates ?? []);
     let occurrenceDate = rule.startDate;
     const lastDate = rule.endDate && rule.endDate < endDate ? rule.endDate : endDate;
 
@@ -232,6 +233,7 @@ function expandRecurringTransactions(rules: RecurringTransaction[], transactions
             accountId: rule.accountId,
             cardId: rule.cardId,
             notes: writeTransactionNotes(rule.notes, {
+              ...ruleMeta,
               entryMode: 'fixed',
               generatedFrom: rule.startDate,
               generatedUntil: rule.endDate,

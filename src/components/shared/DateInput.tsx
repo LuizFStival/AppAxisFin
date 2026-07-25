@@ -11,6 +11,9 @@ interface DateInputProps {
 
 const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const monthFormatter = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' });
+const POPOVER_WIDTH = 288;
+const POPOVER_HEIGHT = 352;
+const VIEWPORT_GAP = 12;
 
 function shiftMonth(date: Date, offset: number) {
   return new Date(date.getFullYear(), date.getMonth() + offset, 1);
@@ -31,6 +34,7 @@ function buildCalendarDays(monthDate: Date) {
 export function DateInput({ value, onChange, min, className = '' }: DateInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => value ? parseLocalDate(value) : new Date());
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const selectedValue = value ? parseLocalDate(value) : null;
   const minValue = min ? parseLocalDate(min) : null;
@@ -46,6 +50,26 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
   useEffect(() => {
     if (!isOpen) return;
 
+    function updatePopoverPosition() {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const maxLeft = Math.max(VIEWPORT_GAP, window.innerWidth - POPOVER_WIDTH - VIEWPORT_GAP);
+      const left = Math.min(Math.max(rect.left, VIEWPORT_GAP), maxLeft);
+      const preferredTop = rect.bottom + 8;
+      const top = preferredTop + POPOVER_HEIGHT > window.innerHeight - VIEWPORT_GAP
+        ? Math.max(VIEWPORT_GAP, rect.top - POPOVER_HEIGHT - 8)
+        : preferredTop;
+
+      setPopoverStyle({
+        left,
+        top,
+        width: POPOVER_WIDTH,
+      });
+    }
+
+    updatePopoverPosition();
+
     function handlePointerDown(event: PointerEvent) {
       if (!containerRef.current?.contains(event.target as Node)) setIsOpen(false);
     }
@@ -56,9 +80,13 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
 
     document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', updatePopoverPosition);
+    window.addEventListener('scroll', updatePopoverPosition, true);
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', updatePopoverPosition);
+      window.removeEventListener('scroll', updatePopoverPosition, true);
     };
   }, [isOpen]);
 
@@ -80,7 +108,7 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
       </button>
 
       {isOpen ? (
-        <div className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-[#F8FAFC] p-3 text-slate-950 shadow-2xl">
+        <div style={popoverStyle} className="fixed z-50 rounded-2xl border border-white/10 bg-[#F8FAFC] p-3 text-slate-950 shadow-2xl">
           <div className="flex items-center justify-between">
             <button
               type="button"

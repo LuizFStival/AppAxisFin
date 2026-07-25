@@ -301,6 +301,11 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       : 0;
   const personalAmount = Math.round(Math.max(0, parsedAmount - reimbursementAmount) * 100) / 100;
   const hasPersonalExpenseShare = flow === 'expense' && !isInvoiceCredit && splitMode !== 'third_party_full';
+  const shouldCreateSharedEntries = flow === 'expense'
+    && splitMode === 'shared'
+    && !isInvoiceCredit
+    && personalAmount > 0
+    && reimbursementAmount > 0;
   const hasQuickOptions = isInvoiceCredit || splitMode !== 'none';
   const hasAdvancedContext = expenseMode !== 'variable'
     || isInvoiceCredit
@@ -492,6 +497,65 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     };
   }
 
+  function buildSharedTransactions(dateValue: string, descriptionValue: string, meta = transactionMeta): Array<Omit<Transaction, 'id'>> {
+    const personName = reimbursementPeople.find((person) => person.id === reimbursementPersonId)?.name;
+    const baseMeta = {
+      ...meta,
+      invoiceAdjustment: undefined,
+    };
+    const personalMeta = {
+      ...baseMeta,
+      expenseNeed: expenseNeed || undefined,
+    };
+    const reimbursementMeta = {
+      ...baseMeta,
+      expenseNeed: undefined,
+    };
+    const shouldUseCard = sourceType === 'card';
+    const personalDescription = formatDescriptionForMeta(descriptionValue, personalMeta);
+    const reimbursementDescription = formatDescriptionForMeta(
+      personName ? `${descriptionValue} - ${personName}` : `${descriptionValue} - terceiro`,
+      reimbursementMeta,
+    );
+
+    return [
+      {
+        description: personalDescription,
+        amount: personalAmount,
+        flow: 'expense',
+        status: shouldUseCard ? 'pending' : status,
+        date: dateValue,
+        notes: writeTransactionNotes(notes, personalMeta),
+        categoryId,
+        accountId: shouldUseCard ? undefined : accountId,
+        cardId: shouldUseCard ? cardId || undefined : undefined,
+        isReimbursable: false,
+        splitMode: 'none',
+      },
+      {
+        description: reimbursementDescription,
+        amount: reimbursementAmount,
+        flow: 'expense',
+        status: shouldUseCard ? 'pending' : status,
+        date: dateValue,
+        notes: writeTransactionNotes(notes, reimbursementMeta),
+        categoryId,
+        accountId: shouldUseCard ? undefined : accountId,
+        cardId: shouldUseCard ? cardId || undefined : undefined,
+        isReimbursable: true,
+        splitMode: 'third_party_full',
+        personalAmount: 0,
+        reimbursementAmount,
+        reimbursementPersonId,
+        reimbursementStatus,
+        reimbursementReceivedAt: reimbursementStatus === 'received' ? dateValue : undefined,
+        reimbursementReceivedAccountId: reimbursementStatus === 'received'
+          ? reimbursementReceivedAccountId || undefined
+          : undefined,
+      },
+    ];
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setFormError('');
@@ -592,6 +656,20 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       return;
     }
 
+    if (shouldCreateSharedEntries && expenseMode === 'fixed') {
+      const sharedTransactions = buildSharedTransactions(date, description.trim(), {
+        entryMode: 'fixed',
+        expenseNeed: expenseNeed || undefined,
+        generatedFrom: date,
+        generatedUntil: hasFixedEndDate ? fixedEndDate : undefined,
+      });
+      await Promise.all(sharedTransactions.map((item) =>
+        onCreateRecurring(item, hasFixedEndDate ? fixedEndDate : undefined),
+      ));
+      onClose();
+      return;
+    }
+
     if (flow === 'expense' && expenseMode === 'fixed' && !isInvoiceCredit) {
       await onCreateRecurring(buildTransaction(date, description.trim(), {
         entryMode: 'fixed',
@@ -599,6 +677,38 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         generatedFrom: date,
         generatedUntil: hasFixedEndDate ? fixedEndDate : undefined,
       }), hasFixedEndDate ? fixedEndDate : undefined);
+      onClose();
+      return;
+    }
+
+    if (shouldCreateSharedEntries && expenseMode === 'installment') {
+      const seriesId = createSeriesId();
+      const reimbursementSeriesId = createSeriesId();
+      const total = parseEntryCount(installmentCount, 2);
+      const transactions = Array.from({ length: total }, (_, index) => {
+        const [personalEntry, reimbursementEntry] = buildSharedTransactions(addMonths(date, index), description.trim(), {
+          entryMode: 'installment',
+          expenseNeed: expenseNeed || undefined,
+          seriesId,
+          installmentNumber: index + 1,
+          totalInstallments: total,
+          generatedFrom: date,
+        });
+        return [
+          personalEntry,
+          {
+            ...reimbursementEntry,
+            notes: writeTransactionNotes(notes, {
+              entryMode: 'installment',
+              seriesId: reimbursementSeriesId,
+              installmentNumber: index + 1,
+              totalInstallments: total,
+              generatedFrom: date,
+            }),
+          },
+        ];
+      }).flat();
+      await onSave(transactions);
       onClose();
       return;
     }
@@ -617,6 +727,15 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         }),
       );
       await onSave(transactions);
+      onClose();
+      return;
+    }
+
+    if (shouldCreateSharedEntries) {
+      await onSave(buildSharedTransactions(date, description.trim(), {
+        entryMode: 'variable',
+        expenseNeed: expenseNeed || undefined,
+      }));
       onClose();
       return;
     }

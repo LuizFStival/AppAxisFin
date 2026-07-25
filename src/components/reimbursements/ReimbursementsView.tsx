@@ -66,6 +66,7 @@ export function ReimbursementsView({
 
   function handlePeoplePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (event.pointerType !== 'mouse') return;
+    if ((event.target as HTMLElement).closest('[data-reimbursement-person-filter]')) return;
     const scroller = peopleScrollerRef.current;
     if (!scroller) return;
 
@@ -245,12 +246,9 @@ export function ReimbursementsView({
             {personSummaries.map((person) => (
               <button
                 key={person.id}
+                data-reimbursement-person-filter
                 type="button"
                 onClick={() => {
-                  if (peopleDragRef.current.didMove) {
-                    peopleDragRef.current.didMove = false;
-                    return;
-                  }
                   setSelectedPersonId((current) => current === person.id ? null : person.id);
                 }}
                 aria-pressed={selectedPersonId === person.id}
