@@ -146,6 +146,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     transaction?.recurringTransactionId
     || transactionMeta.recurringTransactionId,
   );
+  const canEditForwardEntries = Boolean(transaction && (isGroupedTransaction || isRecurringOccurrence));
   const reimbursementCategory = useMemo(() => categories.find(isReimbursementCategory), [categories]);
   const invoiceAdjustmentCategory = useMemo(() => categories.find(isInvoiceAdjustmentCategory), [categories]);
 
@@ -895,6 +896,70 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 </div>
               </label>
 
+              {flow === 'expense' && !isInvoiceCredit ? (
+                <div className="md:col-span-2 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
+                  <p className="col-span-3 px-2 pb-1 pt-2 text-sm font-semibold text-slate-200">Tipo de lançamento</p>
+                  {expenseModes.map((option) => {
+                    const Icon = option.icon;
+                    const isDisabled = (lockedSourceType === 'account' && option.id === 'installment')
+                      || (Boolean(transaction) && (
+                        isGroupedTransaction
+                          ? option.id !== expenseMode
+                          : isRecurringOccurrence
+                            ? option.id === 'installment'
+                            : option.id !== expenseMode
+                      ));
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          setExpenseMode(option.id);
+                          if (option.id === 'installment' && cards[0] && !cardId) setCardId(cards[0].id);
+                        }}
+                        disabled={isDisabled}
+                        className={`flex h-11 items-center justify-center gap-1 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          expenseMode === option.id ? 'bg-violet-500 text-white' : 'text-slate-400'
+                        }`}
+                      >
+                        <Icon size={14} />
+                        <span>{option.label}</span>
+                      </button>
+                    );
+                  })}
+                  {expenseMode === 'installment' && !transaction ? (
+                    <label className="col-span-3 grid gap-1 px-2 pb-2 pt-1 text-xs font-semibold text-slate-400">
+                      Número de parcelas
+                      <input
+                        type="number"
+                        min={2}
+                        max={60}
+                        value={installmentCount}
+                        onChange={(event) => setInstallmentCount(event.target.value)}
+                        className="h-11 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-sky-400"
+                      />
+                      <span className="text-[11px] font-medium text-slate-500">
+                        {`${parseEntryCount(installmentCount, 2)} parcelas serão criadas.`}
+                      </span>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {canEditForwardEntries ? (
+                <div className="md:col-span-2 grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2">
+                  <p className="col-span-2 px-2 pb-1 text-xs font-bold text-amber-100">
+                    Aplicar alteração
+                  </p>
+                  <button type="button" onClick={() => setEditScope('single')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'single' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
+                    Apenas esta
+                  </button>
+                  <button type="button" onClick={() => setEditScope('forward')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'forward' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
+                    Esta e próximas
+                  </button>
+                </div>
+              ) : null}
+
               {flow === 'expense' && (canUseReimbursements || lockedSourceType !== 'account') ? (
                 <div className="md:col-span-2 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
                   <div className="grid grid-cols-2 gap-2">
@@ -1184,66 +1249,10 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
             {isAdvancedOpen ? (
               <div className="grid gap-4 pt-1">
-                {flow === 'expense' && !isInvoiceCredit && canUseReimbursements ? (
-                  <div className="grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
-                    <p className="col-span-3 px-2 pb-1 pt-2 text-sm font-semibold text-slate-200">Tipo de lançamento</p>
-                    {expenseModes.map((option) => {
-                      const Icon = option.icon;
-                      const selected = expenseMode === option.id;
-                      const isDisabled = (lockedSourceType === 'account' && option.id === 'installment')
-                        || (Boolean(transaction) && (!isRecurringOccurrence || option.id === 'installment'));
-                      return (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => {
-                            setExpenseMode(option.id);
-                            if (option.id === 'installment' && cards[0] && !cardId) setCardId(cards[0].id);
-                          }}
-                          disabled={isDisabled}
-                          className={`flex h-11 items-center justify-center gap-1 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                            expenseMode === option.id ? 'bg-violet-500 text-white' : 'text-slate-400'
-                          }`}
-                        >
-                          <Icon size={14} />
-                          <span>{option.label}</span>
-                        </button>
-                      );
-                    })}
-                    {flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit && !transaction ? (
-                      <label className="col-span-3 grid gap-1 px-2 pb-2 pt-1 text-xs font-semibold text-slate-400">
-                        Número de parcelas
-                        <input
-                          type="number"
-                          min={2}
-                          max={60}
-                          value={installmentCount}
-                          onChange={(event) => setInstallmentCount(event.target.value)}
-                          className="h-11 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-sky-400"
-                        />
-                        <span className="text-[11px] font-medium text-slate-500">
-                          {`${parseEntryCount(installmentCount, 2)} parcelas serão criadas.`}
-                        </span>
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
-
                 <label className="grid gap-2 text-sm font-semibold text-slate-200">
                   Descrição
                   <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Adicione uma descrição" className="min-h-20 resize-none rounded-[22px] border border-white/15 bg-white/[0.035] px-4 py-4 text-base text-white outline-none transition focus:border-sky-400" />
                 </label>
-
-                {transaction && isGroupedTransaction ? (
-                  <div className="grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2">
-                    <button type="button" onClick={() => setEditScope('single')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'single' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
-                      Apenas esta
-                    </button>
-                    <button type="button" onClick={() => setEditScope('forward')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'forward' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
-                      Esta e próximas
-                    </button>
-                  </div>
-                ) : null}
 
                 {flow !== 'transfer' && !(flow === 'expense' && (splitMode === 'third_party_full' || isInvoiceCredit)) ? (
                   <div className="rounded-2xl border border-white/10 bg-white/5 p-3">

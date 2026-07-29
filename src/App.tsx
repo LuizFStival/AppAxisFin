@@ -31,6 +31,7 @@ import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
 import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, Transaction } from './types';
 import { getCurrentMonthKey, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
+import { getCardInvoiceClosingMonth } from './lib/utils/cardInvoices';
 import { addMonths } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
 import { getUserFriendlyError } from './lib/utils/userFriendlyError';
@@ -198,9 +199,50 @@ export default function App() {
     }));
   }
 
+  function assignInvoiceSortOrderToNewTransactions(transactions: Array<Omit<Transaction, 'id'>>): Array<Omit<Transaction, 'id'>> {
+    const nextOrderByInvoice = new Map<string, number>();
+
+    return transactions.map((transaction) => {
+      if (!transaction.cardId) return transaction;
+
+      const card = snapshot.cards.find((item) => item.id === transaction.cardId);
+      if (!card) return transaction;
+
+      const meta = readTransactionMeta(transaction.notes);
+      if (typeof meta.invoiceSortOrder === 'number' && Number.isFinite(meta.invoiceSortOrder)) return transaction;
+
+      const invoiceMonth = getCardInvoiceClosingMonth(card, transaction.date);
+      const invoiceKey = `${transaction.cardId}:${invoiceMonth}`;
+      let nextOrder = nextOrderByInvoice.get(invoiceKey);
+
+      if (nextOrder === undefined) {
+        const existingOrders = snapshot.transactions
+          .filter((item) => item.cardId === transaction.cardId)
+          .filter((item) => getCardInvoiceClosingMonth(card, item.date) === invoiceMonth)
+          .map((item) => readTransactionMeta(item.notes).invoiceSortOrder)
+          .filter((order): order is number => typeof order === 'number' && Number.isFinite(order));
+
+        if (existingOrders.length === 0) return transaction;
+        nextOrder = Math.max(...existingOrders) + 1000;
+      } else {
+        nextOrder += 1000;
+      }
+
+      nextOrderByInvoice.set(invoiceKey, nextOrder);
+
+      return {
+        ...transaction,
+        notes: writeTransactionNotes(getVisibleNotes(transaction.notes), {
+          ...meta,
+          invoiceSortOrder: nextOrder,
+        }),
+      };
+    });
+  }
+
   async function handleSaveTransaction(transaction: Omit<Transaction, 'id'> | Array<Omit<Transaction, 'id'>>, scope: 'single' | 'forward' = 'single') {
     if (Array.isArray(transaction)) {
-      const saved = await transactionRepository.createMany(transaction);
+      const saved = await transactionRepository.createMany(assignInvoiceSortOrderToNewTransactions(transaction));
       setSnapshot((current) => ({
         ...current,
         transactions: [...saved, ...current.transactions].sort((left, right) => right.date.localeCompare(left.date)),
@@ -217,6 +259,41 @@ export default function App() {
         ? snapshot.recurringTransactions.find((rule) => rule.id === recurringTransactionId)
         : undefined;
       const nextMeta = readTransactionMeta(transaction.notes);
+
+      if (recurringRule && recurringOccurrenceDate && scope === 'forward' && nextMeta.entryMode === 'fixed') {
+        const baseTransaction = withoutRecurringOccurrenceMeta(transaction);
+        const endDate = recurringRule.endDate && recurringRule.endDate >= transaction.date
+          ? recurringRule.endDate
+          : undefined;
+        const nextRecurringTransaction = {
+          ...baseTransaction,
+          notes: writeTransactionNotes(getVisibleNotes(baseTransaction.notes), {
+            ...readTransactionMeta(baseTransaction.notes),
+            entryMode: 'fixed' as const,
+            generatedFrom: transaction.date,
+            generatedUntil: endDate,
+          }),
+        };
+        const forwardMaterializedIds = snapshot.transactions
+          .filter((item) => !item.isProjected)
+          .filter((item) => {
+            const itemMeta = readTransactionMeta(item.notes);
+            const itemRecurringId = item.recurringTransactionId ?? itemMeta.recurringTransactionId;
+            const itemOccurrenceDate = item.recurringOccurrenceDate ?? itemMeta.recurringOccurrenceDate;
+            return itemRecurringId === recurringRule.id
+              && Boolean(itemOccurrenceDate)
+              && itemOccurrenceDate! >= recurringOccurrenceDate;
+          })
+          .map((item) => item.id);
+
+        await recurringRepository.stopFrom(recurringRule, recurringOccurrenceDate);
+        if (forwardMaterializedIds.length > 0) await transactionRepository.removeMany(forwardMaterializedIds);
+        await recurringRepository.createFromTransaction(nextRecurringTransaction, endDate);
+        await loadSnapshot();
+        await refreshAccounts();
+        setEditingTransaction(null);
+        return;
+      }
 
       if (recurringRule && recurringOccurrenceDate && nextMeta.entryMode === 'variable') {
         const variableTransaction = withoutRecurringOccurrenceMeta(transaction);
@@ -294,7 +371,8 @@ export default function App() {
       return;
     }
 
-    const saved = await transactionRepository.create(transaction);
+    const [transactionWithSortOrder] = assignInvoiceSortOrderToNewTransactions([transaction]);
+    const saved = await transactionRepository.create(transactionWithSortOrder);
     setSnapshot((current) => ({
       ...current,
       transactions: [saved, ...current.transactions],

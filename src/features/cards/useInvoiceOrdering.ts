@@ -40,7 +40,10 @@ export function useInvoiceOrdering({
 
     const pendingTransactions = transactionsRef.current.filter((transaction) =>
       pendingNotes.has(transaction.id) && !transaction.isProjected,
-    );
+    ).map((transaction) => ({
+      ...transaction,
+      notes: pendingNotes.get(transaction.id),
+    }));
     const pendingRecurringTransactions = Array.from(pendingRecurringNotes, ([id, notes]) => ({ id, notes }));
     const [savedTransactions, savedRecurringTransactions] = await Promise.all([
       transactionRepository.updateMany(pendingTransactions),
@@ -81,7 +84,7 @@ export function useInvoiceOrdering({
     );
   }, [currentView]);
 
-  function reorderInvoiceTransactions(orderedTransactions: Transaction[]) {
+  async function reorderInvoiceTransactions(orderedTransactions: Transaction[]) {
     const recurringById = new Map<string, RecurringTransaction>(
       recurringTransactionsRef.current.map((transaction) => [transaction.id, transaction]),
     );
@@ -121,6 +124,11 @@ export function useInvoiceOrdering({
         optimisticById.get(transaction.id) ?? transaction,
       ),
     }));
+
+    await runActionRef.current(
+      flushPendingOrder,
+      'A nova ordem da fatura ficou na tela, mas ainda não foi salva. Tente reordenar novamente.',
+    );
   }
 
   return { reorderInvoiceTransactions };
