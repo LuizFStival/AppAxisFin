@@ -753,41 +753,41 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   if (!transaction && entryStep === 'picker') {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
-        <div className="max-h-[100dvh] w-full max-w-[520px] overflow-y-auto rounded-none border border-white/10 bg-[#151A22] px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl md:max-h-[calc(100dvh-2rem)] md:rounded-[28px]">
-          <div className="mx-auto mb-5 h-1.5 w-14 rounded-full bg-slate-600" />
+        <div className="premium-card max-h-[100dvh] w-full max-w-[620px] overflow-y-auto rounded-none px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl md:max-h-[calc(100dvh-2rem)] md:rounded-[30px]">
+          <div className="mx-auto mb-5 h-1.5 w-14 rounded-full bg-white/20" />
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-display text-2xl font-bold text-white">O que você quer adicionar?</h2>
               <p className="mt-1 text-xs font-medium text-slate-400">Escolha o tipo de lançamento</p>
             </div>
-            <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-400">
+            <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white">
               <X size={19} />
             </button>
           </div>
 
           <div className="mt-6 grid gap-3 md:grid-cols-2">
-            <button type="button" onClick={() => selectNewEntryFlow('expense', 'card')} className="flex min-h-16 items-center justify-between rounded-2xl border border-violet-400/80 bg-violet-500/10 px-5 py-3 text-left text-white transition hover:bg-violet-500/15">
+            <button type="button" onClick={() => selectNewEntryFlow('expense', 'card')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white" style={{ borderColor: '#8B5CF666', backgroundImage: 'linear-gradient(135deg, rgba(139,92,246,0.18), transparent 58%)' }}>
               <span>
                 <span className="block text-base font-bold">Despesa cartão</span>
                 <span className="mt-1 block text-xs font-medium text-violet-100/70">Compra na fatura</span>
               </span>
               <CreditCard size={24} className="text-violet-300" />
             </button>
-            <button type="button" onClick={() => selectNewEntryFlow('expense', 'account')} className="flex min-h-16 items-center justify-between rounded-2xl border border-sky-400/80 bg-sky-500/10 px-5 py-3 text-left text-white transition hover:bg-sky-500/15">
+            <button type="button" onClick={() => selectNewEntryFlow('expense', 'account')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white" style={{ borderColor: '#38BDF866', backgroundImage: 'linear-gradient(135deg, rgba(56,189,248,0.16), transparent 58%)' }}>
               <span>
                 <span className="block text-base font-bold">Despesa conta</span>
                 <span className="mt-1 block text-xs font-medium text-sky-100/70">Débito ou Pix</span>
               </span>
               <Wallet size={24} className="text-sky-300" />
             </button>
-            <button type="button" onClick={() => selectNewEntryFlow('income')} className="flex min-h-16 items-center justify-between rounded-2xl border border-emerald-400/80 bg-emerald-500/10 px-5 py-3 text-left text-white transition hover:bg-emerald-400/10">
+            <button type="button" onClick={() => selectNewEntryFlow('income')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white" style={{ borderColor: '#34D39966', backgroundImage: 'linear-gradient(135deg, rgba(52,211,153,0.14), transparent 58%)' }}>
               <span>
                 <span className="block text-base font-bold">Receita</span>
                 <span className="mt-1 block text-xs font-medium text-emerald-100/70">Entrada em conta</span>
               </span>
               <CirclePlus size={24} className="text-emerald-400" />
             </button>
-            <button type="button" onClick={() => selectNewEntryFlow('transfer')} className="flex min-h-16 items-center justify-between rounded-2xl border border-slate-400/80 bg-white/[0.03] px-5 py-3 text-left text-white transition hover:bg-white/5">
+            <button type="button" onClick={() => selectNewEntryFlow('transfer')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white">
               <span>
                 <span className="block text-base font-bold">Transferência</span>
                 <span className="mt-1 block text-xs font-medium text-slate-300/70">Entre contas</span>
@@ -802,43 +802,38 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
   const calculatorResult = parseMathExpression(calculatorExpression);
   const todayValue = formatLocalDate(new Date());
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayValue = formatLocalDate(yesterday);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/70 p-0 backdrop-blur-sm md:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
       <form
         ref={formRef}
         onSubmit={handleSubmit}
-        className={`flex h-[100dvh] max-h-[100dvh] w-full max-w-[430px] flex-col overflow-hidden rounded-none shadow-2xl md:h-[calc(100dvh-2rem)] md:max-h-[calc(100dvh-2rem)] md:rounded-[34px] ${
-          flow === 'income' ? 'bg-[#07975f]' : flow === 'expense' ? 'bg-[#6b2424]' : 'bg-[#3b4b62]'
-        }`}
+        className="premium-card flex h-[100dvh] max-h-[100dvh] w-full max-w-[760px] flex-col overflow-hidden rounded-none shadow-2xl md:h-auto md:max-h-[calc(100dvh-2rem)] md:rounded-[34px]"
       >
-        <div className="flex items-center justify-between px-4 pb-5 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6 md:pt-5">
+        <div className="flex items-center justify-between gap-3 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6 md:pt-5">
           <button
             type="button"
             onClick={() => transaction ? onClose() : setEntryStep('picker')}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-black/10"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/5 text-white transition hover:bg-white/10"
             title={transaction ? 'Fechar' : 'Voltar'}
           >
             <ArrowLeft size={26} />
           </button>
-          <h2 className="rounded-full bg-[#111820] px-6 py-3 font-display text-base font-bold text-white shadow-lg">
+          <h2 className="min-w-0 rounded-full border border-white/10 bg-black/25 px-4 py-2.5 text-center font-display text-sm font-bold text-white shadow-lg md:px-6 md:text-base">
             {transaction ? 'Editar lançamento' : flow === 'income' ? 'Receita' : flow === 'expense' ? lockedSourceType === 'card' ? 'Despesa cartão' : lockedSourceType === 'account' ? 'Despesa conta' : 'Despesa' : 'Transferência'}
           </h2>
-          <button type="submit" disabled={cannotSubmit || isSaving} className="min-w-16 px-1 py-2 text-sm font-bold text-white disabled:opacity-50">
+          <button type="submit" disabled={cannotSubmit || isSaving} className="min-w-16 rounded-full px-1 py-2 text-sm font-bold text-white transition hover:bg-white/5 disabled:opacity-50">
             {isSaving ? 'Salvando' : 'Aplicar'}
           </button>
         </div>
 
-        <div className="px-6 pb-8 pt-2">
-          <p className="text-base font-semibold text-white">Valor</p>
+        <div className="px-5 pb-5 pt-1 md:px-6">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Valor</p>
           <div className="mt-1 flex items-center gap-3">
             <CurrencyInput
               value={amount}
               onChange={setAmount}
-              className="h-16 border-0 bg-transparent px-0 text-4xl font-sans font-medium text-white focus:border-transparent"
+              className="h-14 border-0 bg-transparent px-0 text-4xl font-sans font-medium text-white focus:border-transparent"
             />
             <button
               type="button"
@@ -847,7 +842,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 setCalculatorExpression(currentAmount > 0 ? String(currentAmount).replace('.', ',') : '');
                 setIsCalculatorOpen(true);
               }}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white transition hover:bg-black/10"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/5 text-white transition hover:bg-white/10"
               title="Abrir calculadora"
               aria-label="Abrir calculadora"
             >
@@ -856,7 +851,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto rounded-t-[32px] bg-[#0B1017] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:px-5">
+        <div className="premium-scroll flex-1 overflow-y-auto rounded-t-[30px] border-t border-white/10 bg-[#080A0F]/88 px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:max-h-[calc(100dvh-16rem)] md:px-5">
           {formError ? (
             <p className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               <AlertCircle size={16} />
@@ -867,13 +862,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           <div className="grid gap-4">
             <label className="grid gap-2 text-sm font-semibold text-slate-200">
               Título
-              <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-13 rounded-[22px] border border-white/15 bg-white/[0.035] px-4 text-base text-white outline-none transition focus:border-sky-400" />
+              <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-base text-white outline-none transition focus:border-violet-300" />
             </label>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-2">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-slate-200">
                 Data
-                <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-2">
+                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
                   <button
                     type="button"
                     onClick={() => setDate(todayValue)}
@@ -883,22 +878,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                   >
                     Hoje
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setDate(yesterdayValue)}
-                    className={`h-11 rounded-full border px-4 text-sm font-medium ${
-                      date === yesterdayValue ? 'border-emerald-400 text-emerald-300' : 'border-white/15 text-slate-400'
-                    }`}
-                  >
-                    Ontem
-                  </button>
                   <DateInput value={date} onChange={setDate} />
                 </div>
               </label>
 
               {flow === 'expense' && !isInvoiceCredit ? (
-                <div className="md:col-span-2 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
-                  <p className="col-span-3 px-2 pb-1 pt-2 text-sm font-semibold text-slate-200">Tipo de lançamento</p>
+                <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1.5">
+                  <p className="col-span-3 px-2 pb-0.5 pt-1 text-xs font-semibold text-slate-300">Tipo de lançamento</p>
                   {expenseModes.map((option) => {
                     const Icon = option.icon;
                     const isDisabled = (lockedSourceType === 'account' && option.id === 'installment')
@@ -918,8 +904,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                           if (option.id === 'installment' && cards[0] && !cardId) setCardId(cards[0].id);
                         }}
                         disabled={isDisabled}
-                        className={`flex h-11 items-center justify-center gap-1 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          expenseMode === option.id ? 'bg-violet-500 text-white' : 'text-slate-400'
+                        className={`flex h-10 items-center justify-center gap-1 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          expenseMode === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'
                         }`}
                       >
                         <Icon size={14} />
@@ -936,7 +922,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                         max={60}
                         value={installmentCount}
                         onChange={(event) => setInstallmentCount(event.target.value)}
-                        className="h-11 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-sky-400"
+                        className="h-11 rounded-xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-violet-300"
                       />
                       <span className="text-[11px] font-medium text-slate-500">
                         {`${parseEntryCount(installmentCount, 2)} parcelas serão criadas.`}
@@ -1145,13 +1131,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               ) : null}
 
               {hasPersonalExpenseShare ? (
-                <div className="md:col-span-2 grid grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
                   {expenseNeedOptions.map((option) => (
                     <button
                       key={option.id}
                       type="button"
                       onClick={() => setExpenseNeed(option.id)}
-                      className={`h-11 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}
+                      className={`h-10 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
                     >
                       {option.label}
                     </button>
@@ -1161,7 +1147,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
               <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                 Categoria
-                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
+                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
                   <option value="">Selecione</option>
                   {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                 </select>
@@ -1171,30 +1157,30 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                   <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                   {lockedSourceType === 'card' ? 'Cartão' : lockedSourceType === 'account' ? 'Conta' : 'Origem'}
                   {lockedSourceType ? null : (
-                    <div className="grid min-w-0 grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
+                    <div className="grid min-w-0 grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
                       <button
                         type="button"
                         onClick={() => setSourceType('account')}
                         disabled={isInstallmentExpense || isInvoiceCredit}
-                        className={`h-11 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${sourceType === 'account' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+                        className={`h-10 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${sourceType === 'account' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
                       >
                         Conta
                       </button>
                       <button
                         type="button"
                         onClick={() => setSourceType('card')}
-                        className={`h-11 rounded-xl text-xs font-bold transition ${sourceType === 'card' ? 'bg-violet-500 text-white' : 'text-slate-400'}`}
+                        className={`h-10 rounded-xl text-xs font-bold transition ${sourceType === 'card' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
                       >
                         Cartão
                       </button>
                     </div>
                   )}
                   {sourceType === 'account' ? (
-                    <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
+                    <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
                       {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                     </select>
                   ) : (
-                    <select value={cardId} onChange={(event) => setCardId(event.target.value)} className="h-12 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
+                    <select value={cardId} onChange={(event) => setCardId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
                       <option value="">Selecione</option>
                       {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
                     </select>
@@ -1203,7 +1189,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               ) : (
                 <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
                   Conta
-                  <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+                  <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
                     {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                   </select>
                 </label>
@@ -1218,7 +1204,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               {!(flow === 'expense' && (sourceType === 'card' || isInvoiceCredit)) ? (
                 <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-2">
                   Estado
-                  <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-12 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
+                  <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
                     <option value="paid">Confirmado</option>
                     <option value="pending">Pendente</option>
                   </select>
@@ -1241,7 +1227,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
             <button
               type="button"
               onClick={() => setIsAdvancedOpen((current) => !current)}
-              className="flex h-11 items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-slate-200 transition hover:border-sky-400/40"
+              className="flex h-10 items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-semibold text-slate-300 transition hover:border-white/20 hover:text-white"
             >
               <span>Avançado</span>
               <ChevronDown size={16} className={`transition ${isAdvancedOpen ? 'rotate-180' : ''}`} />

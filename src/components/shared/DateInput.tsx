@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatDatePtBr, formatLocalDate, parseLocalDate } from '../../lib/utils/date';
 
@@ -36,6 +37,7 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
   const [visibleMonth, setVisibleMonth] = useState(() => value ? parseLocalDate(value) : new Date());
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
   const selectedValue = value ? parseLocalDate(value) : null;
   const minValue = min ? parseLocalDate(min) : null;
   const days = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
@@ -71,7 +73,8 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
     updatePopoverPosition();
 
     function handlePointerDown(event: PointerEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) setIsOpen(false);
+      const target = event.target as Node;
+      if (!containerRef.current?.contains(target) && !popoverRef.current?.contains(target)) setIsOpen(false);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -107,8 +110,8 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
         <CalendarDays size={16} className="text-slate-500" />
       </button>
 
-      {isOpen ? (
-        <div style={popoverStyle} className="fixed z-50 rounded-2xl border border-white/10 bg-[#F8FAFC] p-3 text-slate-950 shadow-2xl">
+      {isOpen ? createPortal((
+        <div ref={popoverRef} style={popoverStyle} className="fixed z-[80] rounded-2xl border border-white/10 bg-[#F8FAFC] p-3 text-slate-950 shadow-2xl">
           <div className="flex items-center justify-between">
             <button
               type="button"
@@ -177,7 +180,7 @@ export function DateInput({ value, onChange, min, className = '' }: DateInputPro
             </button>
           </div>
         </div>
-      ) : null}
+      ), document.body) : null}
     </div>
   );
 }
