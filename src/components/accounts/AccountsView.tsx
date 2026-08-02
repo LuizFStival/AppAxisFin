@@ -124,7 +124,7 @@ export function AccountsView({
   }, 0));
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-5 pb-6 pt-7 text-white">
+    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-7 text-white">
       <header className="flex shrink-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-slate-400">{selectedAccount ? 'Resumo da conta' : 'Contas'}</p>
@@ -144,7 +144,7 @@ export function AccountsView({
           <button
             type="button"
             onClick={onAddAccount}
-            className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400/20 bg-sky-500/15 text-sky-300 transition hover:bg-sky-500 hover:text-white"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.045] text-slate-200 transition hover:bg-white hover:text-black"
             title="Adicionar conta"
           >
             <Plus size={18} strokeWidth={2.5} />
@@ -162,7 +162,7 @@ export function AccountsView({
 
       {!selectedAccount ? (
         <>
-          <section className="mt-5 shrink-0 overflow-hidden rounded-2xl border border-white/8 bg-[#101319]">
+          <section className="premium-card mt-5 shrink-0 overflow-hidden rounded-2xl">
             <div className="px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo atual em contas</p>
               <p className="mt-2 font-display text-3xl font-bold text-white">{formatCurrency(totalBalance)}</p>
@@ -231,16 +231,24 @@ export function AccountsView({
             </div>
           </section>
 
-          <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
+          <section className="premium-scroll mt-5 min-h-[260px] flex-1 space-y-3 overflow-y-auto pb-4">
             {accounts.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-5 text-center">
+              <div className="premium-card-soft rounded-2xl border-dashed p-5 text-center">
                 <Wallet size={22} className="mx-auto mb-2 text-slate-500" />
                 <p className="text-sm font-semibold text-slate-300">Nenhuma conta cadastrada</p>
                 <p className="mt-1 text-xs text-slate-500">Adicione suas contas reais para o saldo do app nascer correto.</p>
               </div>
             ) : (
               accountMonthlySummaries.map(({ account, net, count }) => (
-                <article key={account.id} className="flex items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] p-4">
+                <article
+                  key={account.id}
+                  className="cosmic-card cosmic-card-hover relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4"
+                  style={{
+                    borderColor: `${account.color}44`,
+                    backgroundImage: `linear-gradient(135deg, ${account.color}18, transparent 58%)`,
+                  }}
+                >
+                  <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: account.color }} />
                   <button type="button" onClick={() => onSelectAccount(account.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                     <BankLogo account={account} />
                     <div className="min-w-0 flex-1">
@@ -285,7 +293,7 @@ export function AccountsView({
 
       {selectedAccount ? (
         <>
-          <section className="mt-5 shrink-0 rounded-2xl border border-white/8 bg-[#101319] p-4">
+          <section className="premium-card mt-5 shrink-0 rounded-2xl p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo atual</p>
@@ -314,9 +322,9 @@ export function AccountsView({
             </div>
           </section>
 
-          <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
+          <section className="premium-scroll mt-5 min-h-[260px] flex-1 space-y-3 overflow-y-auto pb-4">
             {selectedMovements.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-5 text-center">
+              <div className="premium-card-soft rounded-2xl border-dashed p-5 text-center">
                 <Wallet size={22} className="mx-auto mb-2 text-slate-500" />
                 <p className="text-sm font-semibold text-slate-300">Sem transações nesta conta</p>
                 <p className="mt-1 text-xs text-slate-500">O resumo respeita o mês selecionado no app.</p>
@@ -333,7 +341,7 @@ export function AccountsView({
                       ? () => onOpenInvoice(meta.invoicePaymentCardId!, meta.invoicePaymentPeriod!)
                       : undefined}
                     disabled={!isInvoicePayment}
-                    className={`flex w-full items-center gap-3 rounded-2xl border bg-[#101319] p-4 text-left ${
+                    className={`cosmic-card flex w-full items-center gap-3 rounded-2xl border p-4 text-left ${
                       isInvoicePayment
                         ? 'cursor-pointer border-violet-400/20 transition hover:border-violet-400/40 hover:bg-violet-500/[0.07]'
                         : 'cursor-default border-white/8'

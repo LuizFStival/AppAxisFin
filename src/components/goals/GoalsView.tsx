@@ -213,7 +213,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
   }
 
   return (
-    <div className="no-scrollbar h-full overflow-y-auto px-4 pb-8 pt-7">
+    <div className="premium-scroll app-page-gutters h-full overflow-y-auto pb-8 pt-7">
       <header className="flex items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-slate-400">Planejamento</p>
@@ -228,26 +228,26 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
               setIsCommitmentCreateOpen(true);
             }
           }}
-          className="flex h-10 shrink-0 items-center gap-2 rounded-2xl bg-sky-500 px-3 text-sm font-bold text-white"
+          className="flex h-10 shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-white text-sm font-bold text-black transition hover:bg-slate-200"
         >
           <Plus size={17} />
           {section === 'goals' ? 'Nova meta' : 'Novo compromisso'}
         </button>
       </header>
 
-      <div className="mt-5 grid grid-cols-2 rounded-2xl border border-white/8 bg-[#101319] p-1">
-        <button type="button" onClick={() => setSection('goals')} className={`h-10 rounded-xl text-xs font-bold ${section === 'goals' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}>
+      <div className="premium-card-soft mt-5 grid grid-cols-2 rounded-2xl p-1">
+        <button type="button" onClick={() => setSection('goals')} className={`h-10 rounded-xl text-xs font-bold transition ${section === 'goals' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
           Juntar dinheiro
         </button>
-        <button type="button" onClick={() => setSection('commitments')} className={`h-10 rounded-xl text-xs font-bold ${section === 'commitments' ? 'bg-amber-400 text-slate-950' : 'text-slate-400'}`}>
+        <button type="button" onClick={() => setSection('commitments')} className={`h-10 rounded-xl text-xs font-bold transition ${section === 'commitments' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
           Compromissos
         </button>
       </div>
 
       {section === 'goals' ? (
-        <div className="mt-3 grid grid-cols-2 rounded-2xl border border-white/8 bg-[#101319] p-1">
+        <div className="premium-card-soft mt-3 grid grid-cols-2 rounded-2xl p-1">
           {(['active', 'completed'] as const).map((status) => (
-            <button key={status} type="button" onClick={() => setGoalStatus(status)} className={`h-10 rounded-xl text-xs font-bold ${goalStatus === status ? 'bg-sky-500 text-white' : 'text-slate-400'}`}>
+            <button key={status} type="button" onClick={() => setGoalStatus(status)} className={`h-10 rounded-xl text-xs font-bold transition ${goalStatus === status ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
               {status === 'active' ? 'Ativas' : 'Concluidas'} ({goals.filter((goal) => goal.status === status).length})
             </button>
           ))}
@@ -260,7 +260,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
         <section className="mt-5 grid gap-3">
           {isLoading ? <p className="py-8 text-center text-sm text-slate-500">Carregando metas...</p> : null}
           {!isLoading && visibleGoals.length === 0 ? (
-            <div className="rounded-[24px] border border-dashed border-white/10 bg-[#101319] p-7 text-center">
+            <div className="premium-card-soft rounded-[24px] border-dashed p-7 text-center">
               <Target size={32} className="mx-auto text-slate-700" />
               <p className="mt-3 font-bold text-white">Nenhuma meta {goalStatus === 'active' ? 'ativa' : 'concluida'}</p>
               <p className="mt-1 text-xs text-slate-500">Crie um objetivo e acompanhe seu progresso.</p>
@@ -270,10 +270,10 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
             const progress = Math.min(100, goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0);
             const category = categories.find((item) => item.id === goal.categoryId);
             return (
-              <article key={goal.id} className="overflow-hidden rounded-[24px] border border-white/8 bg-[#101319]">
+              <article key={goal.id} className="cosmic-card cosmic-card-hover overflow-hidden rounded-[24px] border border-white/8">
                 <div className="relative h-28" style={{ background: goal.imageUrl ? undefined : `linear-gradient(135deg, ${goal.color}, #0B0E14)` }}>
                   {goal.imageUrl ? <img src={goal.imageUrl} alt="" className="h-full w-full object-cover" /> : null}
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#101319] via-transparent to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#101116] via-transparent to-transparent" />
                   <button type="button" onClick={() => void handleDeleteGoal(goal)} className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-xl bg-black/50 text-rose-300" aria-label={`Excluir meta ${goal.name}`}>
                     <Trash2 size={14} />
                   </button>
@@ -309,7 +309,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
         <section className="mt-5 grid gap-3">
           {isLoading ? <p className="py-8 text-center text-sm text-slate-500">Carregando compromissos...</p> : null}
           {!isLoading && commitments.length === 0 ? (
-            <div className="rounded-[24px] border border-dashed border-white/10 bg-[#101319] p-7 text-center">
+            <div className="premium-card-soft rounded-[24px] border-dashed p-7 text-center">
               <Home size={32} className="mx-auto text-slate-700" />
               <p className="mt-3 font-bold text-white">Nenhum compromisso cadastrado</p>
               <p className="mt-1 text-xs text-slate-500">Cadastre financiamentos, reformas ou pagamentos divididos de longo prazo.</p>
@@ -337,7 +337,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
               <label className="grid gap-2 text-xs font-semibold text-slate-400">Imagem (opcional)<span className="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] text-slate-300"><ImagePlus size={17} />{image?.name ?? 'Escolher imagem'}<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setImage(event.target.files?.[0])} className="sr-only" /></span></label>
               <ColorPicker value={color} onChange={setColor} />
             </div>
-            <button type="submit" disabled={isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 font-bold text-white disabled:opacity-60"><Target size={18} />{isSaving ? 'Criando...' : 'Criar meta'}</button>
+            <button type="submit" disabled={isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200 disabled:opacity-60"><Target size={18} />{isSaving ? 'Criando...' : 'Criar meta'}</button>
           </form>
         </ModalFrame>
       ) : null}
@@ -360,14 +360,14 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
                 <label className="grid gap-1 text-xs font-semibold text-slate-400">Inicio<input type="date" value={commitmentStartDate} onChange={(event) => setCommitmentStartDate(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white" /></label>
                 <label className="grid gap-1 text-xs font-semibold text-slate-400">Ja pago<CurrencyInput value={commitmentPaidAmount} onChange={setCommitmentPaidAmount} /></label>
               </div>
-              <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-3">
+              <div className="premium-card-soft rounded-2xl border-amber-400/20 p-3">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-amber-100">Minha cota</p>
                 <p className="mt-1 font-mono text-lg font-bold text-white">{formatCurrency(commitmentPreview.myShareValue)}</p>
                 <p className="mt-1 text-xs text-amber-100/80">Falta {formatCurrency(commitmentPreview.remaining)} - {commitmentPreview.progress.toFixed(0)}% pago</p>
               </div>
               <ColorPicker value={commitmentColor} onChange={setCommitmentColor} />
             </div>
-            <button type="submit" disabled={isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-amber-400 font-bold text-slate-950 disabled:opacity-60"><HandCoins size={18} />{isSaving ? 'Criando...' : 'Criar compromisso'}</button>
+            <button type="submit" disabled={isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200 disabled:opacity-60"><HandCoins size={18} />{isSaving ? 'Criando...' : 'Criar compromisso'}</button>
           </form>
         </ModalFrame>
       ) : null}
@@ -390,7 +390,7 @@ function CommitmentCard({ commitment, people, onDelete }: { key?: React.Key; com
   const remaining = Math.max(0, myShareValue - commitment.paidAmount);
   const progress = myShareValue > 0 ? Math.min(100, (commitment.paidAmount / myShareValue) * 100) : 0;
   return (
-    <article className="rounded-[24px] border border-white/8 bg-[#101319] p-4">
+    <article className="cosmic-card cosmic-card-hover rounded-[24px] border border-white/8 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -427,7 +427,7 @@ function CommitmentCard({ commitment, people, onDelete }: { key?: React.Key; com
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+    <div className="premium-card-soft rounded-2xl p-3">
       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
       <p className="mt-1 truncate font-mono text-xs font-bold text-white">{value}</p>
     </div>
@@ -447,7 +447,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (value: str
 function ModalFrame({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 sm:rounded-[28px]">
+      <div className="premium-card premium-scroll max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[28px] p-5 sm:rounded-[28px]">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="font-display text-lg font-bold text-white">{title}</h2>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">

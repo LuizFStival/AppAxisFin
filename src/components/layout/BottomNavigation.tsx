@@ -36,7 +36,7 @@ export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigat
   }
 
   return (
-    <nav className="bottom-navigation fixed inset-x-0 bottom-0 z-40 bg-transparent px-4 pt-2 md:absolute">
+    <nav className="bottom-navigation fixed inset-x-0 bottom-0 z-40 bg-transparent px-4 pt-2 md:absolute" aria-label="Navegacao inferior">
       {isMoreOpen ? (
         <div className="absolute bottom-[86px] right-4 w-56 rounded-2xl border border-white/10 bg-[#101319]/95 p-2 shadow-2xl shadow-black/60 backdrop-blur-xl">
           {visibleMoreItems.map((item) => {
@@ -47,6 +47,7 @@ export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigat
                 key={item.id}
                 type="button"
                 onClick={() => handleNavigate(item.id)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`flex h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition ${
                   isActive ? 'premium-metal text-white' : 'text-slate-300 hover:bg-white/5'
                 }`}
@@ -75,6 +76,7 @@ export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigat
                 }`}
                 title={item.label}
                 aria-label={item.label}
+                aria-current={isActive && !isMoreButton ? 'page' : undefined}
                 aria-expanded={isMoreButton ? isMoreOpen : undefined}
               >
                 <Icon size={22} strokeWidth={isActive ? 2.5 : 2} />

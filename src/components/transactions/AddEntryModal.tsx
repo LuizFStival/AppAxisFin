@@ -808,7 +808,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       <form
         ref={formRef}
         onSubmit={handleSubmit}
-        className="premium-card flex h-[100dvh] max-h-[100dvh] w-full max-w-[760px] flex-col overflow-hidden rounded-none shadow-2xl md:h-auto md:max-h-[calc(100dvh-2rem)] md:rounded-[34px]"
+        className="premium-card flex h-[100dvh] max-h-[100dvh] w-full max-w-[840px] flex-col overflow-hidden rounded-none shadow-2xl md:h-auto md:max-h-[calc(100dvh-2rem)] md:rounded-[34px]"
       >
         <div className="flex items-center justify-between gap-3 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6 md:pt-5">
           <button
@@ -851,7 +851,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </div>
         </div>
 
-        <div className="premium-scroll flex-1 overflow-y-auto rounded-t-[30px] border-t border-white/10 bg-[#080A0F]/88 px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:max-h-[calc(100dvh-16rem)] md:px-5">
+        <div className="premium-scroll flex-1 overflow-y-auto rounded-t-[30px] border-t border-white/10 bg-[#080A0F]/88 px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:max-h-[calc(100dvh-15rem)] md:px-5">
           {formError ? (
             <p className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               <AlertCircle size={16} />
@@ -859,14 +859,14 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
             </p>
           ) : null}
 
-          <div className="grid gap-4">
+          <div className="grid gap-3">
             <label className="grid gap-2 text-sm font-semibold text-slate-200">
               Título
               <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-base text-white outline-none transition focus:border-violet-300" />
             </label>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold text-slate-200">
+            <div className="grid gap-3 md:grid-cols-12">
+              <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-5">
                 Data
                 <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
                   <button
@@ -883,7 +883,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               </label>
 
               {flow === 'expense' && !isInvoiceCredit ? (
-                <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1.5">
+                <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1.5 md:col-span-7">
                   <p className="col-span-3 px-2 pb-0.5 pt-1 text-xs font-semibold text-slate-300">Tipo de lançamento</p>
                   {expenseModes.map((option) => {
                     const Icon = option.icon;
@@ -904,7 +904,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                           if (option.id === 'installment' && cards[0] && !cardId) setCardId(cards[0].id);
                         }}
                         disabled={isDisabled}
-                        className={`flex h-10 items-center justify-center gap-1 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        className={`flex h-10 items-center justify-center gap-1.5 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                           expenseMode === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'
                         }`}
                       >
@@ -933,7 +933,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               ) : null}
 
               {canEditForwardEntries ? (
-                <div className="md:col-span-2 grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2">
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2 md:col-span-12">
                   <p className="col-span-2 px-2 pb-1 text-xs font-bold text-amber-100">
                     Aplicar alteração
                   </p>
@@ -947,8 +947,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               ) : null}
 
               {flow === 'expense' && (canUseReimbursements || lockedSourceType !== 'account') ? (
-                <div className="md:col-span-2 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="grid gap-2 md:col-span-12">
+                  <div className="flex flex-wrap gap-2">
                     {lockedSourceType !== 'account' ? (
                       <button
                         type="button"
@@ -956,7 +956,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                           void handleInvoiceCreditChange(!isInvoiceCredit);
                           setIsQuickOptionsOpen(true);
                         }}
-                        className={`h-10 rounded-xl px-3 text-xs font-bold transition ${isInvoiceCredit ? 'bg-emerald-400 text-slate-950' : 'bg-white/5 text-slate-300'}`}
+                        className={`h-8 rounded-full border px-3 text-[11px] font-bold transition ${isInvoiceCredit ? 'border-emerald-300 bg-emerald-400 text-slate-950' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:bg-white/10'}`}
                       >
                         Estorno fatura
                       </button>
@@ -973,7 +973,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                           }
                         }}
                         disabled={isInvoiceCredit}
-                        className={`h-10 rounded-xl px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${splitMode !== 'none' ? 'bg-amber-400 text-slate-950' : 'bg-white/5 text-slate-300'}`}
+                        className={`h-8 rounded-full border px-3 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${splitMode !== 'none' ? 'border-amber-300 bg-amber-400 text-slate-950' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:bg-white/10'}`}
                       >
                         Terceiro/reembolso
                       </button>
@@ -984,7 +984,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                     <button
                       type="button"
                       onClick={() => setIsQuickOptionsOpen((current) => !current)}
-                      className="mt-2 flex h-8 w-full items-center justify-center gap-1 rounded-xl text-[11px] font-bold text-slate-400 transition hover:bg-white/5"
+                      className="flex h-8 w-fit items-center justify-center gap-1 rounded-full border border-white/10 bg-white/[0.035] px-3 text-[11px] font-bold text-slate-400 transition hover:bg-white/5"
                     >
                       {isQuickOptionsOpen ? 'Ocultar detalhes' : 'Ajustar detalhes'}
                       <ChevronDown size={13} className={`transition ${isQuickOptionsOpen ? 'rotate-180' : ''}`} />
@@ -1131,21 +1131,24 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               ) : null}
 
               {hasPersonalExpenseShare ? (
-                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
-                  {expenseNeedOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setExpenseNeed(option.id)}
-                      className={`h-10 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                <div className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+                  Natureza
+                  <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1.5">
+                    {expenseNeedOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setExpenseNeed(option.id)}
+                        className={`h-10 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : null}
 
-              <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
+              <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
                 Categoria
                 <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
                   <option value="">Selecione</option>
@@ -1154,7 +1157,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               </label>
 
                 {flow === 'expense' ? (
-                  <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
+                  <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
                   {lockedSourceType === 'card' ? 'Cartão' : lockedSourceType === 'account' ? 'Conta' : 'Origem'}
                   {lockedSourceType ? null : (
                     <div className="grid min-w-0 grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
@@ -1187,7 +1190,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                   )}
                 </div>
               ) : (
-                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
+                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
                   Conta
                   <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
                     {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
@@ -1196,13 +1199,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               )}
 
               {flow === 'expense' && sourceType === 'card' && cards.length === 0 ? (
-                <p className="md:col-span-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-100">
+                <p className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-100 md:col-span-12">
                   Cadastre um cartão antes de criar uma despesa no cartão.
                 </p>
               ) : null}
 
               {!(flow === 'expense' && (sourceType === 'card' || isInvoiceCredit)) ? (
-                <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-2">
+                <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-12">
                   Estado
                   <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
                     <option value="paid">Confirmado</option>
@@ -1212,7 +1215,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               ) : null}
 
               {invoiceInfo ? (
-                <div className={`md:col-span-2 rounded-2xl border p-4 text-xs ${isEditingClosedInvoice ? 'border-amber-400/25 bg-amber-400/10 text-amber-100' : 'border-sky-400/20 bg-sky-400/10 text-sky-100'}`}>
+                <div className={`rounded-2xl border p-4 text-xs md:col-span-12 ${isEditingClosedInvoice ? 'border-amber-400/25 bg-amber-400/10 text-amber-100' : 'border-sky-400/20 bg-sky-400/10 text-sky-100'}`}>
                   <div className="flex items-center gap-2 font-bold text-white">
                     <CalendarClock size={16} />
                     <span>{invoiceInfo.label}</span>

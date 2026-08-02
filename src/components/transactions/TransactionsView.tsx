@@ -338,7 +338,7 @@ export function TransactionsView({
       : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 pt-7 md:px-8 md:pt-8">
+    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-7 md:pt-8">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">Movimentações</p>
@@ -354,16 +354,16 @@ export function TransactionsView({
         className="mt-4 shrink-0"
       />
 
-      <div className="mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl bg-white/5 p-1">
+      <div className="premium-card-soft mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl p-1">
         {tabs.map((item) => (
-          <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`h-11 rounded-xl text-xs font-bold transition sm:text-sm ${tab === item.id ? 'bg-sky-500 text-white' : 'text-slate-400'}`}>
+          <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`h-11 rounded-xl text-xs font-bold transition sm:text-sm ${tab === item.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
             {item.label}
           </button>
         ))}
       </div>
 
       <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Filtro de movimentações</p>
-      <div className="mt-1.5 grid shrink-0 grid-cols-4 gap-1 rounded-xl border border-white/8 bg-[#101319] p-1">
+      <div className="premium-card-soft mt-1.5 grid shrink-0 grid-cols-4 gap-1 rounded-xl p-1">
         {movementFilters.map((filter) => (
           <button
             key={filter.id}
@@ -375,7 +375,7 @@ export function TransactionsView({
               setExpenseFilter('personal');
             }}
             className={`h-9 rounded-lg text-xs font-bold transition ${
-              movementFilter === filter.id ? 'bg-sky-500/20 text-sky-200' : 'text-slate-500 hover:text-slate-300'
+              movementFilter === filter.id ? 'bg-white text-black' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
             }`}
           >
             {filter.label}
@@ -418,7 +418,7 @@ export function TransactionsView({
       )}
 
       {movementFilter === 'all' && expenseScope === 'all' ? (
-        <section className="mt-4 shrink-0 overflow-hidden rounded-2xl border border-white/8 bg-[#101319]">
+        <section className="premium-card mt-4 shrink-0 overflow-hidden rounded-2xl">
           <div className="flex items-end justify-between gap-4 px-4 pb-3 pt-3.5">
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Balanço do mês</p>
@@ -511,7 +511,7 @@ export function TransactionsView({
           ) : null}
         </section>
       ) : (
-        <section className="mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] px-4 py-3">
+        <section className="premium-card mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl px-4 py-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{totalLabel}</p>
             <p className="mt-0.5 text-xs text-slate-500">{visibleItemCount} item{visibleItemCount === 1 ? '' : 's'}</p>
@@ -543,13 +543,13 @@ export function TransactionsView({
         </section>
       ) : null}
 
-      <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
+      <section className="premium-scroll mt-5 min-h-[220px] flex-1 space-y-3 overflow-y-auto pb-4">
         {movementFilter === 'pending' && pendingInvoiceSummaries.length > 0 ? (
           <div className="space-y-3">
             {pendingInvoiceSummaries.map(({ card, invoice, itemCount, total }) => (
               <article
                 key={`${card.id}:${invoice.period}`}
-                className="relative flex items-center gap-3 overflow-hidden rounded-2xl border bg-[#101319] p-4"
+                className="cosmic-card cosmic-card-hover relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4"
                 style={{
                   borderColor: `${card.color}55`,
                   backgroundImage: `linear-gradient(90deg, ${card.color}1f, transparent 62%)`,
@@ -584,7 +584,7 @@ export function TransactionsView({
                 key={group.id}
                 type="button"
                 onClick={() => onOpenReimbursements(group.id)}
-                className="relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-amber-400/20 bg-gradient-to-r from-amber-500/[0.12] to-[#101319] p-4 text-left transition hover:border-amber-300/45"
+                className="cosmic-card cosmic-card-hover relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-amber-400/20 p-4 text-left"
               >
                 <span className="absolute inset-y-0 left-0 w-1 bg-amber-400" />
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-100">
@@ -608,7 +608,7 @@ export function TransactionsView({
         ) : null}
 
         {visibleItemCount === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
+          <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
             <p className="text-sm font-bold text-white">Nenhum lançamento neste filtro</p>
             <p className="mt-1 text-xs text-slate-500">Escolha outro tipo de despesa ou limpe a busca.</p>
           </div>
@@ -628,8 +628,8 @@ export function TransactionsView({
               key={transaction.id}
               className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4 ${
                 isCardEntry
-                  ? 'border-violet-400/20 bg-gradient-to-r from-violet-500/[0.09] to-[#101319]'
-                  : 'border-sky-400/15 bg-gradient-to-r from-sky-500/[0.06] to-[#101319]'
+                  ? 'cosmic-card cosmic-card-hover border-violet-400/20'
+                  : 'cosmic-card cosmic-card-hover border-sky-400/15'
               }`}
             >
               <span className={`absolute inset-y-0 left-0 w-1 ${isCardEntry ? 'bg-violet-500' : 'bg-sky-500'}`} />
@@ -729,7 +729,7 @@ export function TransactionsView({
 
       {paymentTransaction ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-6">
-          <div className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#101319] p-5 shadow-2xl md:rounded-2xl">
+          <div className="premium-card w-full max-w-md rounded-t-2xl p-5 shadow-2xl md:rounded-2xl">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">Confirmar pagamento</p>
@@ -754,7 +754,7 @@ export function TransactionsView({
                   setPaymentAccountId(event.target.value);
                   setPaymentError('');
                 }}
-                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm font-semibold text-white outline-none focus:border-sky-400"
+                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-semibold text-white outline-none focus:border-violet-300"
               >
                 {accounts.length === 0 ? <option value="">Nenhuma conta cadastrada</option> : null}
                 {accounts.map((account) => (
@@ -779,7 +779,7 @@ export function TransactionsView({
                 type="button"
                 onClick={confirmPaymentAccount}
                 disabled={accounts.length === 0}
-                className="h-11 rounded-lg bg-sky-500 text-sm font-black text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="h-11 rounded-lg bg-white text-sm font-black text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               >
                 Marcar como pago
               </button>

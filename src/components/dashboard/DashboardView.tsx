@@ -216,24 +216,24 @@ export function DashboardView({
   }
 
   return (
-    <div className="flex flex-1 flex-col pb-4 text-white">
-      <header className="flex items-center justify-between gap-3 px-4 pb-3 pt-4 md:px-6">
+    <div className="premium-scroll flex h-full min-h-0 flex-col overflow-y-auto pb-8 text-white">
+      <header className="premium-card-soft mx-4 mb-3 mt-4 flex items-center justify-between gap-3 rounded-2xl px-3 py-2.5 md:mx-8 xl:mx-10">
         <button
           type="button"
           onClick={onOpenProfile}
-          className="group flex min-w-0 items-center gap-3 rounded-2xl pr-2 text-left transition hover:bg-white/[0.03]"
+          className="group flex min-w-0 items-center gap-3 rounded-xl pr-2 text-left transition hover:bg-white/[0.04]"
           aria-label="Abrir perfil"
         >
           <span className="relative shrink-0">
-            <div className="premium-metal flex h-10 w-10 items-center justify-center rounded-full font-display text-xs font-bold tracking-wider text-white shadow-[0_0_18px_rgba(139,92,246,0.22)]">
+            <div className="premium-metal flex h-11 w-11 items-center justify-center rounded-2xl font-display text-xs font-bold tracking-wider text-white shadow-[0_0_18px_rgba(139,92,246,0.22)]">
               {getInitials(userName)}
             </div>
-            <span className="absolute bottom-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#050505] bg-violet-400">
-              <span className="block h-1 w-1 rounded-full bg-white" />
+            <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#111218] bg-violet-400">
+              <span className="block h-1.5 w-1.5 rounded-full bg-white" />
             </span>
           </span>
           <span className="min-w-0">
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">AxisFin Private</span>
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prisma Axis</span>
             <h1 className="font-display text-base font-semibold leading-tight tracking-tight text-white">
               Olá, {firstName}
             </h1>
@@ -244,7 +244,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={onOpenNotifications}
-            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.035] text-slate-400 backdrop-blur transition hover:border-white/20 hover:text-white"
+            className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/20 text-slate-400 backdrop-blur transition hover:border-white/20 hover:text-white"
             aria-label={notificationCount > 0 ? `Abrir notificações, ${notificationCount} não lidas` : 'Abrir notificações'}
           >
             <Bell size={18} />
@@ -257,7 +257,7 @@ export function DashboardView({
         </div>
       </header>
 
-      <section className="px-4 pb-3 md:px-6">
+      <section className="app-page-gutters pb-3">
         <div className="premium-card-soft flex items-center justify-between gap-2 rounded-2xl p-1.5">
           <button
             type="button"
@@ -287,7 +287,7 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="px-4 text-center md:px-6">
+      <section className="app-page-gutters text-center">
         <div className="premium-card relative flex flex-col items-center overflow-hidden rounded-3xl px-4 py-4 md:px-5">
           <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-violet-500/10 blur-3xl" />
           <div className="mb-1 flex items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
@@ -325,7 +325,7 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="mt-3 grid grid-cols-2 items-start gap-2.5 px-4 md:grid-cols-4 md:px-6">
+      <section className="app-page-gutters mt-3 grid grid-cols-2 items-start gap-2.5 md:grid-cols-4">
         <StatCard
           label="Receitas"
           value={hiddenMoney(showBalances, summary.income)}
@@ -387,7 +387,7 @@ export function DashboardView({
         />
       </section>
 
-      <section className="mt-4 px-4 md:px-6">
+      <section className="app-page-gutters mt-4">
         <div className="mb-2.5 flex items-center justify-between">
           <h2 className="font-display text-base font-semibold tracking-tight text-white">Minhas Contas</h2>
           <button
@@ -406,7 +406,7 @@ export function DashboardView({
           onPointerMove={handleAccountsPointerMove}
           onPointerUp={handleAccountsPointerEnd}
           onPointerCancel={handleAccountsPointerEnd}
-          className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-3 pt-1 active:cursor-grabbing md:-mx-6 md:px-6"
+          className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-3 pt-1 active:cursor-grabbing md:mx-0 md:grid md:w-full md:grid-cols-[repeat(auto-fit,minmax(168px,1fr))] md:overflow-visible md:px-0"
         >
           {accounts.map((account) => {
             const accountMonth = getAccountMonthSummary(account, transactions, activeMonth, cards);
@@ -415,7 +415,7 @@ export function DashboardView({
                 type="button"
                 key={account.id}
                 onClick={() => onViewAccounts(account.id)}
-                className="cosmic-card cosmic-card-hover relative flex w-[168px] shrink-0 snap-start cursor-pointer flex-col justify-between overflow-hidden rounded-2xl p-3 text-left"
+                className="cosmic-card cosmic-card-hover relative flex w-[168px] shrink-0 snap-start cursor-pointer flex-col justify-between overflow-hidden rounded-2xl p-3 text-left md:min-h-[132px] md:w-auto md:shrink"
                 style={{
                   borderColor: `${account.color}44`,
                   backgroundImage: `linear-gradient(135deg, ${account.color}22, transparent 54%)`,
@@ -442,7 +442,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={() => onViewAccounts()}
-            className="flex w-[110px] shrink-0 snap-start cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-900/30 p-3 text-center text-gray-400 transition hover:border-white/25 hover:text-white"
+            className="flex w-[110px] shrink-0 snap-start cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-900/30 p-3 text-center text-gray-400 transition hover:border-white/25 hover:text-white md:min-h-[132px] md:w-auto md:shrink"
           >
             <ArrowRight size={18} className="mb-1 text-gray-400" />
             <span className="text-[10px] font-semibold uppercase tracking-wider">Ver contas</span>
@@ -450,7 +450,7 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="px-4 md:px-6">
+      <section className="app-page-gutters">
         <div className="mb-3.5 flex items-center justify-between">
           <div>
             <button type="button" onClick={() => onViewCards()} className="font-display text-base font-semibold tracking-tight text-white">
@@ -476,14 +476,14 @@ export function DashboardView({
             <p className="mt-1 text-xs text-gray-500">Seus cartões reais vão aparecer aqui quando forem adicionados.</p>
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
           {activeInvoiceSummaries.map(({ card, invoice }) => {
             const paid = isCardInvoicePaid(invoice.transactions);
             const progress = card.limit > 0 ? Math.min(100, (invoice.total / card.limit) * 100) : 0;
             return (
               <article
                 key={card.id}
-                className="cosmic-card cosmic-card-hover relative min-h-[152px] cursor-pointer overflow-hidden rounded-3xl p-4"
+                className="cosmic-card cosmic-card-hover relative min-h-[152px] w-full cursor-pointer overflow-hidden rounded-3xl p-4"
                 style={{
                   borderColor: `${card.color}66`,
                   backgroundImage: `radial-gradient(circle at 86% 18%, ${card.color}38, transparent 30%), linear-gradient(135deg, ${card.color}20, transparent 58%)`,

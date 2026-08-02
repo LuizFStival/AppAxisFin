@@ -21,6 +21,29 @@ body {
   -webkit-touch-callout: none;
 }
 
+*:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.86);
+  outline-offset: 3px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  box-shadow: 0 0 0 5px rgba(139, 92, 246, 0.24);
+}
+
+button,
+a,
+input,
+select,
+textarea,
+[tabindex] {
+  scroll-margin: 1rem;
+}
+
 .app-viewport,
 .app-safe-shell {
   height: 100vh;
@@ -134,8 +157,14 @@ body {
 }
 
 .premium-scroll {
+  overscroll-behavior: contain;
+  scroll-padding: 1rem;
   scrollbar-color: rgba(203, 213, 225, 0.28) transparent;
   scrollbar-width: thin;
+}
+
+.app-page-gutters {
+  padding-inline: clamp(1rem, 1.2vw + 0.75rem, 2.75rem);
 }
 
 .premium-scroll::-webkit-scrollbar {

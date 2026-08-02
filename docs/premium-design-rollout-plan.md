@@ -9,6 +9,16 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
 - Home/dashboard: cards principais, contas com identidade visual e cartoes ativos do mes.
 - Login/cadastro: acabamento premium, logo nova e campos mais coerentes.
 - Modal principal de lancamento: estrutura mais limpa, foco em valor/titulo/data/origem/categoria, tipo de despesa visivel e calendario via portal.
+- Transacoes: primeira passada premium em filtros, resumo, listas, estados vazios e confirmacao de pagamento.
+- Cartoes/faturas: primeira passada premium em cards, resumo da fatura, lista de despesas e estados vazios.
+- Contas: primeira passada premium em resumo, cards de conta, movimentos e estados vazios.
+- Reembolsos: primeira passada premium em filtros, pessoas, resumo, lista e modal de recebimento.
+- Metas/compromissos: primeira passada premium em tabs, cards, estados vazios e modais.
+- Relatorios/orcamentos: primeira passada premium em escopo, widgets, graficos, orcamentos e modais.
+- Perfil: primeira passada premium em perfil, preferencias, entidades, exportacao e reset.
+- Notificacoes: primeira passada premium em resumo, lista e leitura de status.
+- Modais secundarios: primeira passada premium em conta, cartao e categoria.
+- Acessibilidade/navegacao: foco visivel, link para pular ao conteudo, navegacao com estado ativo e scroll base corrigido no shell.
 - Prompt PWA usando o SVG novo.
 
 ## Prioridade 1 - Fluxos de uso diario
@@ -16,8 +26,9 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
 ### Transacoes
 
 - Arquivo principal: `src/components/transactions/TransactionsView.tsx`
-- Atualizar lista de lancamentos para o mesmo padrao de cards premium.
-- Revisar filtros, busca e estados vazios.
+- Status: primeira passada aplicada em 2026-07-30; ainda revisar responsivo e microinteracoes.
+- Atualizar lista de lancamentos para o mesmo padrao de cards premium. Concluido na primeira passada.
+- Revisar filtros, busca e estados vazios. Concluido na primeira passada.
 - Garantir boa leitura de valor, pessoa/reembolso, categoria e status.
 - Avaliar acoes de editar/excluir para evitar excesso visual.
 
@@ -27,9 +38,10 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
   - `src/components/cards/CardsView.tsx`
   - `src/components/cards/CardInvoiceActions.tsx`
   - `src/components/cards/AddCardModal.tsx`
-- Atualizar cards de cartao para linguagem premium.
+- Status: primeira passada aplicada em 2026-07-30; ainda revisar acoes especificas e modal de cartao.
+- Atualizar cards de cartao para linguagem premium. Concluido na primeira passada.
 - Manter ordem manual da fatura bem evidente.
-- Melhorar listas de despesas da fatura para conferencia.
+- Melhorar listas de despesas da fatura para conferencia. Concluido na primeira passada visual.
 - Revisar botoes de pagamento, edicao, fechamento e menu de acoes.
 
 ### Contas
@@ -37,8 +49,9 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
 - Arquivos principais:
   - `src/components/accounts/AccountsView.tsx`
   - `src/components/accounts/AddAccountModal.tsx`
-- Aplicar visual premium nos cards de conta.
-- Destacar saldo, movimento do mes e instituicao com identidade propria.
+- Status: primeira passada aplicada em 2026-07-30; ainda revisar modal de conta.
+- Aplicar visual premium nos cards de conta. Concluido na primeira passada.
+- Destacar saldo, movimento do mes e instituicao com identidade propria. Concluido na primeira passada.
 - Revisar modal de conta para ficar consistente com o novo modal de lancamento.
 
 ## Prioridade 2 - Areas de acompanhamento
@@ -46,22 +59,25 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
 ### Reembolsos
 
 - Arquivo principal: `src/components/reimbursements/ReimbursementsView.tsx`
-- Aplicar cards premium para pessoas.
-- Melhorar lista filtrada por pessoa selecionada.
-- Separar visualmente "a receber", "recebido" e itens de terceiros.
+- Status: primeira passada aplicada em 2026-07-30; ainda revisar detalhes responsivos e acao de editar.
+- Aplicar cards premium para pessoas. Concluido na primeira passada.
+- Melhorar lista filtrada por pessoa selecionada. Concluido na primeira passada visual.
+- Separar visualmente "a receber", "recebido" e itens de terceiros. Concluido na primeira passada.
 - Manter clareza para despesas divididas em dois itens.
 
 ### Metas e compromissos
 
 - Arquivo principal: `src/components/goals/GoalsView.tsx`
-- Atualizar cards de metas e compromissos.
+- Status: primeira passada aplicada em 2026-07-30; ainda revisar densidade dos formularios.
+- Atualizar cards de metas e compromissos. Concluido na primeira passada.
 - Dar mais destaque a progresso, risco e proximas datas.
 - Evitar layout muito colorido ou com excesso de badges.
 
 ### Relatorios
 
 - Arquivo principal: `src/components/reports/ReportsView.tsx`
-- Aplicar acabamento nos cards de analise e graficos.
+- Status: primeira passada aplicada em 2026-07-30; inclui `BudgetSection`.
+- Aplicar acabamento nos cards de analise e graficos. Concluido na primeira passada.
 - Revisar tabelas/listas longas para ficarem mais densas e legiveis no PC.
 - Melhorar estados de carregamento e vazio.
 
@@ -70,14 +86,16 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
 ### Perfil
 
 - Arquivo principal: `src/components/profile/ProfileView.tsx`
-- Atualizar secoes de configuracao, preferencias e exportacao.
-- Manter visual utilitario, com menos blocos competindo.
+- Status: primeira passada aplicada em 2026-07-30; ainda revisar densidade em PC.
+- Atualizar secoes de configuracao, preferencias e exportacao. Concluido na primeira passada.
+- Manter visual utilitario, com menos blocos competindo. Concluido na primeira passada.
 
 ### Notificacoes
 
 - Arquivo principal: `src/components/notifications/NotificationsView.tsx`
-- Aplicar cards/listas premium.
-- Melhorar leitura de status lida/nao lida.
+- Status: primeira passada aplicada em 2026-07-30.
+- Aplicar cards/listas premium. Concluido na primeira passada.
+- Melhorar leitura de status lida/nao lida. Concluido na primeira passada.
 
 ### Modais secundarios
 
@@ -85,8 +103,9 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
   - `src/components/categories/AddCategoryModal.tsx`
   - `src/components/cards/AddCardModal.tsx`
   - `src/components/accounts/AddAccountModal.tsx`
-- Padronizar header, campos, botoes, estados de erro e altura maxima.
-- Usar a mesma logica visual do novo modal de lancamento.
+- Status: primeira passada aplicada em 2026-07-30; ainda revisar campos internos mais densos.
+- Padronizar header, campos, botoes, estados de erro e altura maxima. Concluido na primeira passada.
+- Usar a mesma logica visual do novo modal de lancamento. Concluido na primeira passada.
 
 ## Assets PWA e marca
 
@@ -103,4 +122,5 @@ Este documento organiza as proximas telas e pontos do AxisFin que ainda precisam
 - Textos cabem sem quebrar layout?
 - Estados vazios, loading, erro e confirmacoes seguem a nova identidade?
 - Acoes perigosas continuam claras e nao parecem acoes primarias?
-
+- Tab/Shift+Tab mostram foco visivel e seguem uma ordem natural?
+- Listas longas rolam dentro da area principal sem sumir atras do menu inferior?

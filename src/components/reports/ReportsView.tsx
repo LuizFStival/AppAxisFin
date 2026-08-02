@@ -278,13 +278,13 @@ export function ReportsView({
     : 'Apenas meus valores';
 
   return (
-    <div className="no-scrollbar h-full w-full min-w-0 overflow-x-hidden overflow-y-auto px-4 pb-8 pt-7">
+    <div className="premium-scroll app-page-gutters h-full w-full min-w-0 overflow-x-hidden overflow-y-auto pb-8 pt-7">
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">Relatório</p>
           <h1 className="font-display text-2xl font-bold text-white">Detalhado</h1>
         </div>
-        <button type="button" onClick={downloadReport} className="flex h-10 items-center gap-2 rounded-xl border border-sky-400/20 bg-sky-500/15 px-3 text-xs font-bold text-sky-200">
+        <button type="button" onClick={downloadReport} className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 text-xs font-bold text-slate-200 transition hover:bg-white hover:text-black">
           <Download size={16} /> Baixar
         </button>
       </header>
@@ -297,13 +297,13 @@ export function ReportsView({
         className="mt-4"
       />
 
-      {reimbursementsEnabled ? <div className="mt-3 grid grid-cols-2 rounded-2xl border border-white/8 bg-[#101319] p-1" role="tablist" aria-label="Escopo do relatório">
+      {reimbursementsEnabled ? <div className="premium-card-soft mt-3 grid grid-cols-2 rounded-2xl p-1" role="tablist" aria-label="Escopo do relatório">
         <button
           type="button"
           role="tab"
           aria-selected={reportScope === 'general'}
           onClick={() => setReportScope('general')}
-          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'general' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'general' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
         >
           Geral
         </button>
@@ -312,7 +312,7 @@ export function ReportsView({
           role="tab"
           aria-selected={reportScope === 'personal'}
           onClick={() => setReportScope('personal')}
-          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'personal' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'personal' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
         >
           Apenas meu
         </button>
@@ -346,7 +346,7 @@ export function ReportsView({
                 ? ['Taxa de economia', `${savingsRate.toFixed(1).replace('.', ',')}%`, 'border-sky-400/15 bg-sky-500/[0.07] text-sky-300']
                 : ['Média de gastos (6 meses)', formatCurrency(averageExpenses), 'border-amber-400/15 bg-amber-500/[0.07] text-amber-300'];
           return (
-            <article key={widget} className={`min-w-0 overflow-hidden rounded-[22px] border p-3 ${item[2]}`}>
+            <article key={widget} className={`premium-card min-w-0 overflow-hidden rounded-[22px] border p-3 ${item[2]}`}>
               <p className="text-xs font-semibold text-slate-400">{item[0]}</p>
               <p className="mt-2 font-display text-lg font-bold">{item[1]}</p>
               {breakdown ? (
@@ -364,7 +364,7 @@ export function ReportsView({
         })}
       </section> : null}
 
-      <section className="mt-3 overflow-hidden rounded-[22px] border border-white/8 bg-[#101319]">
+      <section className="premium-card mt-3 overflow-hidden rounded-[22px]">
         <div className="grid grid-cols-2">
           <div className="p-4">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">Total de entradas</p>
@@ -392,7 +392,7 @@ export function ReportsView({
         </div>
       </section>
 
-      <section className="mt-3 rounded-[22px] border border-white/8 bg-[#101319] p-4">
+      <section className="premium-card mt-3 rounded-[22px] p-4">
         <div className="flex items-start justify-between gap-3">
           <span className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
@@ -449,14 +449,14 @@ export function ReportsView({
               </span>
             </button>
             {showIncomeBreakdown ? <>
-            <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"><Wallet size={18} /></span>
                 Receitas
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.income)}</span>
             </article>
-            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="cosmic-card rounded-2xl border border-white/8 p-4">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
@@ -502,21 +502,21 @@ export function ReportsView({
               </span>
             </button>
             {showOutflowBreakdown ? <>
-            {effectiveReportScope === 'general' || !reimbursementsEnabled ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {effectiveReportScope === 'general' || !reimbursementsEnabled ? <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300"><Landmark size={18} /></span>
                 Gastos em contas
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.accountExpenses)}</span>
             </article> : null}
-            <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300"><CreditCard size={18} /></span>
                 Gastos no cartão
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.cardExpenses)}</span>
             </article>
-            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
                 Valores de terceiros
@@ -528,7 +528,7 @@ export function ReportsView({
         </section>
       </div>
 
-      <section className="mt-6 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+      <section className="premium-card mt-6 rounded-[24px] p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-300">Últimos 6 meses</p>
@@ -569,7 +569,7 @@ export function ReportsView({
         </div>
       </section>
 
-      <section className="mt-6 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+      <section className="premium-card mt-6 rounded-[24px] p-5">
         <div className="flex items-center gap-2">
           <BarChart3 size={18} className="text-sky-300" />
           <h2 className="font-display text-lg font-bold text-white">Receitas vs. despesas</h2>
@@ -606,7 +606,7 @@ export function ReportsView({
 
       <BudgetSection month={month} transactions={transactions} categories={categories} />
 
-      <section className="mt-5 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+      <section className="premium-card mt-5 rounded-[24px] p-5">
         <div>
           <p className="text-xs text-slate-500">Maior gasto</p>
           <h2 className="font-display text-lg font-bold text-white">{largestCategory?.name ?? 'Gastos por categoria'}</h2>
