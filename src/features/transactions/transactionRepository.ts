@@ -5,7 +5,7 @@ import {
   mapTransaction,
 } from '../finance/financeStore';
 import { Account, Card, Transaction } from '../../types';
-import { getExpenseSignedAmount } from '../../lib/utils/finance';
+import { getExpenseSignedAmount, roundMoney } from '../../lib/utils/finance';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { getCardInvoiceClosingMonth } from '../../lib/utils/cardInvoices';
 
@@ -50,8 +50,8 @@ export const transactionRepository = {
       id: transaction.isProjected ? null : transaction.id,
       is_projected: Boolean(transaction.isProjected),
       description: transaction.description,
-      amount: transaction.amount,
-      signed_amount: getExpenseSignedAmount(transaction),
+      amount: roundMoney(transaction.amount),
+      signed_amount: roundMoney(getExpenseSignedAmount(transaction)),
       flow: transaction.flow,
       transaction_date: transaction.date,
       invoice_period: getCardInvoiceClosingMonth(input.card, transaction.date),
@@ -76,7 +76,7 @@ export const transactionRepository = {
       p_account_id: input.accountId,
       p_card_id: input.card.id,
       p_payment_date: input.paymentDate,
-      p_expected_amount: input.amount,
+      p_expected_amount: roundMoney(input.amount),
       p_items: items,
     });
 

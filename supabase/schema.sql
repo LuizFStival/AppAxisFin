@@ -1351,7 +1351,7 @@ begin
     calculated_amount := calculated_amount + signed_amount;
   end loop;
 
-  if calculated_amount <= 0 or calculated_amount <> p_expected_amount then
+  if calculated_amount <= 0 or round(calculated_amount, 2) <> round(p_expected_amount, 2) then
     raise exception 'O valor da fatura mudou. Recarregue os dados e tente novamente.';
   end if;
 

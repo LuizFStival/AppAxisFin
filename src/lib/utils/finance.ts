@@ -12,7 +12,7 @@ export function formatCurrency(value: number): string {
   return currency.format(value);
 }
 
-function roundMoney(value: number): number {
+export function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
