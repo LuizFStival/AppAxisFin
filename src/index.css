@@ -44,6 +44,15 @@ textarea,
   scroll-margin: 1rem;
 }
 
+input.auth-input:focus-visible {
+  outline: 0;
+  box-shadow: none;
+}
+
+input.auth-input:focus {
+  outline: 0;
+}
+
 .app-viewport,
 .app-safe-shell {
   height: 100vh;

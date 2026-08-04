@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeftRight, BarChart3, CreditCard, HandCoins, Home, MoreHorizontal, Plus, Target, User, Wallet } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarCheck2, CreditCard, HandCoins, Home, MoreHorizontal, Plus, Target, User, Wallet } from 'lucide-react';
 import { AppView } from '../../types';
 
 interface BottomNavigationProps {
@@ -11,11 +11,12 @@ interface BottomNavigationProps {
 
 const primaryItems = [
   { id: 'home' as const, label: 'Home', icon: Home },
-  { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
+  { id: 'month-center' as const, label: 'Central', icon: CalendarCheck2 },
   { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
 ];
 
 const moreItems = [
+  { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
   { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
   { id: 'accounts' as const, label: 'Contas', icon: Wallet },
   { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },

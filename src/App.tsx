@@ -11,6 +11,7 @@ import {
   DashboardView,
   GoalsView,
   ModalLoadingFallback,
+  MonthCenterView,
   NotificationsView,
   ProfileView,
   ReimbursementsView,
@@ -833,6 +834,38 @@ export default function App() {
           onDeleteCard={handleDeleteCard}
           />
         ) : null}
+
+      {currentView === 'month-center' ? (
+        <MonthCenterView
+          accounts={snapshot.accounts}
+          cards={snapshot.cards}
+          people={snapshot.reimbursementPeople}
+          transactions={snapshot.transactions}
+          activeMonth={activeMonth}
+          summary={summary}
+          reimbursementsEnabled={user.reimbursementsEnabled}
+          onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
+          onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
+          onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
+          onOpenCards={(cardId) => {
+            setSelectedCardId(cardId ?? '');
+            setCurrentView('cards');
+          }}
+          onOpenTransactions={() => {
+            setDashboardTransactionFilter('pending');
+            setCurrentView('transactions');
+          }}
+          onOpenReimbursements={(personId) => {
+            setSelectedReimbursementPersonId(personId ?? null);
+            setCurrentView('reimbursements');
+          }}
+          onPayInvoice={handlePayCardInvoice}
+          onMarkReimbursementReceived={(transaction, accountId) => runAppAction(
+            () => handleMarkReimbursementReceived(transaction, accountId),
+            'NÃ£o foi possÃ­vel atualizar o reembolso. Tente novamente.',
+          )}
+        />
+      ) : null}
 
       {currentView === 'accounts' ? (
         <AccountsView

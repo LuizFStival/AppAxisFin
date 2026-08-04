@@ -19,9 +19,9 @@ interface CardInvoiceActionsProps {
     amount: number;
     transactions: Transaction[];
   }) => Promise<void>;
-  onUpdateClosingDay: (card: Card, closingDay: number) => Promise<void>;
-  onEditCard: (card: Card) => void;
-  onDeleteCard: (card: Card) => void;
+  onUpdateClosingDay?: (card: Card, closingDay: number) => Promise<void>;
+  onEditCard?: (card: Card) => void;
+  onDeleteCard?: (card: Card) => void;
 }
 
 export function CardInvoiceActions({
@@ -44,6 +44,7 @@ export function CardInvoiceActions({
   const [isSaving, setIsSaving] = useState(false);
   const paid = isCardInvoicePaid(invoiceTransactions);
   const canPay = invoiceTotal > 0 && invoiceTransactions.length > 0 && !paid;
+  const hasCardOptions = Boolean(onUpdateClosingDay || onEditCard || onDeleteCard);
 
   useEffect(() => {
     setPaymentAccountId(accounts[0]?.id ?? '');
@@ -82,6 +83,7 @@ export function CardInvoiceActions({
   async function handleClosingSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError('');
+    if (!onUpdateClosingDay) return;
     const parsedClosingDay = Number(closingDay);
 
     if (!Number.isInteger(parsedClosingDay) || parsedClosingDay < 1 || parsedClosingDay > 31) {
@@ -120,18 +122,20 @@ export function CardInvoiceActions({
           </button>
         ) : null}
 
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setError('');
-            setIsOptionsOpen(true);
-          }}
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
-          title="Mais opções"
-        >
-          <MoreVertical size={16} />
-        </button>
+        {hasCardOptions ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setError('');
+              setIsOptionsOpen(true);
+            }}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+            title="Mais opções"
+          >
+            <MoreVertical size={16} />
+          </button>
+        ) : null}
       </div>
 
       {isPaymentOpen ? (
@@ -205,6 +209,7 @@ export function CardInvoiceActions({
               </p>
             ) : null}
 
+            {onUpdateClosingDay ? (
             <label className="mt-5 grid gap-1 text-xs font-semibold text-slate-400">
               Alterar data de fechamento
               <div className="flex gap-2">
@@ -214,8 +219,10 @@ export function CardInvoiceActions({
                 </button>
               </div>
             </label>
+            ) : null}
 
             <div className="mt-5 grid gap-2">
+              {onEditCard ? (
               <button
                 type="button"
                 onClick={() => {
@@ -227,6 +234,8 @@ export function CardInvoiceActions({
                 <Pencil size={17} />
                 Editar cartão
               </button>
+              ) : null}
+              {onDeleteCard ? (
               <button
                 type="button"
                 onClick={() => {
@@ -238,6 +247,7 @@ export function CardInvoiceActions({
                 <Trash2 size={17} />
                 Excluir cartão
               </button>
+              ) : null}
             </div>
           </form>
         </div>

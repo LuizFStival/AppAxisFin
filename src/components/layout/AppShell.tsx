@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeftRight, BarChart3, CreditCard, HandCoins, Home, Plus, Target, User, Wallet } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarCheck2, CreditCard, HandCoins, Home, Plus, Target, User, Wallet } from 'lucide-react';
 import { AppView } from '../../types';
 import { BottomNavigation } from './BottomNavigation';
 import { PwaInstallPrompt } from '../pwa/PwaInstallPrompt';
@@ -15,6 +15,7 @@ interface AppShellProps {
 
 const desktopItems = [
   { id: 'home' as const, label: 'Home', icon: Home },
+  { id: 'month-center' as const, label: 'Central do Mês', icon: CalendarCheck2 },
   { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
   { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
   { id: 'accounts' as const, label: 'Contas', icon: Wallet },

@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'axis-fin-v1';
+const CACHE_VERSION = 'prisma-axis-v2';
 const APP_SHELL = [
   '/',
   '/index.html',

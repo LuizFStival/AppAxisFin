@@ -126,18 +126,18 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
         : 'Criar conta';
 
   return (
-    <main className="min-h-screen bg-[#050505] px-5 py-8 text-white md:flex md:items-center md:justify-center">
-      <section className="cosmic-bg mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[430px] flex-col justify-center rounded-none md:min-h-[760px] md:rounded-[34px] md:border md:border-white/10 md:px-2 md:shadow-[0_30px_80px_rgba(0,0,0,0.92)]">
+    <main className="flex min-h-screen min-h-[100dvh] items-center justify-center overflow-y-auto bg-[#050505] px-5 py-[max(1rem,env(safe-area-inset-top))] text-white md:py-8">
+      <section className="cosmic-bg mx-auto flex w-full max-w-[430px] flex-col justify-center rounded-[30px] border border-white/8 px-0 py-6 shadow-[0_26px_80px_rgba(0,0,0,0.72)] md:min-h-[720px] md:rounded-[34px] md:px-2 md:shadow-[0_30px_80px_rgba(0,0,0,0.92)]">
         <div className="px-5">
-          <div className="mb-8 flex items-center gap-3">
+          <div className="mb-7 flex items-center gap-3">
             <AxisFinLogo />
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">AxisFin Private</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Prisma Axis</p>
               <h1 className="font-display text-2xl font-bold">{title}</h1>
             </div>
           </div>
 
-          <div className="premium-card rounded-3xl p-5">
+          <div className="premium-card rounded-3xl p-5 sm:p-6">
             {!isPasswordRecovery ? (
               <div className="mb-4 grid grid-cols-2 rounded-2xl border border-white/8 bg-black/25 p-1">
                 <button
@@ -172,7 +172,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                   <input
                     value={name}
                     onChange={(event) => setName(event.target.value)}
-                    className="mt-1 h-12 w-full rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none transition focus:border-violet-300"
+                    className="auth-input mt-1 h-12 w-full rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none transition focus:border-violet-300 focus:shadow-[0_0_0_4px_rgba(139,92,246,0.16)]"
                     placeholder="Seu nome"
                   />
                 </label>
@@ -181,14 +181,14 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
               {!isPasswordRecovery ? (
                 <label className="block text-xs font-semibold text-gray-400">
                   Email
-                  <div className="mt-1 flex h-12 items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 transition focus-within:border-violet-300">
+                  <div className="auth-field mt-1 flex h-12 items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 transition focus-within:border-violet-300 focus-within:shadow-[0_0_0_4px_rgba(139,92,246,0.16)]">
                     <Mail size={17} className="shrink-0 text-gray-500" />
                     <input
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       type="email"
                       required
-                      className="w-full min-w-0 bg-transparent text-sm text-white outline-none"
+                      className="auth-input w-full min-w-0 bg-transparent text-sm text-white outline-none"
                       placeholder="seuemail@gmail.com"
                     />
                   </div>
@@ -204,7 +204,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                     required
                     inputMode="numeric"
                     autoComplete="one-time-code"
-                    className="mt-1 h-12 w-full rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none transition focus:border-violet-300"
+                    className="auth-input mt-1 h-12 w-full rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none transition focus:border-violet-300 focus:shadow-[0_0_0_4px_rgba(139,92,246,0.16)]"
                     placeholder="Digite o código"
                   />
                 </label>
@@ -213,7 +213,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
               {mode !== 'recover' || isPasswordRecovery || isRecoveryCodeSent ? (
                 <label className="block text-xs font-semibold text-gray-400">
                   {isPasswordRecovery || mode === 'recover' ? 'Nova senha' : 'Senha'}
-                  <div className="mt-1 flex h-12 items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 transition focus-within:border-violet-300">
+                  <div className="auth-field mt-1 flex h-12 items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 transition focus-within:border-violet-300 focus-within:shadow-[0_0_0_4px_rgba(139,92,246,0.16)]">
                     <LockKeyhole size={17} className="shrink-0 text-gray-500" />
                     <input
                       value={password}
@@ -221,7 +221,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                       type={showPassword ? 'text' : 'password'}
                       required
                       minLength={6}
-                      className="w-full min-w-0 bg-transparent text-sm text-white outline-none"
+                      className="auth-input w-full min-w-0 bg-transparent text-sm text-white outline-none"
                       placeholder="Minimo 6 caracteres"
                     />
                     <button
@@ -240,7 +240,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
               {!isPasswordRecovery && (mode === 'signup' || (mode === 'recover' && isRecoveryCodeSent)) ? (
                 <label className="block text-xs font-semibold text-gray-400">
                   Confirmar senha
-                  <div className="mt-1 flex h-12 items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 transition focus-within:border-violet-300">
+                  <div className="auth-field mt-1 flex h-12 items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 transition focus-within:border-violet-300 focus-within:shadow-[0_0_0_4px_rgba(139,92,246,0.16)]">
                     <LockKeyhole size={17} className="shrink-0 text-gray-500" />
                     <input
                       value={confirmPassword}
@@ -248,7 +248,7 @@ export function AuthView({ onAuthenticated, isPasswordRecovery = false, onPasswo
                       type={showPassword ? 'text' : 'password'}
                       required
                       minLength={6}
-                      className="w-full min-w-0 bg-transparent text-sm text-white outline-none"
+                      className="auth-input w-full min-w-0 bg-transparent text-sm text-white outline-none"
                       placeholder="Repita a senha"
                     />
                     <button
