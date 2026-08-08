@@ -455,6 +455,37 @@ export default function App() {
     await refreshAccounts();
   }
 
+  async function handleMarkAccountExpensePaid(transaction: Transaction, input: { accountId: string; paymentDate: string }) {
+    if (!input.accountId) throw new Error('Selecione de qual conta o saldo vai sair.');
+    if (!input.paymentDate) throw new Error('Selecione a data do pagamento.');
+
+    const nextTransaction: Transaction = {
+      ...transaction,
+      status: 'paid',
+      accountId: input.accountId,
+      date: input.paymentDate,
+    };
+
+    if (transaction.isProjected) {
+      const { id: _id, isProjected: _isProjected, ...transactionInput } = nextTransaction;
+      const saved = await transactionRepository.create(transactionInput);
+      setSnapshot((current) => ({
+        ...current,
+        transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
+      }));
+      await refreshAccounts();
+      return;
+    }
+
+    const { id: _id, isProjected: _isProjected, ...transactionInput } = nextTransaction;
+    const saved = await transactionRepository.update(transaction.id, transactionInput);
+    setSnapshot((current) => ({
+      ...current,
+      transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
+    }));
+    await refreshAccounts();
+  }
+
   async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string, receivedAmount?: number) {
     const currentReimbursementAmount = Math.max(0, transaction.reimbursementAmount ?? transaction.amount);
     const normalizedReceivedAmount = Math.max(0, Math.min(currentReimbursementAmount, receivedAmount ?? currentReimbursementAmount));
@@ -605,6 +636,24 @@ export default function App() {
         if (!transaction.isProjected) {
           await transactionRepository.remove(transaction.id);
         }
+        setSnapshot((current) => ({
+          ...current,
+          transactions: current.transactions.filter((item) => item.id !== transaction.id),
+          recurringTransactions: current.recurringTransactions.map((rule) => (
+            rule.id === recurringRule.id
+              ? {
+                ...rule,
+                notes: writeTransactionNotes(getVisibleNotes(rule.notes), {
+                  ...readTransactionMeta(rule.notes),
+                  recurringExcludedDates: Array.from(new Set([
+                    ...(readTransactionMeta(rule.notes).recurringExcludedDates ?? []),
+                    recurringOccurrenceDate,
+                  ])).sort(),
+                }),
+              }
+              : rule
+          )),
+        }));
         await loadSnapshot();
         await refreshAccounts();
         return;
@@ -870,6 +919,10 @@ export default function App() {
             setCurrentView('reimbursements');
           }}
           onPayInvoice={handlePayCardInvoice}
+          onMarkAccountExpensePaid={(transaction, input) => runAppAction(
+            () => handleMarkAccountExpensePaid(transaction, input),
+            'Não foi possível registrar o pagamento. Tente novamente.',
+          )}
           onMarkReimbursementReceived={(transaction, accountId) => runAppAction(
             () => handleMarkReimbursementReceived(transaction, accountId),
             'NÃ£o foi possÃ­vel atualizar o reembolso. Tente novamente.',

@@ -31,6 +31,35 @@ function toRecurringInsert(userId: string, transaction: Omit<Transaction, 'id'>,
 
 const recurringSelect = 'id, description, amount, flow, status, start_date, end_date, interval_months, category_id, account_id, card_id, notes, is_reimbursable, split_mode, personal_amount, reimbursement_amount, reimbursement_person_id, reimbursement_status, is_active';
 
+function getRecurringSplitFields(rule: RecurringTransaction) {
+  if (!rule.isReimbursable) {
+    return {
+      is_reimbursable: false,
+      split_mode: 'none',
+      personal_amount: null,
+      reimbursement_amount: null,
+      reimbursement_person_id: null,
+      reimbursement_status: null,
+    };
+  }
+
+  const personalAmount = rule.personalAmount ?? 0;
+  const reimbursementAmount = rule.reimbursementAmount ?? rule.amount;
+  const hasValidSharedSplit = rule.splitMode === 'shared'
+    && personalAmount > 0
+    && reimbursementAmount > 0
+    && personalAmount + reimbursementAmount === rule.amount;
+
+  return {
+    is_reimbursable: true,
+    split_mode: hasValidSharedSplit ? 'shared' : 'third_party_full',
+    personal_amount: hasValidSharedSplit ? personalAmount : 0,
+    reimbursement_amount: hasValidSharedSplit ? reimbursementAmount : rule.amount,
+    reimbursement_person_id: rule.reimbursementPersonId ?? null,
+    reimbursement_status: 'pending',
+  };
+}
+
 export const recurringRepository = {
   async createFromTransaction(transaction: Omit<Transaction, 'id'>, endDate?: string): Promise<RecurringTransaction> {
     const userId = await assertCurrentUserId();
@@ -59,7 +88,10 @@ export const recurringRepository = {
     });
     const { error } = await client
       .from('recurring_transactions')
-      .update({ notes: notes ?? null })
+      .update({
+        notes: notes ?? null,
+        ...getRecurringSplitFields(rule),
+      })
       .eq('id', rule.id)
       .eq('user_id', userId);
 

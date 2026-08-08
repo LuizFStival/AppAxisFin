@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowRight, CalendarCheck2, CheckCircle2, Clock3, CreditCard, HandCoins, Layers, ListChecks, ReceiptText, Repeat, WalletCards } from 'lucide-react';
 import { Account, Card, Category, DashboardSummary, ReimbursementPerson, Transaction } from '../../types';
 import {
@@ -42,6 +42,7 @@ interface MonthCenterViewProps {
   onOpenTransactions: () => void;
   onOpenReimbursements: (personId?: string) => void;
   onPayInvoice: (input: { card: Card; accountId: string; paymentDate: string; amount: number; transactions: Transaction[] }) => Promise<void>;
+  onMarkAccountExpensePaid: (transaction: Transaction, input: { accountId: string; paymentDate: string }) => void | Promise<void>;
   onMarkReimbursementReceived: (transaction: Transaction, accountId: string, receivedAmount?: number) => void | Promise<void>;
 }
 
@@ -112,6 +113,7 @@ export function MonthCenterView({
   onOpenTransactions,
   onOpenReimbursements,
   onPayInvoice,
+  onMarkAccountExpensePaid,
   onMarkReimbursementReceived,
 }: MonthCenterViewProps) {
   const [tab, setTab] = useState<CenterTab>('payments');
@@ -120,7 +122,16 @@ export function MonthCenterView({
   const [commitmentPersonId, setCommitmentPersonId] = useState('all');
   const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
   const [receivingAccountId, setReceivingAccountId] = useState('');
+  const [payingAccountExpense, setPayingAccountExpense] = useState<Transaction | null>(null);
+  const [payingAccountId, setPayingAccountId] = useState('');
+  const [accountPaymentDate, setAccountPaymentDate] = useState(formatLocalDate(new Date()));
   const today = formatLocalDate(new Date());
+
+  const openAccountExpensePayment = useCallback((transaction: Transaction) => {
+    setPayingAccountExpense(transaction);
+    setPayingAccountId(transaction.accountId ?? accounts[0]?.id ?? '');
+    setAccountPaymentDate(transaction.date || today);
+  }, [accounts, today]);
 
   const pendingInvoices = useMemo(() => (
     getPendingInvoiceSummaries(cards, transactions, activeMonth)
@@ -161,7 +172,7 @@ export function MonthCenterView({
       amount: transaction.amount,
       dueDate: transaction.date,
       kind: 'account' as const,
-      action: onOpenTransactions,
+      action: () => openAccountExpensePayment(transaction),
     }));
     const reimbursementItems = pendingReimbursements.map((transaction) => ({
       id: `reimbursement:${transaction.id}`,
@@ -175,7 +186,7 @@ export function MonthCenterView({
 
     return [...invoiceItems, ...accountItems, ...reimbursementItems]
       .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || right.amount - left.amount);
-  }, [cards, onOpenCards, onOpenReimbursements, onOpenTransactions, pendingAccountExpenses, pendingInvoices, pendingReimbursements, people]);
+  }, [cards, onOpenCards, onOpenReimbursements, openAccountExpensePayment, pendingAccountExpenses, pendingInvoices, pendingReimbursements, people]);
 
   const fixedExpenses = useMemo(() => (
     transactions
@@ -512,21 +523,22 @@ export function MonthCenterView({
             {pendingAccountExpenses.map((transaction) => {
               const badge = dueBadge(transaction.date, today);
               return (
-                <article key={transaction.id} className="premium-card rounded-2xl p-4">
+                <button key={transaction.id} type="button" onClick={() => openAccountExpensePayment(transaction)} className="premium-card w-full rounded-2xl p-4 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/10">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-100"><ReceiptText size={17} /></span>
                         <div className="min-w-0">
                           <h3 className="truncate font-display text-base font-bold text-white">{transaction.description}</h3>
-                          <p className="text-xs text-slate-500">Despesa de conta</p>
+                          <p className="text-xs text-slate-500">Despesa de conta · clique para pagar</p>
                         </div>
                         <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}>{badge.label}</span>
+                        <span className="rounded-full border border-emerald-300/20 bg-emerald-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-100">Pagar</span>
                       </div>
                     </div>
                     <p className="shrink-0 font-display text-lg font-black text-white">{formatCurrency(transaction.amount)}</p>
                   </div>
-                </article>
+                </button>
               );
             })}
           </div>
@@ -773,6 +785,51 @@ export function MonthCenterView({
                 onClick={async () => {
                   await onMarkReimbursementReceived(receivingTransaction, receivingAccountId);
                   setReceivingTransaction(null);
+                }}
+                className="h-11 rounded-xl bg-white text-sm font-bold text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {payingAccountExpense ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="premium-card w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]">
+            <h2 className="font-display text-lg font-bold text-white">Registrar pagamento</h2>
+            <p className="mt-1 text-xs text-slate-500">{payingAccountExpense.description} · {formatCurrency(payingAccountExpense.amount)}</p>
+            <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
+              Data do pagamento
+              <input
+                type="date"
+                value={accountPaymentDate}
+                onChange={(event) => setAccountPaymentDate(event.target.value)}
+                className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300"
+              />
+            </label>
+            <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-400">
+              Conta usada
+              <select value={payingAccountId} onChange={(event) => setPayingAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300">
+                <option value="">Selecione uma conta</option>
+                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+              </select>
+            </label>
+            <p className="mt-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-xs leading-relaxed text-emerald-100">
+              A despesa será marcada como paga e o saldo da conta escolhida será atualizado.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setPayingAccountExpense(null)} className="h-11 rounded-xl bg-white/5 text-sm font-bold text-slate-300">Cancelar</button>
+              <button
+                type="button"
+                disabled={!payingAccountId || !accountPaymentDate}
+                onClick={async () => {
+                  await onMarkAccountExpensePaid(payingAccountExpense, {
+                    accountId: payingAccountId,
+                    paymentDate: accountPaymentDate,
+                  });
+                  setPayingAccountExpense(null);
                 }}
                 className="h-11 rounded-xl bg-white text-sm font-bold text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
