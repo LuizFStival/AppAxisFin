@@ -1,24 +1,35 @@
 import React, { useMemo, useState } from 'react';
-import { AlertTriangle, ArrowRight, CalendarCheck2, CheckCircle2, Clock3, CreditCard, HandCoins, ListChecks, ReceiptText, WalletCards } from 'lucide-react';
-import { Account, Card, DashboardSummary, ReimbursementPerson, Transaction } from '../../types';
+import { AlertTriangle, ArrowRight, CalendarCheck2, CheckCircle2, Clock3, CreditCard, HandCoins, Layers, ListChecks, ReceiptText, Repeat, WalletCards } from 'lucide-react';
+import { Account, Card, Category, DashboardSummary, ReimbursementPerson, Transaction } from '../../types';
 import {
+  expensesByCategory,
   formatCurrency,
   formatMonthLabel,
   getCardInvoiceTransactions,
+  getPaymentSource,
   getPendingInvoiceSummaries,
+  getPersonalExpenseSignedAmount,
+  getTransactionPersonalAmount,
   getTransactionCompetenceMonth,
   getTransactionReimbursementAmount,
+  isInvoiceCredit,
+  isInvoicePayment,
   isPendingAccountExpense,
   roundMoney,
+  shiftMonthKey,
+  summarizeDashboard,
 } from '../../lib/utils/finance';
+import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate, parseLocalDate } from '../../lib/utils/date';
 import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
+import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
 
 interface MonthCenterViewProps {
   accounts: Account[];
   cards: Card[];
+  categories: Category[];
   people: ReimbursementPerson[];
   transactions: Transaction[];
   activeMonth: string;
@@ -31,10 +42,13 @@ interface MonthCenterViewProps {
   onOpenTransactions: () => void;
   onOpenReimbursements: (personId?: string) => void;
   onPayInvoice: (input: { card: Card; accountId: string; paymentDate: string; amount: number; transactions: Transaction[] }) => Promise<void>;
-  onMarkReimbursementReceived: (transaction: Transaction, accountId: string) => void | Promise<void>;
+  onMarkReimbursementReceived: (transaction: Transaction, accountId: string, receivedAmount?: number) => void | Promise<void>;
 }
 
-type CenterTab = 'payments' | 'closing';
+type CenterTab = 'payments' | 'fixed' | 'closing';
+type CommitmentFilter = 'all' | 'fixed' | 'installment';
+type CommitmentOwner = 'mine' | 'others';
+type PriorityKind = 'invoice' | 'account' | 'reimbursement';
 
 function daysBetween(date: string, today: string) {
   return Math.round((parseLocalDate(date).getTime() - parseLocalDate(today).getTime()) / 86400000);
@@ -42,6 +56,30 @@ function daysBetween(date: string, today: string) {
 
 function getPersonName(people: ReimbursementPerson[], personId?: string) {
   return people.find((person) => person.id === personId)?.name ?? 'Pessoa removida';
+}
+
+function isFixedExpense(transaction: Transaction, cards: Card[], activeMonth: string) {
+  if (transaction.flow !== 'expense') return false;
+  if (isInvoicePayment(transaction) || isInvoiceCredit(transaction)) return false;
+  if (getTransactionCompetenceMonth(transaction, cards) !== activeMonth) return false;
+
+  const meta = readTransactionMeta(transaction.notes);
+  return meta.entryMode === 'fixed'
+    || Boolean(transaction.recurringTransactionId)
+    || Boolean(meta.recurringTransactionId);
+}
+
+function isInstallmentExpense(transaction: Transaction, cards: Card[], activeMonth: string) {
+  if (transaction.flow !== 'expense') return false;
+  if (isInvoicePayment(transaction) || isInvoiceCredit(transaction)) return false;
+  if (getTransactionCompetenceMonth(transaction, cards) !== activeMonth) return false;
+
+  return readTransactionMeta(transaction.notes).entryMode === 'installment';
+}
+
+function getExpenseDueDate(transaction: Transaction, cards: Card[]) {
+  const card = transaction.cardId ? cards.find((item) => item.id === transaction.cardId) : undefined;
+  return card ? getCardInvoiceInfo(card, transaction.date).dueDate : transaction.date;
 }
 
 function dueBadge(dueDate: string, today: string) {
@@ -52,9 +90,16 @@ function dueBadge(dueDate: string, today: string) {
   return { label: `vence em ${formatDatePtBr(dueDate)}`, className: 'border-white/10 bg-white/5 text-slate-300' };
 }
 
+function priorityKindLabel(kind: PriorityKind) {
+  if (kind === 'invoice') return 'Fatura';
+  if (kind === 'account') return 'Conta';
+  return 'Reembolso';
+}
+
 export function MonthCenterView({
   accounts,
   cards,
+  categories,
   people,
   transactions,
   activeMonth,
@@ -70,6 +115,9 @@ export function MonthCenterView({
   onMarkReimbursementReceived,
 }: MonthCenterViewProps) {
   const [tab, setTab] = useState<CenterTab>('payments');
+  const [commitmentFilter, setCommitmentFilter] = useState<CommitmentFilter>('all');
+  const [commitmentOwner, setCommitmentOwner] = useState<CommitmentOwner>('mine');
+  const [commitmentPersonId, setCommitmentPersonId] = useState('all');
   const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
   const [receivingAccountId, setReceivingAccountId] = useState('');
   const today = formatLocalDate(new Date());
@@ -93,6 +141,63 @@ export function MonthCenterView({
         const leftDue = getReimbursementDueDate(left, cards) ?? left.date;
         const rightDue = getReimbursementDueDate(right, cards) ?? right.date;
         return leftDue.localeCompare(rightDue);
+      })
+  ), [activeMonth, cards, transactions]);
+
+  const priorityItems = useMemo(() => {
+    const invoiceItems = pendingInvoices.map((item) => ({
+      id: `invoice:${item.card.id}:${item.invoice.period}`,
+      title: item.card.name,
+      detail: item.invoice.label,
+      amount: item.total,
+      dueDate: item.invoice.dueDate,
+      kind: 'invoice' as const,
+      action: () => onOpenCards(item.card.id),
+    }));
+    const accountItems = pendingAccountExpenses.map((transaction) => ({
+      id: `account:${transaction.id}`,
+      title: transaction.description,
+      detail: 'Despesa de conta',
+      amount: transaction.amount,
+      dueDate: transaction.date,
+      kind: 'account' as const,
+      action: onOpenTransactions,
+    }));
+    const reimbursementItems = pendingReimbursements.map((transaction) => ({
+      id: `reimbursement:${transaction.id}`,
+      title: getPersonName(people, transaction.reimbursementPersonId),
+      detail: transaction.description,
+      amount: getTransactionReimbursementAmount(transaction),
+      dueDate: getReimbursementDueDate(transaction, cards) ?? transaction.date,
+      kind: 'reimbursement' as const,
+      action: () => onOpenReimbursements(transaction.reimbursementPersonId),
+    }));
+
+    return [...invoiceItems, ...accountItems, ...reimbursementItems]
+      .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || right.amount - left.amount);
+  }, [cards, onOpenCards, onOpenReimbursements, onOpenTransactions, pendingAccountExpenses, pendingInvoices, pendingReimbursements, people]);
+
+  const fixedExpenses = useMemo(() => (
+    transactions
+      .filter((transaction) => isFixedExpense(transaction, cards, activeMonth))
+      .sort((left, right) => {
+        const leftDueDate = getExpenseDueDate(left, cards);
+        const rightDueDate = getExpenseDueDate(right, cards);
+        return leftDueDate.localeCompare(rightDueDate) || left.description.localeCompare(right.description);
+      })
+  ), [activeMonth, cards, transactions]);
+
+  const installmentExpenses = useMemo(() => (
+    transactions
+      .filter((transaction) => isInstallmentExpense(transaction, cards, activeMonth))
+      .sort((left, right) => {
+        const leftDueDate = getExpenseDueDate(left, cards);
+        const rightDueDate = getExpenseDueDate(right, cards);
+        const leftMeta = readTransactionMeta(left.notes);
+        const rightMeta = readTransactionMeta(right.notes);
+        return leftDueDate.localeCompare(rightDueDate)
+          || left.description.localeCompare(right.description)
+          || (leftMeta.installmentNumber ?? 0) - (rightMeta.installmentNumber ?? 0);
       })
   ), [activeMonth, cards, transactions]);
 
@@ -136,11 +241,75 @@ export function MonthCenterView({
 
   const invoiceTotal = roundMoney(pendingInvoices.reduce((sum, item) => sum + item.total, 0));
   const accountExpenseTotal = roundMoney(pendingAccountExpenses.reduce((sum, item) => sum + item.amount, 0));
+  const fixedExpenseTotal = roundMoney(fixedExpenses.reduce((sum, item) => sum + getPersonalExpenseSignedAmount(item), 0));
+  const installmentExpenseTotal = roundMoney(installmentExpenses.reduce((sum, item) => sum + getPersonalExpenseSignedAmount(item), 0));
+  const commitmentPeople = useMemo(() => {
+    const peopleMap = new Map<string, string>();
+    [...fixedExpenses, ...installmentExpenses].forEach((transaction) => {
+      if (getTransactionReimbursementAmount(transaction) <= 0) return;
+      const id = transaction.reimbursementPersonId ?? 'unknown';
+      peopleMap.set(id, getPersonName(people, transaction.reimbursementPersonId));
+    });
+    return Array.from(peopleMap.entries()).map(([id, name]) => ({ id, name })).sort((left, right) => left.name.localeCompare(right.name));
+  }, [fixedExpenses, installmentExpenses, people]);
+  const visibleFixedExpenses = fixedExpenses.filter((transaction) => {
+    if (commitmentOwner === 'mine') return getPersonalExpenseSignedAmount(transaction) > 0;
+    if (getTransactionReimbursementAmount(transaction) <= 0) return false;
+    return commitmentPersonId === 'all' || (transaction.reimbursementPersonId ?? 'unknown') === commitmentPersonId;
+  });
+  const visibleInstallmentExpenses = installmentExpenses.filter((transaction) => {
+    if (commitmentOwner === 'mine') return getPersonalExpenseSignedAmount(transaction) > 0;
+    if (getTransactionReimbursementAmount(transaction) <= 0) return false;
+    return commitmentPersonId === 'all' || (transaction.reimbursementPersonId ?? 'unknown') === commitmentPersonId;
+  });
+  const filteredFixedExpenses = commitmentFilter === 'installment' ? [] : visibleFixedExpenses;
+  const filteredInstallmentExpenses = commitmentFilter === 'fixed' ? [] : visibleInstallmentExpenses;
+  const visibleCommitmentCount = filteredFixedExpenses.length + filteredInstallmentExpenses.length;
+  const selectedFixedTotal = roundMoney(visibleFixedExpenses.reduce((sum, item) => (
+    sum + (commitmentOwner === 'mine' ? getPersonalExpenseSignedAmount(item) : getTransactionReimbursementAmount(item))
+  ), 0));
+  const selectedInstallmentTotal = roundMoney(visibleInstallmentExpenses.reduce((sum, item) => (
+    sum + (commitmentOwner === 'mine' ? getPersonalExpenseSignedAmount(item) : getTransactionReimbursementAmount(item))
+  ), 0));
+  const commitmentExpenseTotal = roundMoney(selectedFixedTotal + selectedInstallmentTotal);
+  const nextCommitmentDueDate = [...filteredFixedExpenses, ...filteredInstallmentExpenses]
+    .map((transaction) => getExpenseDueDate(transaction, cards))
+    .filter((date) => date >= today)
+    .sort()[0];
   const reimbursementTotal = roundMoney(pendingReimbursements.reduce((sum, item) => sum + getTransactionReimbursementAmount(item), 0));
   const availableBalance = roundMoney(accounts.reduce((sum, account) => sum + account.balance, 0));
   const totalToPay = roundMoney(invoiceTotal + accountExpenseTotal);
   const balanceAfterPayments = roundMoney(availableBalance - totalToPay);
+  const overduePriorityItems = priorityItems.filter((item) => daysBetween(item.dueDate, today) < 0);
+  const todayPriorityItems = priorityItems.filter((item) => daysBetween(item.dueDate, today) === 0);
+  const nextWeekPriorityItems = priorityItems.filter((item) => {
+    const days = daysBetween(item.dueDate, today);
+    return days > 0 && days <= 7;
+  });
+  const overduePriorityTotal = roundMoney(overduePriorityItems.reduce((sum, item) => sum + item.amount, 0));
+  const todayPriorityTotal = roundMoney(todayPriorityItems.reduce((sum, item) => sum + item.amount, 0));
+  const nextWeekPriorityTotal = roundMoney(nextWeekPriorityItems.reduce((sum, item) => sum + item.amount, 0));
+  const nextPriorityItem = priorityItems.find((item) => daysBetween(item.dueDate, today) >= 0) ?? priorityItems[0];
   const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === activeMonth);
+  const previousMonth = shiftMonthKey(activeMonth, -1);
+  const previousSummary = summarizeDashboard(accounts, transactions, previousMonth, cards, {
+    includeReimbursements: reimbursementsEnabled,
+  });
+  const monthPersonalExpenses = roundMoney(monthTransactions
+    .filter((transaction) => transaction.flow === 'expense' && !isInvoicePayment(transaction))
+    .reduce((sum, transaction) => sum + getTransactionPersonalAmount(transaction), 0));
+  const monthThirdPartyExpenses = roundMoney(monthTransactions
+    .filter((transaction) => transaction.flow === 'expense' && !isInvoicePayment(transaction))
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
+  const topCategory = expensesByCategory(transactions, categories, activeMonth, cards)[0];
+  const superfluousTotal = roundMoney(monthTransactions
+    .filter((transaction) => transaction.flow === 'expense' && !isInvoicePayment(transaction))
+    .filter((transaction) => readTransactionMeta(transaction.notes).expenseNeed === 'superfluous')
+    .reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0));
+  const monthResult = roundMoney(summary.income - summary.expenses);
+  const previousResult = roundMoney(previousSummary.income - previousSummary.expenses);
+  const resultDelta = roundMoney(monthResult - previousResult);
+  const spendableThisMonth = roundMoney(Math.max(0, monthResult));
   const oldPendingReimbursements = pendingReimbursements.filter((transaction) => getReimbursementMonthKey(transaction, cards) < activeMonth);
   const overdueReimbursements = pendingReimbursements.filter((transaction) => isReimbursementOverdue(transaction, cards, today));
   const paidInvoices = cards.length - pendingInvoices.length;
@@ -161,6 +330,16 @@ export function MonthCenterView({
       detail: pendingAccountExpenses.length === 0 ? 'Nenhuma despesa de conta pendente neste mês.' : `${pendingAccountExpenses.length} despesa${pendingAccountExpenses.length === 1 ? '' : 's'} pendente${pendingAccountExpenses.length === 1 ? '' : 's'} para resolver.`,
       action: 'Ver transações',
       onClick: onOpenTransactions,
+    },
+    {
+      id: 'fixed-expenses',
+      done: fixedExpenses.length > 0 || installmentExpenses.length > 0,
+      title: 'Fixas e parceladas do mês',
+      detail: fixedExpenses.length > 0 || installmentExpenses.length > 0
+        ? `${fixedExpenses.length} fixa${fixedExpenses.length === 1 ? '' : 's'} e ${installmentExpenses.length} parcelada${installmentExpenses.length === 1 ? '' : 's'} em ${formatMonthLabel(activeMonth)}.`
+        : 'Nenhuma despesa fixa ou parcelada encontrada neste mês.',
+      action: 'Ver compromissos',
+      onClick: () => setTab('fixed'),
     },
     {
       id: 'reimbursements',
@@ -199,31 +378,83 @@ export function MonthCenterView({
         </div>
       </header>
 
-      <section className="mt-4 grid shrink-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-4 grid shrink-0 gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
         <div className="premium-card rounded-2xl p-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Preciso pagar</p>
-          <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(totalToPay)}</p>
-          <p className="mt-1 text-xs text-slate-500">{pendingInvoices.length} fatura(s) + {pendingAccountExpenses.length} conta(s)</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Preciso pagar</p>
+              <p className="mt-1 font-display text-2xl font-black text-white">{formatCurrency(totalToPay)}</p>
+              <p className="mt-1 text-xs text-slate-500">{pendingInvoices.length} fatura(s) + {pendingAccountExpenses.length} conta(s)</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-amber-100/80">A receber</p>
+              <p className="mt-1 font-display text-2xl font-black text-white">{formatCurrency(reimbursementTotal)}</p>
+              <p className="mt-1 text-xs text-slate-500">{pendingReimbursements.length} reembolso(s)</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Saldo após pagar</p>
+              <p className={`mt-1 font-display text-2xl font-black ${balanceAfterPayments < 0 ? 'text-rose-200' : 'text-emerald-100'}`}>{formatCurrency(balanceAfterPayments)}</p>
+              <p className="mt-1 text-xs text-slate-500">saldo atual {formatCurrency(availableBalance)}</p>
+            </div>
+          </div>
         </div>
-        <div className="premium-card rounded-2xl border-amber-400/15 p-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-amber-100/80">A receber</p>
-          <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(reimbursementTotal)}</p>
-          <p className="mt-1 text-xs text-slate-500">{pendingReimbursements.length} reembolso(s) pendente(s)</p>
-        </div>
-        <div className={`premium-card rounded-2xl p-4 ${balanceAfterPayments < 0 ? 'border-rose-400/20' : 'border-emerald-400/15'}`}>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Saldo após pagar</p>
-          <p className={`mt-2 font-display text-2xl font-black ${balanceAfterPayments < 0 ? 'text-rose-200' : 'text-white'}`}>{formatCurrency(balanceAfterPayments)}</p>
-          <p className="mt-1 text-xs text-slate-500">saldo atual {formatCurrency(availableBalance)}</p>
-        </div>
-        <div className="premium-card rounded-2xl p-4">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-100/80">Resultado do mês</p>
-          <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(summary.income - summary.expenses)}</p>
-          <p className="mt-1 text-xs text-slate-500">{formatMonthLabel(activeMonth)}</p>
+
+        <div className="premium-card-soft rounded-2xl p-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-100/80">Leitura rápida</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] px-3 py-2">
+              <span className="text-xs font-semibold text-slate-400">Pode gastar</span>
+              <span className="font-mono text-sm font-black text-white">{formatCurrency(spendableThisMonth)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] px-3 py-2">
+              <span className="truncate text-xs font-semibold text-slate-400">Mais pesa: {topCategory?.name ?? 'sem despesas'}</span>
+              <span className="font-mono text-sm font-black text-white">{topCategory ? formatCurrency(topCategory.value) : formatCurrency(0)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] px-3 py-2">
+              <span className="text-xs font-semibold text-slate-400">Vs. mês anterior</span>
+              <span className={`font-mono text-sm font-black ${resultDelta >= 0 ? 'text-emerald-100' : 'text-rose-100'}`}>{resultDelta >= 0 ? '+' : ''}{formatCurrency(resultDelta)}</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      <div className="premium-card-soft mt-4 grid shrink-0 grid-cols-2 gap-1 rounded-2xl p-1">
+      <section className="premium-card-soft mt-3 grid shrink-0 gap-2 rounded-2xl p-3 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <button type="button" onClick={() => setTab('payments')} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-left transition hover:border-rose-200/40">
+            <span className="text-xs font-black uppercase tracking-wide text-rose-100">Atrasado</span>
+            <span className="text-right font-mono text-sm font-black text-white">{formatCurrency(overduePriorityTotal)}<br /><span className="text-[10px] font-semibold text-slate-400">{overduePriorityItems.length} item{overduePriorityItems.length === 1 ? '' : 's'}</span></span>
+          </button>
+          <button type="button" onClick={() => setTab('payments')} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-left transition hover:border-amber-100/40">
+            <span className="text-xs font-black uppercase tracking-wide text-amber-100">Hoje</span>
+            <span className="text-right font-mono text-sm font-black text-white">{formatCurrency(todayPriorityTotal)}<br /><span className="text-[10px] font-semibold text-slate-400">{todayPriorityItems.length} item{todayPriorityItems.length === 1 ? '' : 's'}</span></span>
+          </button>
+          <button type="button" onClick={() => setTab('payments')} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-cyan-300/15 bg-cyan-400/10 px-3 py-2 text-left transition hover:border-cyan-100/35">
+            <span className="text-xs font-black uppercase tracking-wide text-cyan-100">7 dias</span>
+            <span className="text-right font-mono text-sm font-black text-white">{formatCurrency(nextWeekPriorityTotal)}<br /><span className="text-[10px] font-semibold text-slate-400">{nextWeekPriorityItems.length} item{nextWeekPriorityItems.length === 1 ? '' : 's'}</span></span>
+          </button>
+        </div>
+        {nextPriorityItem ? (
+          <button type="button" onClick={nextPriorityItem.action} className="flex min-h-12 items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2 text-left transition hover:bg-white/10">
+            <span className="min-w-0">
+              <span className="block truncate text-xs font-bold text-white">{nextPriorityItem.title}</span>
+              <span className="block truncate text-[11px] font-semibold text-slate-500">{priorityKindLabel(nextPriorityItem.kind)} · vence {formatDatePtBr(nextPriorityItem.dueDate)}</span>
+            </span>
+            <span className="shrink-0 font-mono text-sm font-black text-white">{formatCurrency(nextPriorityItem.amount)}</span>
+          </button>
+        ) : (
+          <div className="flex min-h-12 items-center rounded-xl bg-white/5 px-3 text-sm font-bold text-emerald-100">Nenhuma prioridade pendente.</div>
+        )}
+      </section>
+
+      <section className="premium-card-soft mt-3 flex shrink-0 flex-col gap-2 rounded-2xl p-3 text-xs font-semibold text-slate-400 lg:flex-row lg:items-center lg:justify-between">
+        <span>Resultado do mês: <strong className="font-mono text-white">{formatCurrency(monthResult)}</strong></span>
+        <span>Meu x terceiros: <strong className="font-mono text-white">{formatCurrency(monthPersonalExpenses)}</strong> / {formatCurrency(monthThirdPartyExpenses)}</span>
+        <span>Supérfluos: <strong className="font-mono text-white">{formatCurrency(superfluousTotal)}</strong></span>
+      </section>
+
+      <div className="premium-card-soft mt-4 grid shrink-0 grid-cols-3 gap-1 rounded-2xl p-1">
         <button type="button" onClick={() => setTab('payments')} className={`h-11 rounded-xl text-sm font-black transition ${tab === 'payments' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Pagamentos</button>
+        <button type="button" onClick={() => setTab('fixed')} className={`h-11 rounded-xl text-sm font-black transition ${tab === 'fixed' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Compromissos</button>
         <button type="button" onClick={() => setTab('closing')} className={`h-11 rounded-xl text-sm font-black transition ${tab === 'closing' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Fechamento</button>
       </div>
 
@@ -341,7 +572,135 @@ export function MonthCenterView({
             ) : null}
           </aside>
         </section>
-      ) : (
+      ) : null}
+
+      {tab === 'fixed' ? (
+        <section className="mt-4 min-h-0 flex-1 space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <button type="button" onClick={() => setCommitmentFilter('all')} className={`premium-card rounded-2xl p-4 text-left transition hover:border-white/20 ${commitmentFilter === 'all' ? 'ring-1 ring-white/35' : ''}`}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total compromissos</p>
+              <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(commitmentExpenseTotal)}</p>
+              <p className="mt-1 text-xs text-slate-500">{visibleFixedExpenses.length + visibleInstallmentExpenses.length} lançamento{visibleFixedExpenses.length + visibleInstallmentExpenses.length === 1 ? '' : 's'}</p>
+            </button>
+            <button type="button" onClick={() => setCommitmentFilter('fixed')} className={`premium-card-soft rounded-2xl border-amber-400/15 p-4 text-left transition hover:border-amber-200/35 ${commitmentFilter === 'fixed' ? 'ring-1 ring-amber-200/45' : ''}`}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-amber-100/80">Fixas</p>
+              <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(selectedFixedTotal)}</p>
+              <p className="mt-1 text-xs text-slate-500">{visibleFixedExpenses.length} lançamento{visibleFixedExpenses.length === 1 ? '' : 's'} fixo{visibleFixedExpenses.length === 1 ? '' : 's'}</p>
+            </button>
+            <button type="button" onClick={() => setCommitmentFilter('installment')} className={`premium-card-soft rounded-2xl border-violet-400/15 p-4 text-left transition hover:border-violet-200/35 ${commitmentFilter === 'installment' ? 'ring-1 ring-violet-200/45' : ''}`}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-100/80">Parceladas</p>
+              <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(selectedInstallmentTotal)}</p>
+              <p className="mt-1 text-xs text-slate-500">{visibleInstallmentExpenses.length} parcela{visibleInstallmentExpenses.length === 1 ? '' : 's'} no mês</p>
+            </button>
+          </div>
+
+          <div className="premium-card-soft flex flex-col gap-3 rounded-2xl p-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/20 p-1 sm:w-[280px]">
+              <button type="button" onClick={() => setCommitmentOwner('mine')} className={`h-10 rounded-lg text-sm font-black transition ${commitmentOwner === 'mine' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Meus</button>
+              <button type="button" onClick={() => setCommitmentOwner('others')} className={`h-10 rounded-lg text-sm font-black transition ${commitmentOwner === 'others' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Terceiros</button>
+            </div>
+            {commitmentOwner === 'others' ? (
+              <select value={commitmentPersonId} onChange={(event) => setCommitmentPersonId(event.target.value)} className="h-10 rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-bold text-white outline-none focus:border-violet-300 sm:min-w-[220px]">
+                <option value="all">Todos os terceiros</option>
+                {commitmentPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+              </select>
+            ) : (
+              <p className="px-2 text-xs font-semibold text-slate-500">Mostrando só a parte que pesa no seu orçamento.</p>
+            )}
+          </div>
+
+          <div className="premium-card overflow-hidden rounded-2xl">
+            <div className="flex flex-col gap-2 border-b border-white/8 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <Repeat size={18} className="text-amber-200" />
+                <h2 className="font-display text-lg font-bold">Fixas e parceladas de {formatMonthLabel(activeMonth)}</h2>
+              </div>
+              <p className="text-xs font-semibold text-slate-500">Próximo vencimento: {nextCommitmentDueDate ? formatDatePtBr(nextCommitmentDueDate) : 'sem data futura'}</p>
+            </div>
+
+            {visibleCommitmentCount === 0 ? (
+              <div className="p-6 text-center">
+                <Repeat size={28} className="mx-auto text-slate-500" />
+                <p className="mt-3 font-bold text-white">Nada encontrado neste filtro.</p>
+                <p className="mt-1 text-sm text-slate-500">Troque entre Meus, Terceiros, Fixas ou Parceladas para conferir outro recorte.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-white/8">
+                {filteredFixedExpenses.length > 0 ? (
+                  <div className="bg-amber-500/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-100">Fixas · {formatCurrency(selectedFixedTotal)}</div>
+                ) : null}
+                {filteredFixedExpenses.map((transaction) => {
+                  const card = transaction.cardId ? cards.find((item) => item.id === transaction.cardId) : undefined;
+                  const invoiceInfo = card ? getCardInvoiceInfo(card, transaction.date) : undefined;
+                  const dueDate = invoiceInfo?.dueDate ?? transaction.date;
+                  const badge = dueBadge(dueDate, today);
+                  const meta = readTransactionMeta(transaction.notes);
+                  const paid = transaction.cardId ? Boolean(meta.paidAt) : transaction.status === 'paid';
+
+                  return (
+                    <article key={transaction.id} className="grid gap-3 px-4 py-3 transition hover:bg-white/[0.035] md:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_150px_120px] md:items-center">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-100">
+                          {transaction.cardId ? <CreditCard size={17} /> : <ReceiptText size={17} />}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-white">{transaction.description}</p>
+                          <p className="text-xs text-slate-500">{getPaymentSource(accounts, cards, transaction)}{invoiceInfo ? ` · ${invoiceInfo.label}` : ''}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}>{badge.label}</span>
+                        <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${paid ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' : 'border-white/10 bg-white/5 text-slate-300'}`}>
+                          {paid ? 'paga' : transaction.cardId ? 'na fatura' : 'pendente'}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-slate-400 md:text-right">{formatDatePtBr(dueDate)}</p>
+                      <p className="font-mono text-sm font-black text-white md:text-right">{formatCurrency(commitmentOwner === 'mine' ? getPersonalExpenseSignedAmount(transaction) : getTransactionReimbursementAmount(transaction))}</p>
+                    </article>
+                  );
+                })}
+
+                {filteredInstallmentExpenses.length > 0 ? (
+                  <div className="bg-violet-500/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-violet-100">Parceladas · {formatCurrency(selectedInstallmentTotal)}</div>
+                ) : null}
+                {filteredInstallmentExpenses.map((transaction) => {
+                  const card = transaction.cardId ? cards.find((item) => item.id === transaction.cardId) : undefined;
+                  const invoiceInfo = card ? getCardInvoiceInfo(card, transaction.date) : undefined;
+                  const dueDate = invoiceInfo?.dueDate ?? transaction.date;
+                  const badge = dueBadge(dueDate, today);
+                  const meta = readTransactionMeta(transaction.notes);
+                  const paid = transaction.cardId ? Boolean(meta.paidAt) : transaction.status === 'paid';
+                  const installmentLabel = meta.installmentNumber && meta.totalInstallments ? `${meta.installmentNumber}/${meta.totalInstallments}` : 'parcela';
+
+                  return (
+                    <article key={transaction.id} className="grid gap-3 px-4 py-3 transition hover:bg-white/[0.035] md:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_150px_120px] md:items-center">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-100">
+                          <Layers size={17} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-white">{transaction.description}</p>
+                          <p className="text-xs text-slate-500">{getPaymentSource(accounts, cards, transaction)}{invoiceInfo ? ` · ${invoiceInfo.label}` : ''} · {installmentLabel}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}>{badge.label}</span>
+                        <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${paid ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' : 'border-white/10 bg-white/5 text-slate-300'}`}>
+                          {paid ? 'paga' : transaction.cardId ? 'na fatura' : 'pendente'}
+                        </span>
+                      </div>
+                      <p className="text-xs font-semibold text-slate-400 md:text-right">{formatDatePtBr(dueDate)}</p>
+                      <p className="font-mono text-sm font-black text-white md:text-right">{formatCurrency(commitmentOwner === 'mine' ? getPersonalExpenseSignedAmount(transaction) : getTransactionReimbursementAmount(transaction))}</p>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {tab === 'closing' ? (
         <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div className="premium-card rounded-2xl p-5">
             <div className="flex items-center gap-2">
@@ -389,7 +748,7 @@ export function MonthCenterView({
             </div>
           </div>
         </section>
-      )}
+      ) : null}
 
       {receivingTransaction ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">

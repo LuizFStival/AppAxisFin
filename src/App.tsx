@@ -455,15 +455,23 @@ export default function App() {
     await refreshAccounts();
   }
 
-  async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string) {
+  async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string, receivedAmount?: number) {
+    const currentReimbursementAmount = Math.max(0, transaction.reimbursementAmount ?? transaction.amount);
+    const normalizedReceivedAmount = Math.max(0, Math.min(currentReimbursementAmount, receivedAmount ?? currentReimbursementAmount));
+    const remainingReimbursementAmount = Math.max(0, currentReimbursementAmount - normalizedReceivedAmount);
+    const nextReimbursementStatus = remainingReimbursementAmount > 0 ? 'pending' as const : 'received' as const;
+    const nextReimbursementAmount = nextReimbursementStatus === 'received' ? currentReimbursementAmount : remainingReimbursementAmount;
+    const nextReceivedAt = new Date().toISOString().slice(0, 10);
+
     if (transaction.isProjected) {
       const { id: _id, isProjected: _isProjected, ...input } = transaction;
       const saved = await transactionRepository.create({
         ...input,
         isReimbursable: true,
-        reimbursementStatus: 'received',
-        reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
-        reimbursementReceivedAccountId: accountId,
+        reimbursementAmount: nextReimbursementAmount,
+        reimbursementStatus: nextReimbursementStatus,
+        reimbursementReceivedAt: nextReimbursementStatus === 'received' ? nextReceivedAt : undefined,
+        reimbursementReceivedAccountId: nextReimbursementStatus === 'received' ? accountId : undefined,
       });
       setSnapshot((current) => ({
         ...current,
@@ -476,9 +484,10 @@ export default function App() {
     const saved = await transactionRepository.update(transaction.id, {
       ...transaction,
       isReimbursable: true,
-      reimbursementStatus: 'received',
-      reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
-      reimbursementReceivedAccountId: accountId,
+      reimbursementAmount: nextReimbursementAmount,
+      reimbursementStatus: nextReimbursementStatus,
+      reimbursementReceivedAt: nextReimbursementStatus === 'received' ? nextReceivedAt : undefined,
+      reimbursementReceivedAccountId: nextReimbursementStatus === 'received' ? accountId : undefined,
     });
     setSnapshot((current) => ({
       ...current,
@@ -839,6 +848,7 @@ export default function App() {
         <MonthCenterView
           accounts={snapshot.accounts}
           cards={snapshot.cards}
+          categories={snapshot.categories}
           people={snapshot.reimbursementPeople}
           transactions={snapshot.transactions}
           activeMonth={activeMonth}

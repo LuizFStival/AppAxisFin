@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
 import { Account, Card, ReimbursementPerson, Transaction } from '../../types';
 import { formatCurrency, getTransactionReimbursementAmount } from '../../lib/utils/finance';
+import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { formatLocalDate } from '../../lib/utils/date';
 import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
+import { CurrencyInput } from '../shared/CurrencyInput';
 import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface ReimbursementsViewProps {
@@ -16,7 +18,7 @@ interface ReimbursementsViewProps {
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   onCurrentMonth: () => void;
-  onMarkReceived: (transaction: Transaction, accountId: string) => void | Promise<void>;
+  onMarkReceived: (transaction: Transaction, accountId: string, receivedAmount?: number) => void | Promise<void>;
   onEditTransaction: (transaction: Transaction) => void;
 }
 
@@ -54,6 +56,7 @@ export function ReimbursementsView({
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
   const [receivingAccountId, setReceivingAccountId] = useState('');
+  const [receivingAmount, setReceivingAmount] = useState(DEFAULT_CURRENCY_INPUT);
   const peopleScrollerRef = useRef<HTMLDivElement | null>(null);
   const peopleDragRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0, didMove: false });
   const today = formatLocalDate(new Date());
@@ -340,6 +343,7 @@ export function ReimbursementsView({
                         onClick={() => {
                           setReceivingTransaction(transaction);
                           setReceivingAccountId(transaction.accountId ?? accounts[0]?.id ?? '');
+                          setReceivingAmount(formatCurrencyInput(getTransactionReimbursementAmount(transaction)));
                         }}
                         className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-200"
                         title="Marcar recebido"
@@ -363,8 +367,12 @@ export function ReimbursementsView({
           <div className="premium-card w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]">
             <h2 className="font-display text-lg font-bold text-white">Registrar reembolso</h2>
             <p className="mt-1 text-xs text-slate-500">
-              {receivingTransaction.description} · {formatCurrency(receivingTransaction.amount)}
+              {receivingTransaction.description} · pendente {formatCurrency(getTransactionReimbursementAmount(receivingTransaction))}
             </p>
+            <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
+              Valor recebido
+              <CurrencyInput value={receivingAmount} onChange={setReceivingAmount} />
+            </label>
             <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
               Conta onde o dinheiro entrou
               <select
@@ -376,6 +384,22 @@ export function ReimbursementsView({
                 {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
               </select>
             </label>
+            {(() => {
+              const pendingAmount = getTransactionReimbursementAmount(receivingTransaction);
+              const parsedReceivedAmount = parseCurrencyInput(receivingAmount);
+              const remainingAmount = Math.max(0, pendingAmount - Math.min(pendingAmount, parsedReceivedAmount));
+              return (
+                <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.035] p-3 text-xs leading-relaxed text-slate-300">
+                  {parsedReceivedAmount <= 0 ? (
+                    <span>Informe um valor recebido maior que zero.</span>
+                  ) : remainingAmount > 0 ? (
+                    <span>Recebimento parcial. Ainda ficará pendente <strong className="font-mono text-amber-100">{formatCurrency(remainingAmount)}</strong>.</span>
+                  ) : (
+                    <span>Recebimento total. Este reembolso será marcado como recebido.</span>
+                  )}
+                </div>
+              );
+            })()}
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -386,9 +410,9 @@ export function ReimbursementsView({
               </button>
               <button
                 type="button"
-                disabled={!receivingAccountId}
+                disabled={!receivingAccountId || parseCurrencyInput(receivingAmount) <= 0}
                 onClick={async () => {
-                  await onMarkReceived(receivingTransaction, receivingAccountId);
+                  await onMarkReceived(receivingTransaction, receivingAccountId, parseCurrencyInput(receivingAmount));
                   setReceivingTransaction(null);
                 }}
                 className="h-11 rounded-xl bg-white text-sm font-bold text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
