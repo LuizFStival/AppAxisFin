@@ -6,12 +6,14 @@ import {
   formatCurrency,
   formatMonthLabel,
   getCardInvoiceTransactions,
+  getExpenseSignedAmount,
   getPaymentSource,
   getPendingInvoiceSummaries,
   getPersonalExpenseSignedAmount,
   getTransactionPersonalAmount,
   getTransactionCompetenceMonth,
   getTransactionReimbursementAmount,
+  isCardInvoicePaid,
   isInvoiceCredit,
   isInvoicePayment,
   isPendingAccountExpense,
@@ -19,7 +21,7 @@ import {
   shiftMonthKey,
   summarizeDashboard,
 } from '../../lib/utils/finance';
-import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
+import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate, parseLocalDate } from '../../lib/utils/date';
 import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
@@ -49,7 +51,8 @@ interface MonthCenterViewProps {
 type CenterTab = 'payments' | 'fixed' | 'closing';
 type CommitmentFilter = 'all' | 'fixed' | 'installment';
 type CommitmentOwner = 'mine' | 'others';
-type PriorityKind = 'invoice' | 'account' | 'reimbursement';
+type PriorityKind = 'invoice' | 'account';
+type PaymentStatusFilter = 'pending' | 'paid' | 'all';
 
 function daysBetween(date: string, today: string) {
   return Math.round((parseLocalDate(date).getTime() - parseLocalDate(today).getTime()) / 86400000);
@@ -93,8 +96,7 @@ function dueBadge(dueDate: string, today: string) {
 
 function priorityKindLabel(kind: PriorityKind) {
   if (kind === 'invoice') return 'Fatura';
-  if (kind === 'account') return 'Conta';
-  return 'Reembolso';
+  return 'Conta';
 }
 
 export function MonthCenterView({
@@ -117,6 +119,7 @@ export function MonthCenterView({
   onMarkReimbursementReceived,
 }: MonthCenterViewProps) {
   const [tab, setTab] = useState<CenterTab>('payments');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatusFilter>('pending');
   const [commitmentFilter, setCommitmentFilter] = useState<CommitmentFilter>('all');
   const [commitmentOwner, setCommitmentOwner] = useState<CommitmentOwner>('mine');
   const [commitmentPersonId, setCommitmentPersonId] = useState('all');
@@ -138,11 +141,68 @@ export function MonthCenterView({
       .sort((left, right) => left.invoice.dueDate.localeCompare(right.invoice.dueDate))
   ), [activeMonth, cards, transactions]);
 
+  const allInvoiceSummaries = useMemo(() => (
+    cards
+      .map((card) => {
+        const invoiceTransactions = getCardInvoiceTransactions(card, transactions, activeMonth)
+          .filter((transaction) => !isInvoicePayment(transaction));
+        const total = roundMoney(invoiceTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0));
+        if (invoiceTransactions.length === 0 || total <= 0) return null;
+
+        return {
+          card,
+          invoice: getCardInvoiceInfoForClosingMonth(card, activeMonth),
+          itemCount: invoiceTransactions.length,
+          paid: isCardInvoicePaid(invoiceTransactions),
+          total,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((left, right) => left.invoice.dueDate.localeCompare(right.invoice.dueDate))
+  ), [activeMonth, cards, transactions]);
+
   const pendingAccountExpenses = useMemo(() => (
     transactions
       .filter((transaction) => isPendingAccountExpense(transaction, activeMonth))
       .sort((left, right) => left.date.localeCompare(right.date))
   ), [activeMonth, transactions]);
+
+  const allAccountExpenses = useMemo(() => (
+    transactions
+      .filter((transaction) => transaction.flow === 'expense')
+      .filter((transaction) => !transaction.cardId)
+      .filter((transaction) => !isInvoicePayment(transaction) && !isInvoiceCredit(transaction))
+      .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === activeMonth)
+      .sort((left, right) => left.date.localeCompare(right.date))
+  ), [activeMonth, cards, transactions]);
+
+  const paidInvoiceSummaries = useMemo(() => (
+    allInvoiceSummaries.filter((item) => item.paid)
+  ), [allInvoiceSummaries]);
+
+  const paidAccountExpenses = useMemo(() => (
+    allAccountExpenses.filter((transaction) => transaction.status === 'paid')
+  ), [allAccountExpenses]);
+
+  const visibleInvoiceSummaries = paymentStatusFilter === 'pending'
+    ? pendingInvoices.map((item) => ({ ...item, paid: false }))
+    : paymentStatusFilter === 'paid'
+      ? paidInvoiceSummaries
+      : allInvoiceSummaries;
+
+  const visibleAccountExpenses = paymentStatusFilter === 'pending'
+    ? pendingAccountExpenses
+    : paymentStatusFilter === 'paid'
+      ? paidAccountExpenses
+      : allAccountExpenses;
+
+  const visiblePaymentCount = visibleInvoiceSummaries.length + visibleAccountExpenses.length;
+  const pendingPaymentCount = pendingInvoices.length + pendingAccountExpenses.length;
+  const paidPaymentCount = paidInvoiceSummaries.length + paidAccountExpenses.length;
+  const visiblePaymentTotal = roundMoney(
+    visibleInvoiceSummaries.reduce((sum, item) => sum + item.total, 0)
+    + visibleAccountExpenses.reduce((sum, item) => sum + item.amount, 0),
+  );
 
   const pendingReimbursements = useMemo(() => (
     transactions
@@ -155,7 +215,7 @@ export function MonthCenterView({
       })
   ), [activeMonth, cards, transactions]);
 
-  const priorityItems = useMemo(() => {
+  const paymentPriorityItems = useMemo(() => {
     const invoiceItems = pendingInvoices.map((item) => ({
       id: `invoice:${item.card.id}:${item.invoice.period}`,
       title: item.card.name,
@@ -174,19 +234,10 @@ export function MonthCenterView({
       kind: 'account' as const,
       action: () => openAccountExpensePayment(transaction),
     }));
-    const reimbursementItems = pendingReimbursements.map((transaction) => ({
-      id: `reimbursement:${transaction.id}`,
-      title: getPersonName(people, transaction.reimbursementPersonId),
-      detail: transaction.description,
-      amount: getTransactionReimbursementAmount(transaction),
-      dueDate: getReimbursementDueDate(transaction, cards) ?? transaction.date,
-      kind: 'reimbursement' as const,
-      action: () => onOpenReimbursements(transaction.reimbursementPersonId),
-    }));
 
-    return [...invoiceItems, ...accountItems, ...reimbursementItems]
+    return [...invoiceItems, ...accountItems]
       .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || right.amount - left.amount);
-  }, [cards, onOpenCards, onOpenReimbursements, openAccountExpensePayment, pendingAccountExpenses, pendingInvoices, pendingReimbursements, people]);
+  }, [cards, onOpenCards, openAccountExpensePayment, pendingAccountExpenses, pendingInvoices]);
 
   const fixedExpenses = useMemo(() => (
     transactions
@@ -291,16 +342,16 @@ export function MonthCenterView({
   const availableBalance = roundMoney(accounts.reduce((sum, account) => sum + account.balance, 0));
   const totalToPay = roundMoney(invoiceTotal + accountExpenseTotal);
   const balanceAfterPayments = roundMoney(availableBalance - totalToPay);
-  const overduePriorityItems = priorityItems.filter((item) => daysBetween(item.dueDate, today) < 0);
-  const todayPriorityItems = priorityItems.filter((item) => daysBetween(item.dueDate, today) === 0);
-  const nextWeekPriorityItems = priorityItems.filter((item) => {
+  const overduePriorityItems = paymentPriorityItems.filter((item) => daysBetween(item.dueDate, today) < 0);
+  const todayPriorityItems = paymentPriorityItems.filter((item) => daysBetween(item.dueDate, today) === 0);
+  const nextWeekPriorityItems = paymentPriorityItems.filter((item) => {
     const days = daysBetween(item.dueDate, today);
     return days > 0 && days <= 7;
   });
   const overduePriorityTotal = roundMoney(overduePriorityItems.reduce((sum, item) => sum + item.amount, 0));
   const todayPriorityTotal = roundMoney(todayPriorityItems.reduce((sum, item) => sum + item.amount, 0));
   const nextWeekPriorityTotal = roundMoney(nextWeekPriorityItems.reduce((sum, item) => sum + item.amount, 0));
-  const nextPriorityItem = priorityItems.find((item) => daysBetween(item.dueDate, today) >= 0) ?? priorityItems[0];
+  const nextPriorityItem = paymentPriorityItems.find((item) => daysBetween(item.dueDate, today) >= 0) ?? paymentPriorityItems[0];
   const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === activeMonth);
   const previousMonth = shiftMonthKey(activeMonth, -1);
   const previousSummary = summarizeDashboard(accounts, transactions, previousMonth, cards, {
@@ -472,19 +523,48 @@ export function MonthCenterView({
       {tab === 'payments' ? (
         <section className="mt-4 grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <WalletCards size={18} className="text-violet-200" />
-              <h2 className="font-display text-lg font-bold">Ordem de pagamento</h2>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <WalletCards size={18} className="text-violet-200" />
+                <div>
+                  <h2 className="font-display text-lg font-bold">Ordem de pagamento</h2>
+                  <p className="text-xs font-semibold text-slate-500">
+                    {visiblePaymentCount} item{visiblePaymentCount === 1 ? '' : 's'} · {formatCurrency(visiblePaymentTotal)}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
+                {[
+                  { value: 'pending' as const, label: 'Pendentes', count: pendingPaymentCount },
+                  { value: 'paid' as const, label: 'Pagos', count: paidPaymentCount },
+                  { value: 'all' as const, label: 'Todos', count: allInvoiceSummaries.length + allAccountExpenses.length },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPaymentStatusFilter(option.value)}
+                    className={`h-9 rounded-xl px-3 text-xs font-black transition ${paymentStatusFilter === option.value ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                  >
+                    {option.label} <span className="font-mono text-[10px] opacity-70">{option.count}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            {pendingInvoices.length === 0 && pendingAccountExpenses.length === 0 ? (
+            {visiblePaymentCount === 0 ? (
               <div className="premium-card-soft rounded-2xl border-emerald-400/20 p-6 text-center">
                 <CheckCircle2 size={28} className="mx-auto text-emerald-200" />
-                <p className="mt-3 font-bold text-white">Nada pendente para pagar neste mês.</p>
-                <p className="mt-1 text-sm text-slate-500">Hora boa de conferir reembolsos e fechar o mês.</p>
+                <p className="mt-3 font-bold text-white">
+                  {paymentStatusFilter === 'pending' ? 'Nada pendente para pagar neste mês.' : 'Nada encontrado neste filtro.'}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {paymentStatusFilter === 'pending' ? 'Hora boa de conferir reembolsos e fechar o mês.' : 'Troque o filtro para ver pendentes, pagos ou todos.'}
+                </p>
               </div>
             ) : null}
-            {pendingInvoices.map((item) => {
-              const badge = dueBadge(item.invoice.dueDate, today);
+            {visibleInvoiceSummaries.map((item) => {
+              const badge = item.paid
+                ? { label: 'paga', className: 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' }
+                : dueBadge(item.invoice.dueDate, today);
               const invoiceTransactions = getCardInvoiceTransactions(item.card, transactions, item.invoice.period);
               return (
                 <article key={`${item.card.id}:${item.invoice.period}`} className="premium-card rounded-2xl p-4">
@@ -494,7 +574,7 @@ export function MonthCenterView({
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/15 text-violet-100"><CreditCard size={17} /></span>
                         <div className="min-w-0">
                           <h3 className="truncate font-display text-base font-bold text-white">{item.card.name}</h3>
-                          <p className="text-xs text-slate-500">{item.invoice.label}</p>
+                          <p className="text-xs text-slate-500">{item.invoice.label} · {item.paid ? 'quitada' : 'pendente'}</p>
                         </div>
                         <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}>{badge.label}</span>
                       </div>
@@ -520,20 +600,23 @@ export function MonthCenterView({
                 </article>
               );
             })}
-            {pendingAccountExpenses.map((transaction) => {
-              const badge = dueBadge(transaction.date, today);
+            {visibleAccountExpenses.map((transaction) => {
+              const paid = transaction.status === 'paid';
+              const badge = paid
+                ? { label: 'paga', className: 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' }
+                : dueBadge(transaction.date, today);
               return (
-                <button key={transaction.id} type="button" onClick={() => openAccountExpensePayment(transaction)} className="premium-card w-full rounded-2xl p-4 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/10">
+                <button key={transaction.id} type="button" disabled={paid} onClick={() => openAccountExpensePayment(transaction)} className="premium-card w-full rounded-2xl p-4 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/10 disabled:cursor-default disabled:opacity-80 disabled:hover:bg-transparent">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-100"><ReceiptText size={17} /></span>
                         <div className="min-w-0">
                           <h3 className="truncate font-display text-base font-bold text-white">{transaction.description}</h3>
-                          <p className="text-xs text-slate-500">Despesa de conta · clique para pagar</p>
+                          <p className="text-xs text-slate-500">Despesa de conta · {paid ? 'quitada' : 'clique para pagar'}</p>
                         </div>
                         <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}>{badge.label}</span>
-                        <span className="rounded-full border border-emerald-300/20 bg-emerald-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-100">Pagar</span>
+                        {!paid ? <span className="rounded-full border border-emerald-300/20 bg-emerald-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-100">Pagar</span> : null}
                       </div>
                     </div>
                     <p className="shrink-0 font-display text-lg font-black text-white">{formatCurrency(transaction.amount)}</p>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, CalendarDays, Check, MoreVertical, Pencil, Trash2, WalletCards, X } from 'lucide-react';
 import { Account, Card, Transaction } from '../../types';
 import { formatCurrency, isCardInvoicePaid } from '../../lib/utils/finance';
@@ -45,6 +46,7 @@ export function CardInvoiceActions({
   const paid = isCardInvoicePaid(invoiceTransactions);
   const canPay = invoiceTotal > 0 && invoiceTransactions.length > 0 && !paid;
   const hasCardOptions = Boolean(onUpdateClosingDay || onEditCard || onDeleteCard);
+  const canUsePortal = typeof document !== 'undefined';
 
   useEffect(() => {
     setPaymentAccountId(accounts[0]?.id ?? '');
@@ -104,7 +106,7 @@ export function CardInvoiceActions({
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
         {!paid ? (
           <button
             type="button"
@@ -138,7 +140,7 @@ export function CardInvoiceActions({
         ) : null}
       </div>
 
-      {isPaymentOpen ? (
+      {isPaymentOpen && canUsePortal ? createPortal(
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={(event) => event.stopPropagation()}>
           <form onSubmit={handlePaySubmit} className="w-full max-w-md rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
             <div className="flex items-center justify-between">
@@ -186,10 +188,11 @@ export function CardInvoiceActions({
               {isSaving ? 'Pagando...' : 'Confirmar pagamento'}
             </button>
           </form>
-        </div>
+        </div>,
+        document.body,
       ) : null}
 
-      {isOptionsOpen ? (
+      {isOptionsOpen && canUsePortal ? createPortal(
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={(event) => event.stopPropagation()}>
           <form onSubmit={handleClosingSubmit} className="w-full max-w-md rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
             <div className="flex items-center justify-between">
@@ -250,7 +253,8 @@ export function CardInvoiceActions({
               ) : null}
             </div>
           </form>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </>
   );
