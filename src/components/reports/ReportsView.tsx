@@ -44,6 +44,7 @@ import {
   getPersonalExpenseSignedAmount,
   getTransactionCompetenceMonth,
   getTransactionReimbursementAmount,
+  getTransactionReimbursementReceivedAmount,
   isInvoicePayment,
   isThirdPartyExpense,
   shiftMonthKey,
@@ -138,9 +139,10 @@ export function ReportsView({
         if (transaction.flow === 'expense' && !isInvoicePayment(transaction)) {
           if (isThirdPartyExpense(transaction)) {
             const amount = getTransactionReimbursementAmount(transaction);
+            const receivedAmount = getTransactionReimbursementReceivedAmount(transaction);
             totals.thirdParty += amount;
-            if (transaction.reimbursementStatus === 'received') totals.reimbursementsReceived += amount;
-            else totals.reimbursementsPending += amount;
+            totals.reimbursementsReceived += receivedAmount;
+            if (transaction.reimbursementStatus !== 'received') totals.reimbursementsPending += amount;
           }
           const personalAmount = getPersonalExpenseSignedAmount(transaction);
           totals.expenses += personalAmount;

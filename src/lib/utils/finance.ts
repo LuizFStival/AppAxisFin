@@ -23,10 +23,30 @@ export function getTransactionPersonalAmount(transaction: Transaction): number {
   return 0;
 }
 
-export function getTransactionReimbursementAmount(transaction: Transaction): number {
+export function getTransactionReimbursementBaseAmount(transaction: Transaction): number {
   if (transaction.flow !== 'expense' || !transaction.isReimbursable) return 0;
+  const meta = readTransactionMeta(transaction.notes);
+  if (typeof meta.reimbursementOriginalAmount === 'number') return roundMoney(meta.reimbursementOriginalAmount);
+  if (typeof transaction.personalAmount === 'number') return roundMoney(Math.max(0, transaction.amount - transaction.personalAmount));
   if (typeof transaction.reimbursementAmount === 'number') return roundMoney(transaction.reimbursementAmount);
   return transaction.amount;
+}
+
+export function getTransactionReimbursementReceivedAmount(transaction: Transaction): number {
+  if (transaction.flow !== 'expense' || !transaction.isReimbursable) return 0;
+  const meta = readTransactionMeta(transaction.notes);
+  const paidFromHistory = meta.reimbursementPayments?.reduce((sum, payment) => sum + payment.amount, 0) ?? 0;
+  if (paidFromHistory > 0) return roundMoney(paidFromHistory);
+  return transaction.reimbursementStatus === 'received' ? getTransactionReimbursementBaseAmount(transaction) : 0;
+}
+
+export function getTransactionReimbursementAmount(transaction: Transaction): number {
+  if (transaction.flow !== 'expense' || !transaction.isReimbursable) return 0;
+  if (transaction.reimbursementStatus === 'received') return getTransactionReimbursementBaseAmount(transaction);
+  const receivedAmount = getTransactionReimbursementReceivedAmount(transaction);
+  if (receivedAmount > 0) return roundMoney(Math.max(0, getTransactionReimbursementBaseAmount(transaction) - receivedAmount));
+  if (typeof transaction.reimbursementAmount === 'number') return roundMoney(transaction.reimbursementAmount);
+  return getTransactionReimbursementBaseAmount(transaction);
 }
 
 export function getMonthKey(date: string): string {
@@ -105,14 +125,23 @@ export function getAccountMovementEntries(transaction: Transaction, accountId: s
     }
   }
 
-  if (
-    transaction.isReimbursable
-    && transaction.reimbursementStatus === 'received'
-    && transaction.reimbursementReceivedAccountId === accountId
-  ) {
+  if (transaction.isReimbursable) {
+    const payments = readTransactionMeta(transaction.notes).reimbursementPayments ?? [];
+    if (payments.length > 0) {
+      payments
+        .filter((payment) => payment.accountId === accountId && payment.amount > 0)
+        .forEach((payment) => {
+          entries.push({ month: getMonthKey(payment.date), amount: roundMoney(payment.amount) });
+        });
+      return entries;
+    }
+
+    const receivedAmount = getTransactionReimbursementReceivedAmount(transaction);
+    if (transaction.reimbursementReceivedAccountId !== accountId) return entries;
+    if (receivedAmount <= 0) return entries;
     entries.push({
       month: cards.length > 0 ? getReimbursementMonthKey(transaction, cards) : getFinancialMonthKey(transaction),
-      amount: getTransactionReimbursementAmount(transaction),
+      amount: receivedAmount,
     });
   }
 
@@ -290,8 +319,7 @@ export function summarizeDashboard(
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
     .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const reimbursementsReceived = roundMoney(reimbursementTransactions
-      .filter((transaction) => transaction.reimbursementStatus === 'received')
-      .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
+      .reduce((sum, transaction) => sum + getTransactionReimbursementReceivedAmount(transaction), 0));
   const accountReimbursementsReceived = reimbursementsReceived;
   const pendingExpenses = cards.length > 0
     ? getPendingPaymentTotal(cards, transactions, month)

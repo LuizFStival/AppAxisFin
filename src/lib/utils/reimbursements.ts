@@ -1,6 +1,7 @@
 import { Card, Transaction } from '../../types';
 import { getCardInvoiceInfo } from './cardInvoices';
 import { getMonthKey } from './finance';
+import { readTransactionMeta } from './transactionMeta';
 
 export function getReimbursementDueDate(transaction: Transaction, cards: Card[]): string | undefined {
   if (!transaction.cardId) return undefined;
@@ -9,6 +10,8 @@ export function getReimbursementDueDate(transaction: Transaction, cards: Card[])
 }
 
 export function getReimbursementMonthKey(transaction: Transaction, cards: Card[]): string {
+  const carryMonth = readTransactionMeta(transaction.notes).reimbursementCarryMonth;
+  if (carryMonth) return carryMonth;
   if (!transaction.cardId) return getMonthKey(transaction.date);
   const card = cards.find((item) => item.id === transaction.cardId);
   return card ? getCardInvoiceInfo(card, transaction.date).period : getMonthKey(transaction.date);

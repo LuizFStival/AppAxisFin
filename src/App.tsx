@@ -31,7 +31,7 @@ import { useNotifications } from './features/notifications/useNotifications';
 import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
 import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, Transaction } from './types';
-import { getCurrentMonthKey, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
+import { getCurrentMonthKey, getTransactionReimbursementBaseAmount, getTransactionReimbursementReceivedAmount, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
 import { getCardInvoiceClosingMonth } from './lib/utils/cardInvoices';
 import { addMonths } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
@@ -487,22 +487,36 @@ export default function App() {
   }
 
   async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string, receivedAmount?: number) {
-    const currentReimbursementAmount = Math.max(0, transaction.reimbursementAmount ?? transaction.amount);
-    const normalizedReceivedAmount = Math.max(0, Math.min(currentReimbursementAmount, receivedAmount ?? currentReimbursementAmount));
-    const remainingReimbursementAmount = Math.max(0, currentReimbursementAmount - normalizedReceivedAmount);
+    const currentMeta = readTransactionMeta(transaction.notes);
+    const originalReimbursementAmount = getTransactionReimbursementBaseAmount(transaction);
+    const alreadyReceivedAmount = getTransactionReimbursementReceivedAmount(transaction);
+    const currentPendingAmount = Math.max(0, originalReimbursementAmount - alreadyReceivedAmount);
+    const normalizedReceivedAmount = Math.max(0, Math.min(currentPendingAmount, receivedAmount ?? currentPendingAmount));
+    const nextReceivedTotal = Math.min(originalReimbursementAmount, alreadyReceivedAmount + normalizedReceivedAmount);
+    const remainingReimbursementAmount = Math.max(0, originalReimbursementAmount - nextReceivedTotal);
     const nextReimbursementStatus = remainingReimbursementAmount > 0 ? 'pending' as const : 'received' as const;
-    const nextReimbursementAmount = nextReimbursementStatus === 'received' ? currentReimbursementAmount : remainingReimbursementAmount;
     const nextReceivedAt = new Date().toISOString().slice(0, 10);
+    const nextMeta = {
+      ...currentMeta,
+      reimbursementOriginalAmount: originalReimbursementAmount,
+      reimbursementPayments: [
+        ...(currentMeta.reimbursementPayments ?? []),
+        { amount: normalizedReceivedAmount, accountId, date: nextReceivedAt },
+      ],
+      reimbursementCarryMonth: remainingReimbursementAmount > 0 ? currentMeta.reimbursementCarryMonth : undefined,
+    };
+    const nextNotes = writeTransactionNotes(getVisibleNotes(transaction.notes), nextMeta);
 
     if (transaction.isProjected) {
       const { id: _id, isProjected: _isProjected, ...input } = transaction;
       const saved = await transactionRepository.create({
         ...input,
+        notes: nextNotes,
         isReimbursable: true,
-        reimbursementAmount: nextReimbursementAmount,
+        reimbursementAmount: nextReimbursementStatus === 'received' ? originalReimbursementAmount : remainingReimbursementAmount,
         reimbursementStatus: nextReimbursementStatus,
-        reimbursementReceivedAt: nextReimbursementStatus === 'received' ? nextReceivedAt : undefined,
-        reimbursementReceivedAccountId: nextReimbursementStatus === 'received' ? accountId : undefined,
+        reimbursementReceivedAt: nextReceivedAt,
+        reimbursementReceivedAccountId: accountId,
       });
       setSnapshot((current) => ({
         ...current,
@@ -514,17 +528,65 @@ export default function App() {
 
     const saved = await transactionRepository.update(transaction.id, {
       ...transaction,
+      notes: nextNotes,
       isReimbursable: true,
-      reimbursementAmount: nextReimbursementAmount,
+      reimbursementAmount: nextReimbursementStatus === 'received' ? originalReimbursementAmount : remainingReimbursementAmount,
       reimbursementStatus: nextReimbursementStatus,
-      reimbursementReceivedAt: nextReimbursementStatus === 'received' ? nextReceivedAt : undefined,
-      reimbursementReceivedAccountId: nextReimbursementStatus === 'received' ? accountId : undefined,
+      reimbursementReceivedAt: nextReceivedAt,
+      reimbursementReceivedAccountId: accountId,
     });
     setSnapshot((current) => ({
       ...current,
       transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
     }));
     await refreshAccounts();
+  }
+
+  async function handleCarryReimbursement(transaction: Transaction, targetMonth = shiftMonthKey(activeMonth, 1)) {
+    const meta = readTransactionMeta(transaction.notes);
+    const nextNotes = writeTransactionNotes(getVisibleNotes(transaction.notes), {
+      ...meta,
+      reimbursementCarryMonth: targetMonth,
+    });
+
+    if (transaction.isProjected) {
+      const { id: _id, isProjected: _isProjected, ...input } = transaction;
+      const saved = await transactionRepository.create({ ...input, notes: nextNotes });
+      setSnapshot((current) => ({
+        ...current,
+        transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
+      }));
+      await refreshAccounts();
+      return;
+    }
+
+    const saved = await transactionRepository.update(transaction.id, { ...transaction, notes: nextNotes });
+    setSnapshot((current) => ({
+      ...current,
+      transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
+    }));
+  }
+
+  async function handleSkipFixedOccurrence(transaction: Transaction): Promise<boolean> {
+    const meta = readTransactionMeta(transaction.notes);
+    const recurringTransactionId = transaction.recurringTransactionId ?? meta.recurringTransactionId;
+    const recurringOccurrenceDate = transaction.recurringOccurrenceDate ?? meta.recurringOccurrenceDate;
+    const recurringRule = recurringTransactionId
+      ? snapshot.recurringTransactions.find((rule) => rule.id === recurringTransactionId)
+      : undefined;
+
+    if (!recurringRule || !recurringOccurrenceDate) {
+      throw new Error('Não foi possível localizar a regra desta despesa fixa.');
+    }
+
+    const confirmed = window.confirm(`Marcar "${transaction.description}" como não usada neste mês? Apenas esta ocorrência será removida.`);
+    if (!confirmed) return false;
+
+    await recurringRepository.excludeOccurrence(recurringRule, recurringOccurrenceDate);
+    if (!transaction.isProjected) await transactionRepository.remove(transaction.id);
+    await loadSnapshot();
+    await refreshAccounts();
+    return true;
   }
 
   async function handlePayCardInvoice(input: {
@@ -923,9 +985,17 @@ export default function App() {
             () => handleMarkAccountExpensePaid(transaction, input),
             'Não foi possível registrar o pagamento. Tente novamente.',
           )}
-          onMarkReimbursementReceived={(transaction, accountId) => runAppAction(
-            () => handleMarkReimbursementReceived(transaction, accountId),
-            'NÃ£o foi possÃ­vel atualizar o reembolso. Tente novamente.',
+          onMarkReimbursementReceived={(transaction, accountId, receivedAmount) => runAppAction(
+            () => handleMarkReimbursementReceived(transaction, accountId, receivedAmount),
+            'Não foi possível atualizar o reembolso. Tente novamente.',
+          )}
+          onCarryReimbursement={(transaction) => runAppAction(
+            () => handleCarryReimbursement(transaction),
+            'Não foi possível levar o reembolso para o próximo mês. Tente novamente.',
+          )}
+          onSkipFixedOccurrence={(transaction) => runAppAction(
+            () => handleSkipFixedOccurrence(transaction),
+            'Não foi possível marcar a despesa como não usada neste mês. Tente novamente.',
           )}
         />
       ) : null}
@@ -1031,9 +1101,13 @@ export default function App() {
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
           onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
-          onMarkReceived={(transaction, accountId) => runAppAction(
-            () => handleMarkReimbursementReceived(transaction, accountId),
+          onMarkReceived={(transaction, accountId, receivedAmount) => runAppAction(
+            () => handleMarkReimbursementReceived(transaction, accountId, receivedAmount),
             'Não foi possível atualizar o reembolso. Tente novamente.',
+          )}
+          onCarryReimbursement={(transaction) => runAppAction(
+            () => handleCarryReimbursement(transaction),
+            'Não foi possível levar o reembolso para o próximo mês. Tente novamente.',
           )}
           onEditTransaction={(transaction) => {
             setEditingTransaction(transaction);
@@ -1135,6 +1209,16 @@ export default function App() {
             onCreateCategory={handleCreateCategoryFromEntry}
             onCreateReimbursementPerson={handleCreateReimbursementPerson}
             onCreateRecurring={handleCreateRecurring}
+            onSkipFixedOccurrence={async (transaction) => {
+              try {
+                const didSkip = await handleSkipFixedOccurrence(transaction);
+                setAppError('');
+                return didSkip;
+              } catch (error) {
+                setAppError(getUserFriendlyError(error, 'Não foi possível marcar a despesa como não usada neste mês. Tente novamente.'));
+                return false;
+              }
+            }}
             onClose={() => {
               setIsAddOpen(false);
               setEditingTransaction(null);

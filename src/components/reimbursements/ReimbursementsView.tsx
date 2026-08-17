@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
 import { Account, Card, ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency, getTransactionReimbursementAmount } from '../../lib/utils/finance';
+import { formatCurrency, getTransactionReimbursementAmount, getTransactionReimbursementReceivedAmount } from '../../lib/utils/finance';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { formatLocalDate } from '../../lib/utils/date';
 import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
@@ -19,6 +19,7 @@ interface ReimbursementsViewProps {
   onNextMonth: () => void;
   onCurrentMonth: () => void;
   onMarkReceived: (transaction: Transaction, accountId: string, receivedAmount?: number) => void | Promise<void>;
+  onCarryReimbursement: (transaction: Transaction) => void | Promise<void>;
   onEditTransaction: (transaction: Transaction) => void;
 }
 
@@ -49,6 +50,7 @@ export function ReimbursementsView({
   onNextMonth,
   onCurrentMonth,
   onMarkReceived,
+  onCarryReimbursement,
   onEditTransaction,
 }: ReimbursementsViewProps) {
   const [search, setSearch] = useState('');
@@ -147,6 +149,7 @@ export function ReimbursementsView({
         current.received += getTransactionReimbursementAmount(transaction);
       } else {
         current.pending += getTransactionReimbursementAmount(transaction);
+        current.received += getTransactionReimbursementReceivedAmount(transaction);
       }
       current.count += 1;
       totals.set(key, current);
@@ -170,8 +173,7 @@ export function ReimbursementsView({
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
     .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
   const receivedTotal = reimbursementTransactions
-    .filter((transaction) => transaction.reimbursementStatus === 'received')
-    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
+    .reduce((sum, transaction) => sum + getTransactionReimbursementReceivedAmount(transaction), 0);
   const overdueTotal = overduePending.reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
   const emptyMessage = mode === 'month'
     ? 'Nenhum reembolso neste mês'
@@ -304,6 +306,7 @@ export function ReimbursementsView({
           </div>
         ) : reimbursementTransactions.map((transaction) => {
           const received = transaction.reimbursementStatus === 'received';
+          const partiallyReceived = !received && getTransactionReimbursementReceivedAmount(transaction) > 0;
           const isOverdue = isReimbursementOverdue(transaction, cards, today);
           const dueDate = getReimbursementDueDate(transaction, cards);
           return (
@@ -324,8 +327,13 @@ export function ReimbursementsView({
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${received ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' : 'border-amber-400/20 bg-amber-500/15 text-amber-100'}`}>
                       {received ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
-                      {received ? 'Recebido' : 'A receber'}
+                      {received ? 'Recebido' : partiallyReceived ? 'Parcial' : 'A receber'}
                     </span>
+                    {partiallyReceived ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
+                        Recebido {formatCurrency(getTransactionReimbursementReceivedAmount(transaction))}
+                      </span>
+                    ) : null}
                     {isOverdue ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-rose-400/20 bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-100">
                         <AlertTriangle size={12} />
@@ -349,6 +357,16 @@ export function ReimbursementsView({
                         title="Marcar recebido"
                       >
                         <CheckCircle2 size={14} />
+                      </button>
+                    ) : null}
+                    {!received ? (
+                      <button
+                        type="button"
+                        onClick={() => void onCarryReimbursement(transaction)}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-200"
+                        title="Levar pendência para o próximo mês"
+                      >
+                        <ArrowRight size={14} />
                       </button>
                     ) : null}
                     <button type="button" onClick={() => onEditTransaction(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-slate-300" title="Editar lançamento">

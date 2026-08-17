@@ -27,6 +27,8 @@ import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverd
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
+import { CurrencyInput } from '../shared/CurrencyInput';
+import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 
 interface MonthCenterViewProps {
   accounts: Account[];
@@ -46,6 +48,8 @@ interface MonthCenterViewProps {
   onPayInvoice: (input: { card: Card; accountId: string; paymentDate: string; amount: number; transactions: Transaction[] }) => Promise<void>;
   onMarkAccountExpensePaid: (transaction: Transaction, input: { accountId: string; paymentDate: string }) => void | Promise<void>;
   onMarkReimbursementReceived: (transaction: Transaction, accountId: string, receivedAmount?: number) => void | Promise<void>;
+  onCarryReimbursement: (transaction: Transaction) => void | Promise<void>;
+  onSkipFixedOccurrence: (transaction: Transaction) => void | Promise<void>;
 }
 
 type CenterTab = 'payments' | 'fixed' | 'closing';
@@ -117,6 +121,8 @@ export function MonthCenterView({
   onPayInvoice,
   onMarkAccountExpensePaid,
   onMarkReimbursementReceived,
+  onCarryReimbursement,
+  onSkipFixedOccurrence,
 }: MonthCenterViewProps) {
   const [tab, setTab] = useState<CenterTab>('payments');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatusFilter>('pending');
@@ -125,6 +131,7 @@ export function MonthCenterView({
   const [commitmentPersonId, setCommitmentPersonId] = useState('all');
   const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
   const [receivingAccountId, setReceivingAccountId] = useState('');
+  const [receivingAmount, setReceivingAmount] = useState(DEFAULT_CURRENCY_INPUT);
   const [payingAccountExpense, setPayingAccountExpense] = useState<Transaction | null>(null);
   const [payingAccountId, setPayingAccountId] = useState('');
   const [accountPaymentDate, setAccountPaymentDate] = useState(formatLocalDate(new Date()));
@@ -271,6 +278,7 @@ export function MonthCenterView({
       count: number;
       overdueCount: number;
       oldestDueDate?: string;
+      oldestTransaction?: Transaction;
       hasPreviousMonth: boolean;
     }>();
 
@@ -284,13 +292,17 @@ export function MonthCenterView({
         count: 0,
         overdueCount: 0,
         oldestDueDate: undefined,
+        oldestTransaction: undefined,
         hasPreviousMonth: false,
       };
 
       current.total = roundMoney(current.total + getTransactionReimbursementAmount(transaction));
       current.count += 1;
       if (isReimbursementOverdue(transaction, cards, today)) current.overdueCount += 1;
-      if (!current.oldestDueDate || dueDate < current.oldestDueDate) current.oldestDueDate = dueDate;
+      if (!current.oldestDueDate || dueDate < current.oldestDueDate) {
+        current.oldestDueDate = dueDate;
+        current.oldestTransaction = transaction;
+      }
       if (getReimbursementMonthKey(transaction, cards) < activeMonth) current.hasPreviousMonth = true;
       summaries.set(key, current);
     });
@@ -657,6 +669,27 @@ export function MonthCenterView({
                     <p className="shrink-0 font-mono text-sm font-black text-amber-100">{formatCurrency(person.total)}</p>
                   </div>
                   <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!person.oldestTransaction) return;
+                        setReceivingTransaction(person.oldestTransaction);
+                        setReceivingAccountId(person.oldestTransaction.accountId ?? accounts[0]?.id ?? '');
+                        setReceivingAmount(formatCurrencyInput(getTransactionReimbursementAmount(person.oldestTransaction)));
+                      }}
+                      className="h-9 flex-1 rounded-xl bg-emerald-500/15 text-xs font-bold text-emerald-100 hover:bg-emerald-500/25"
+                    >
+                      Registrar
+                    </button>
+                    {person.oldestTransaction ? (
+                      <button
+                        type="button"
+                        onClick={() => void onCarryReimbursement(person.oldestTransaction!)}
+                        className="h-9 rounded-xl bg-amber-500/10 px-3 text-xs font-bold text-amber-100 hover:bg-amber-500/20"
+                      >
+                        Próx. mês
+                      </button>
+                    ) : null}
                     <button type="button" onClick={() => onOpenReimbursements(person.personId)} className="h-9 flex-1 rounded-xl bg-white/5 text-xs font-bold text-slate-200 hover:bg-white/10">Ver pessoa</button>
                   </div>
                 </article>
@@ -731,9 +764,10 @@ export function MonthCenterView({
                   const badge = dueBadge(dueDate, today);
                   const meta = readTransactionMeta(transaction.notes);
                   const paid = transaction.cardId ? Boolean(meta.paidAt) : transaction.status === 'paid';
+                  const canSkipOccurrence = Boolean(transaction.recurringTransactionId || meta.recurringTransactionId);
 
                   return (
-                    <article key={transaction.id} className="grid gap-3 px-4 py-3 transition hover:bg-white/[0.035] md:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_150px_120px] md:items-center">
+                    <article key={transaction.id} className="grid gap-3 px-4 py-3 transition hover:bg-white/[0.035] md:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_150px_120px_120px] md:items-center">
                       <div className="flex min-w-0 items-center gap-3">
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-100">
                           {transaction.cardId ? <CreditCard size={17} /> : <ReceiptText size={17} />}
@@ -751,6 +785,15 @@ export function MonthCenterView({
                       </div>
                       <p className="text-xs font-semibold text-slate-400 md:text-right">{formatDatePtBr(dueDate)}</p>
                       <p className="font-mono text-sm font-black text-white md:text-right">{formatCurrency(commitmentOwner === 'mine' ? getPersonalExpenseSignedAmount(transaction) : getTransactionReimbursementAmount(transaction))}</p>
+                      {canSkipOccurrence ? (
+                        <button
+                          type="button"
+                          onClick={() => void onSkipFixedOccurrence(transaction)}
+                          className="h-9 rounded-xl bg-white/5 px-3 text-xs font-bold text-slate-200 transition hover:bg-amber-500/15 hover:text-amber-100 md:justify-self-end"
+                        >
+                          Não usei
+                        </button>
+                      ) : <span className="hidden md:block" />}
                     </article>
                   );
                 })}
@@ -849,7 +892,11 @@ export function MonthCenterView({
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="premium-card w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]">
             <h2 className="font-display text-lg font-bold text-white">Registrar reembolso</h2>
-            <p className="mt-1 text-xs text-slate-500">{receivingTransaction.description} · {formatCurrency(getTransactionReimbursementAmount(receivingTransaction))}</p>
+            <p className="mt-1 text-xs text-slate-500">{receivingTransaction.description} · pendente {formatCurrency(getTransactionReimbursementAmount(receivingTransaction))}</p>
+            <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
+              Valor recebido
+              <CurrencyInput value={receivingAmount} onChange={setReceivingAmount} />
+            </label>
             <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
               Conta onde o dinheiro entrou
               <select value={receivingAccountId} onChange={(event) => setReceivingAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300">
@@ -857,16 +904,27 @@ export function MonthCenterView({
                 {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
               </select>
             </label>
-            <p className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
-              Nesta primeira versão, o botão registra o valor total como recebido. O recebimento parcial entra na próxima etapa com campo próprio de valor recebido para não distorcer seu saldo.
-            </p>
+            {(() => {
+              const pendingAmount = getTransactionReimbursementAmount(receivingTransaction);
+              const parsedReceivedAmount = parseCurrencyInput(receivingAmount);
+              const remainingAmount = Math.max(0, pendingAmount - Math.min(pendingAmount, parsedReceivedAmount));
+              return (
+                <p className={`mt-3 rounded-2xl border p-3 text-xs leading-relaxed ${remainingAmount > 0 ? 'border-amber-400/20 bg-amber-500/10 text-amber-100' : 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'}`}>
+                  {parsedReceivedAmount <= 0
+                    ? 'Informe um valor recebido maior que zero.'
+                    : remainingAmount > 0
+                      ? `Recebimento parcial. Ainda ficará pendente ${formatCurrency(remainingAmount)}.`
+                      : 'Recebimento total. Este reembolso será marcado como recebido.'}
+                </p>
+              );
+            })()}
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setReceivingTransaction(null)} className="h-11 rounded-xl bg-white/5 text-sm font-bold text-slate-300">Cancelar</button>
               <button
                 type="button"
-                disabled={!receivingAccountId}
+                disabled={!receivingAccountId || parseCurrencyInput(receivingAmount) <= 0}
                 onClick={async () => {
-                  await onMarkReimbursementReceived(receivingTransaction, receivingAccountId);
+                  await onMarkReimbursementReceived(receivingTransaction, receivingAccountId, parseCurrencyInput(receivingAmount));
                   setReceivingTransaction(null);
                 }}
                 className="h-11 rounded-xl bg-white text-sm font-bold text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"

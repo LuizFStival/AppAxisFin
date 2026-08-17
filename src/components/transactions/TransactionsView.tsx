@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound, X } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, getPendingInvoiceSummaries, getPersonalExpenseSignedAmount, getTransactionCompetenceMonth, getTransactionPersonalAmount, getTransactionReimbursementAmount, isInvoiceCredit, isInvoicePayment, isPendingAccountExpense, isThirdPartyExpense, shiftMonthKey, summarizeMonthlyResult } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, getPendingInvoiceSummaries, getPersonalExpenseSignedAmount, getTransactionCompetenceMonth, getTransactionPersonalAmount, getTransactionReimbursementAmount, getTransactionReimbursementReceivedAmount, isInvoiceCredit, isInvoicePayment, isPendingAccountExpense, isThirdPartyExpense, shiftMonthKey, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { ExpenseViewFilter } from '../../lib/utils/expenseFilters';
@@ -225,7 +225,7 @@ export function TransactionsView({
     transactions
       .filter((transaction) =>
         isThirdPartyExpense(transaction)
-        && transaction.reimbursementStatus === 'received'
+        && getTransactionReimbursementReceivedAmount(transaction) > 0
         && getReimbursementMonthKey(transaction, cards) === selectedMonth
       )
       .forEach((transaction) => {
@@ -233,7 +233,7 @@ export function TransactionsView({
         const name = getReimbursementPersonName(reimbursementPeople, transaction.reimbursementPersonId);
         if (term && !name.toLowerCase().includes(term) && !transaction.description.toLowerCase().includes(term)) return;
         const current = groups.get(key) ?? { id: key, name, total: 0, count: 0 };
-        current.total += getTransactionReimbursementAmount(transaction);
+        current.total += getTransactionReimbursementReceivedAmount(transaction);
         current.count += 1;
         groups.set(key, current);
       });
@@ -291,8 +291,8 @@ export function TransactionsView({
     return sourceTransactions.reduce((summary, transaction) => {
       if (!isThirdPartyExpense(transaction)) return summary;
       const amount = getTransactionReimbursementAmount(transaction);
-      if (transaction.reimbursementStatus === 'received') summary.received += amount;
-      else summary.pending += amount;
+      summary.received += getTransactionReimbursementReceivedAmount(transaction);
+      if (transaction.reimbursementStatus !== 'received') summary.pending += amount;
       return summary;
     }, { pending: 0, received: 0 });
   }, [sourceTransactions]);

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRightLeft, Calculator, CalendarClock, Check, ChevronDown, CirclePlus, CreditCard, Delete, Layers, Plus, Repeat, TrendingDown, UserRound, Wallet, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRightLeft, Calculator, CalendarClock, Check, ChevronDown, CirclePlus, ClipboardList, CreditCard, Delete, Layers, Mic, Plus, Repeat, TrendingDown, UserRound, Wallet, X } from 'lucide-react';
 import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed, ExpenseSplitMode, MoneyFlow, ReimbursementPerson, Transaction } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { DateInput } from '../shared/DateInput';
@@ -10,6 +10,7 @@ import { createSeriesId, getVisibleNotes, readTransactionMeta, writeTransactionN
 import { hasDuplicateName } from '../../lib/utils/validation';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { parseMathExpression } from '../../lib/utils/mathExpression';
+import { parseQuickEntries } from '../../lib/utils/quickEntryParser';
 
 interface AddEntryModalProps {
   isOpen: boolean;
@@ -23,6 +24,7 @@ interface AddEntryModalProps {
   onCreateCategory: (input: Omit<Category, 'id' | 'isSystem'>) => Promise<Category>;
   onCreateReimbursementPerson: (input: Omit<ReimbursementPerson, 'id'>) => Promise<ReimbursementPerson>;
   onCreateRecurring: (transaction: Omit<Transaction, 'id'>, endDate?: string) => Promise<void>;
+  onSkipFixedOccurrence?: (transaction: Transaction) => boolean | Promise<boolean>;
   onClose: () => void;
   onSave: (
     transaction: Omit<Transaction, 'id'> | Array<Omit<Transaction, 'id'>>,
@@ -51,6 +53,18 @@ const OPEN_ENDED_FIXED_MONTHS = 12;
 const MAX_FIXED_MONTHS = 120;
 const REIMBURSEMENT_CATEGORY_NAME = 'Reembolsos';
 const INVOICE_ADJUSTMENT_CATEGORY_NAME = 'Ajustes de fatura';
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives?: number;
+  onresult: ((event: { resultIndex?: number; results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }> }) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
 
 function normalizeCategoryName(value: string): string {
   return value
@@ -93,9 +107,9 @@ function parseEntryCount(value: string, minimum: number): number {
   return Math.min(60, Math.max(minimum, parsed));
 }
 
-export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, reimbursementsEnabled, transaction, preferredCardId, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onClose, onSave }: AddEntryModalProps) {
+export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, reimbursementsEnabled, transaction, preferredCardId, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onSkipFixedOccurrence, onClose, onSave }: AddEntryModalProps) {
   const canUseReimbursements = reimbursementsEnabled || Boolean(transaction?.isReimbursable);
-  const [entryStep, setEntryStep] = useState<'picker' | 'form'>('picker');
+  const [entryStep, setEntryStep] = useState<'picker' | 'form' | 'quick'>('picker');
   const [flow, setFlow] = useState<MoneyFlow>('expense');
   const [expenseMode, setExpenseMode] = useState<ExpenseEntryMode>('variable');
   const [expenseNeed, setExpenseNeed] = useState<ExpenseNeed | ''>('');
@@ -137,8 +151,18 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   const [calculatorExpression, setCalculatorExpression] = useState('');
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [isPreparingReimbursementCategory, setIsPreparingReimbursementCategory] = useState(false);
+  const [quickText, setQuickText] = useState('');
+  const [quickSourceType, setQuickSourceType] = useState<PaymentSourceType>('card');
+  const [quickAccountId, setQuickAccountId] = useState('');
+  const [quickCardId, setQuickCardId] = useState('');
+  const [quickCategoryId, setQuickCategoryId] = useState('');
+  const [quickError, setQuickError] = useState('');
+  const [isListeningQuickEntry, setIsListeningQuickEntry] = useState(false);
+  const [quickDraftEdits, setQuickDraftEdits] = useState<Record<string, { date?: string; description?: string; amount?: string; categoryId?: string }>>({});
+  const [quickDeletedDraftIds, setQuickDeletedDraftIds] = useState<string[]>([]);
   const initializedFormKeyRef = useRef<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const quickRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   const transactionMeta = useMemo(() => readTransactionMeta(transaction?.notes), [transaction]);
   const isGroupedTransaction = Boolean(transactionMeta.seriesId);
@@ -193,7 +217,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setHasFixedEndDate(Boolean(transactionMeta.generatedUntil));
     setFixedEndDate(transactionMeta.generatedUntil ?? '');
     setInstallmentCount(String(transactionMeta.totalInstallments ?? 2));
-    setEditScope('single');
+    setEditScope(transaction && isRecurringOccurrence ? 'forward' : 'single');
     setNewCategoryName('');
     setCategoryError('');
     setFormError('');
@@ -202,11 +226,23 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setIsQuickOptionsOpen(false);
     setIsCalculatorOpen(false);
     setCalculatorExpression('');
-  }, [accounts, isOpen, preferredCardId, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.generatedUntil, transactionMeta.invoiceAdjustment, transactionMeta.totalInstallments]);
+    setQuickText('');
+    setQuickSourceType(cards.length > 0 ? 'card' : 'account');
+    setQuickAccountId(accounts[0]?.id ?? '');
+    setQuickCardId(preferredCardId ?? cards[0]?.id ?? '');
+    setQuickCategoryId(categories.find((category) => category.flow === 'expense')?.id ?? '');
+    setQuickError('');
+    setIsListeningQuickEntry(false);
+    setQuickDraftEdits({});
+    setQuickDeletedDraftIds([]);
+    quickRecognitionRef.current?.stop();
+    quickRecognitionRef.current = null;
+  }, [accounts, cards, categories, isOpen, isRecurringOccurrence, preferredCardId, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.generatedUntil, transactionMeta.invoiceAdjustment, transactionMeta.totalInstallments]);
 
   const selectedCard = sourceType === 'card' ? cards.find((card) => card.id === cardId) : undefined;
   const invoiceInfo = selectedCard && flow === 'expense' ? getCardInvoiceInfo(selectedCard, date) : null;
   const isEditingClosedInvoice = Boolean(transaction && invoiceInfo && invoiceInfo.status !== 'aberta');
+  const todayValue = formatLocalDate(new Date());
 
   useEffect(() => {
     if (!isOpen || flow !== 'expense' || expenseMode !== 'installment') return;
@@ -316,6 +352,163 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     || hasFixedEndDate
     || Boolean(isReimbursable)
     || Boolean(newCategoryName.trim());
+  const quickDrafts = useMemo(() => parseQuickEntries(quickText), [quickText]);
+  const quickReviewDrafts = quickDrafts.filter((draft) => !quickDeletedDraftIds.includes(draft.id));
+
+  function findQuickCategoryId(categoryHint?: string) {
+    const expenseCategories = categories.filter((category) => category.flow === 'expense');
+    if (!categoryHint) return quickCategoryId || expenseCategories[0]?.id || '';
+    const normalizedHint = normalizeCategoryName(categoryHint);
+    return expenseCategories.find((category) => {
+      const normalizedName = normalizeCategoryName(category.name);
+      return normalizedName === normalizedHint || normalizedName.includes(normalizedHint) || normalizedHint.includes(normalizedName);
+    })?.id ?? quickCategoryId ?? expenseCategories[0]?.id ?? '';
+  }
+
+  function getQuickDraftReview(draft: (typeof quickDrafts)[number]) {
+    const edit = quickDraftEdits[draft.id] ?? {};
+    const amountInput = edit.amount ?? (draft.amount > 0 ? formatCurrencyInput(draft.amount) : DEFAULT_CURRENCY_INPUT);
+    const amountValue = parseCurrencyInput(amountInput);
+    const dateValue = edit.date ?? draft.date ?? todayValue;
+    const descriptionValue = edit.description ?? draft.description;
+    const categoryValue = edit.categoryId ?? findQuickCategoryId(draft.categoryHint);
+    const error = !descriptionValue.trim()
+      ? 'Título não encontrado'
+      : amountValue <= 0
+        ? 'Valor não encontrado'
+        : !dateValue
+          ? 'Data não encontrada'
+          : !categoryValue
+            ? 'Categoria não selecionada'
+            : '';
+
+    return {
+      id: draft.id,
+      raw: draft.raw,
+      date: dateValue,
+      description: descriptionValue,
+      amountInput,
+      amount: amountValue,
+      categoryId: categoryValue,
+      error,
+    };
+  }
+
+  const quickReviewItems = quickReviewDrafts.map(getQuickDraftReview);
+  const quickReadyItems = quickReviewItems.filter((item) => !item.error);
+
+  function updateQuickDraft(id: string, patch: { date?: string; description?: string; amount?: string; categoryId?: string }) {
+    setQuickDraftEdits((current) => ({
+      ...current,
+      [id]: {
+        ...current[id],
+        ...patch,
+      },
+    }));
+  }
+
+  function removeQuickDraft(id: string) {
+    setQuickDeletedDraftIds((current) => Array.from(new Set([...current, id])));
+  }
+
+  function startQuickVoiceInput() {
+    if (isListeningQuickEntry) return;
+    const SpeechRecognitionCtor = (window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setQuickError('Seu navegador não liberou ditado por voz aqui. Você ainda pode colar ou digitar os gastos.');
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'pt-BR';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      const startIndex = event.resultIndex ?? 0;
+      const transcript = Array.from(event.results)
+        .slice(startIndex)
+        .map((result) => result[0].transcript)
+        .join('\n');
+      setQuickText((current) => [current.trim(), transcript.trim()].filter(Boolean).join('\n'));
+    };
+    recognition.onerror = (event) => {
+      const errorMessages: Record<string, string> = {
+        'not-allowed': 'O navegador bloqueou o microfone. Libere a permissão do microfone e tente novamente.',
+        'service-not-allowed': 'O serviço de voz não está disponível neste navegador. Cole o texto ou use o ditado do teclado.',
+        'audio-capture': 'Não encontrei um microfone ativo. Verifique o microfone do computador/celular.',
+        'no-speech': 'Não ouvi nenhuma fala. Toque em “Ditado por voz” e fale uma despesa por vez.',
+        network: 'O serviço de voz falhou por conexão. Você pode colar ou digitar os gastos.',
+      };
+      setQuickError(errorMessages[event.error ?? ''] ?? `Não consegui capturar a voz (${event.error ?? 'erro desconhecido'}). Cole o texto ou tente novamente.`);
+    };
+    recognition.onend = () => {
+      setIsListeningQuickEntry(false);
+      quickRecognitionRef.current = null;
+    };
+    setQuickError('');
+    setIsListeningQuickEntry(true);
+    quickRecognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      setIsListeningQuickEntry(false);
+      quickRecognitionRef.current = null;
+      setQuickError('O ditado já estava aberto ou o navegador recusou a captura. Tente novamente em alguns segundos.');
+    }
+  }
+
+  function stopQuickVoiceInput() {
+    quickRecognitionRef.current?.stop();
+    quickRecognitionRef.current = null;
+    setIsListeningQuickEntry(false);
+  }
+
+  async function handleQuickSave() {
+    setQuickError('');
+    if (quickReadyItems.length === 0) {
+      setQuickError('Cole ou dite pelo menos um gasto com título e valor.');
+      return;
+    }
+    if (quickSourceType === 'card' && !quickCardId) {
+      setQuickError('Selecione o cartão usado nos lançamentos.');
+      return;
+    }
+    if (quickSourceType === 'account' && !quickAccountId) {
+      setQuickError('Selecione a conta usada nos lançamentos.');
+      return;
+    }
+    if (quickReviewItems.some((item) => !item.categoryId)) {
+      setQuickError('Selecione uma categoria padrão para os itens sem categoria reconhecida.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await onSave(quickReadyItems.map((item) => ({
+        description: item.description.trim(),
+        amount: item.amount,
+        flow: 'expense' as const,
+        status: quickSourceType === 'card' ? 'pending' as const : 'paid' as const,
+        date: item.date,
+        notes: writeTransactionNotes(undefined, { entryMode: 'variable' }),
+        categoryId: item.categoryId,
+        accountId: quickSourceType === 'account' ? quickAccountId : undefined,
+        cardId: quickSourceType === 'card' ? quickCardId : undefined,
+        isReimbursable: false,
+        splitMode: 'none' as const,
+      })));
+      onClose();
+    } catch (error) {
+      setQuickError(getUserFriendlyError(error, 'Não foi possível salvar os lançamentos rápidos.'));
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   function formatDescriptionForMeta(descriptionValue: string, meta: ReturnType<typeof readTransactionMeta>): string {
     if (meta.entryMode !== 'installment' || !meta.installmentNumber || !meta.totalInstallments) return descriptionValue;
@@ -750,6 +943,155 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     }
   }
 
+  if (!transaction && entryStep === 'quick') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
+        <div className="premium-card flex max-h-[100dvh] w-full max-w-[760px] flex-col overflow-hidden rounded-none shadow-2xl md:max-h-[calc(100dvh-2rem)] md:rounded-[30px]">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
+            <button type="button" onClick={() => setEntryStep('picker')} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-white">
+              <ArrowLeft size={22} />
+            </button>
+            <div className="min-w-0 text-center">
+              <h2 className="font-display text-lg font-bold text-white">Lançamento rápido</h2>
+              <p className="text-xs font-semibold text-slate-500">Cole ou dite os gastos da semana</p>
+            </div>
+            <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-400">
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="premium-scroll min-h-0 flex-1 overflow-y-auto p-5">
+            {quickError ? (
+              <p className="mb-3 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                <AlertCircle size={16} />
+                {quickError}
+              </p>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr]">
+              <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
+                <button type="button" onClick={() => setQuickSourceType('card')} disabled={cards.length === 0} className={`h-10 rounded-xl text-xs font-bold transition disabled:opacity-40 ${quickSourceType === 'card' ? 'bg-white text-black' : 'text-slate-400'}`}>Cartão</button>
+                <button type="button" onClick={() => setQuickSourceType('account')} className={`h-10 rounded-xl text-xs font-bold transition ${quickSourceType === 'account' ? 'bg-white text-black' : 'text-slate-400'}`}>Conta</button>
+              </div>
+              {quickSourceType === 'card' ? (
+                <select value={quickCardId} onChange={(event) => setQuickCardId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
+                  <option value="">Selecione o cartão</option>
+                  {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
+                </select>
+              ) : (
+                <select value={quickAccountId} onChange={(event) => setQuickAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
+                  <option value="">Selecione a conta</option>
+                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                </select>
+              )}
+              <select value={quickCategoryId} onChange={(event) => setQuickCategoryId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
+                <option value="">Categoria padrão</option>
+                {categories.filter((category) => category.flow === 'expense').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
+            </div>
+
+            <label className="mt-4 grid gap-2 text-sm font-semibold text-slate-200">
+              Texto dos gastos
+              <textarea
+                value={quickText}
+                onChange={(event) => setQuickText(event.target.value)}
+                placeholder={'Exemplo:\n28/06 | Estacionamento Shopping Brei | 21,50 | Transporte\n29/06 Amazon R$ 82,28 Compras'}
+                className="min-h-40 resize-y rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-relaxed text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300"
+              />
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={isListeningQuickEntry ? stopQuickVoiceInput : startQuickVoiceInput} className={`flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold transition ${isListeningQuickEntry ? 'bg-rose-500/15 text-rose-100 hover:bg-rose-500/25' : 'bg-white/5 text-slate-200 hover:bg-white/10'}`}>
+                <Mic size={16} />
+                {isListeningQuickEntry ? 'Concluir item' : quickReviewItems.length > 0 ? 'Falar próximo item' : 'Ditado por voz'}
+              </button>
+              <button type="button" onClick={() => {
+                setQuickText('');
+                setQuickDraftEdits({});
+                setQuickDeletedDraftIds([]);
+              }} className="h-10 rounded-xl bg-white/5 px-4 text-sm font-bold text-slate-300 transition hover:bg-white/10">
+                Limpar
+              </button>
+            </div>
+
+            <section className="mt-4 rounded-2xl border border-white/10 bg-white/[0.025]">
+              <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
+                <p className="text-sm font-bold text-white">Revisão</p>
+                <p className="text-xs font-semibold text-slate-500">{quickReadyItems.length}/{quickReviewItems.length} prontos</p>
+              </div>
+              {quickReviewItems.length === 0 ? (
+                <div className="p-5 text-center text-sm font-semibold text-slate-500">Os itens detectados aparecem aqui antes de salvar.</div>
+              ) : (
+                <div className="divide-y divide-white/8">
+                  {quickReviewItems.map((item) => {
+                    return (
+                      <article key={item.id} className="grid gap-2 px-4 py-3 md:grid-cols-[128px_minmax(180px,1fr)_128px_minmax(150px,0.8fr)_40px] md:items-start">
+                        <label className="grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                          Data
+                          <input
+                            type="date"
+                            value={item.date}
+                            onChange={(event) => updateQuickDraft(item.id, { date: event.target.value })}
+                            className="h-10 rounded-xl border border-white/10 bg-black/20 px-2 text-xs font-bold normal-case tracking-normal text-white outline-none focus:border-violet-300"
+                          />
+                        </label>
+                        <label className="grid min-w-0 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                          Título
+                          <input
+                            value={item.description}
+                            onChange={(event) => updateQuickDraft(item.id, { description: event.target.value })}
+                            className="h-10 min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-bold normal-case tracking-normal text-white outline-none focus:border-violet-300"
+                          />
+                          {item.error ? <span className="text-xs font-semibold normal-case tracking-normal text-rose-200">{item.error}</span> : null}
+                        </label>
+                        <label className="grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                          Valor
+                          <CurrencyInput
+                            value={item.amountInput}
+                            onChange={(value) => updateQuickDraft(item.id, { amount: value })}
+                            className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-black normal-case tracking-normal text-white outline-none focus:border-violet-300"
+                          />
+                        </label>
+                        <label className="grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                          Categoria
+                          <select
+                            value={item.categoryId}
+                            onChange={(event) => updateQuickDraft(item.id, { categoryId: event.target.value })}
+                            className="h-10 rounded-xl border border-white/10 bg-black/20 px-2 text-xs font-bold normal-case tracking-normal text-white outline-none focus:border-violet-300"
+                          >
+                            <option value="">Selecione</option>
+                            {categories.filter((category) => category.flow === 'expense').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                          </select>
+                        </label>
+                        <div className="flex md:justify-end md:pt-5">
+                          <button
+                            type="button"
+                            onClick={() => removeQuickDraft(item.id)}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-500/10 text-rose-100 transition hover:bg-rose-500/20"
+                            title="Remover item"
+                            aria-label="Remover item"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+
+          <div className="grid gap-2 border-t border-white/10 p-4 sm:grid-cols-[1fr_auto]">
+            <p className="text-xs font-semibold leading-relaxed text-slate-500">Revise antes de salvar. Itens com erro ficam fora do cadastro.</p>
+            <button type="button" onClick={handleQuickSave} disabled={isSaving || quickReadyItems.length === 0} className="h-11 rounded-xl bg-white px-5 text-sm font-black text-black transition hover:bg-slate-200 disabled:opacity-40">
+              {isSaving ? 'Salvando...' : `Salvar ${quickReadyItems.length} gasto${quickReadyItems.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!transaction && entryStep === 'picker') {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
@@ -766,6 +1108,13 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </div>
 
           <div className="mt-6 grid gap-3 md:grid-cols-2">
+            <button type="button" onClick={() => setEntryStep('quick')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white md:col-span-2" style={{ borderColor: '#F8FAFC66', backgroundImage: 'linear-gradient(135deg, rgba(248,250,252,0.16), transparent 58%)' }}>
+              <span>
+                <span className="block text-base font-bold">Lançamento rápido</span>
+                <span className="mt-1 block text-xs font-medium text-slate-300/70">Colar ou ditar gastos da semana</span>
+              </span>
+              <ClipboardList size={24} className="text-white" />
+            </button>
             <button type="button" onClick={() => selectNewEntryFlow('expense', 'card')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white" style={{ borderColor: '#8B5CF666', backgroundImage: 'linear-gradient(135deg, rgba(139,92,246,0.18), transparent 58%)' }}>
               <span>
                 <span className="block text-base font-bold">Despesa cartão</span>
@@ -801,8 +1150,6 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   }
 
   const calculatorResult = parseMathExpression(calculatorExpression);
-  const todayValue = formatLocalDate(new Date());
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
       <form
@@ -943,6 +1290,25 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                   <button type="button" onClick={() => setEditScope('forward')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'forward' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
                     Esta e próximas
                   </button>
+                  {isRecurringOccurrence ? (
+                    <>
+                      <p className="col-span-2 px-2 pt-1 text-[11px] font-semibold leading-relaxed text-amber-100/80">
+                        Para despesas fixas, alterações começam em “esta e próximas” para atualizar os próximos meses.
+                      </p>
+                      {transaction && onSkipFixedOccurrence ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const didSkip = await onSkipFixedOccurrence(transaction);
+                            if (didSkip !== false) onClose();
+                          }}
+                          className="col-span-2 h-10 rounded-xl border border-white/10 bg-white/5 text-xs font-bold text-slate-200 transition hover:border-amber-300/30 hover:bg-amber-500/15 hover:text-amber-100"
+                        >
+                          Não usei este mês
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
               ) : null}
 

@@ -150,6 +150,9 @@ export interface TransactionMeta {
   entryMode?: ExpenseEntryMode;
   expenseNeed?: ExpenseNeed;
   invoiceAdjustment?: 'credit';
+  reimbursementOriginalAmount?: number;
+  reimbursementPayments?: Array<{ amount: number; accountId: string; date: string }>;
+  reimbursementCarryMonth?: string;
   seriesId?: string;
   installmentNumber?: number;
   totalInstallments?: number;
