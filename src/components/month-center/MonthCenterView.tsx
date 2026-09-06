@@ -614,26 +614,52 @@ export function MonthCenterView({
             })}
             {visibleAccountExpenses.map((transaction) => {
               const paid = transaction.status === 'paid';
+              const meta = readTransactionMeta(transaction.notes);
+              const canSkipOccurrence = !paid && Boolean(transaction.recurringTransactionId || meta.recurringTransactionId);
               const badge = paid
                 ? { label: 'paga', className: 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' }
                 : dueBadge(transaction.date, today);
               return (
-                <button key={transaction.id} type="button" disabled={paid} onClick={() => openAccountExpensePayment(transaction)} className="premium-card w-full rounded-2xl p-4 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/10 disabled:cursor-default disabled:opacity-80 disabled:hover:bg-transparent">
-                  <div className="flex items-start justify-between gap-3">
+                <article key={transaction.id} className="premium-card w-full rounded-2xl p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-100"><ReceiptText size={17} /></span>
                         <div className="min-w-0">
                           <h3 className="truncate font-display text-base font-bold text-white">{transaction.description}</h3>
-                          <p className="text-xs text-slate-500">Despesa de conta · {paid ? 'quitada' : 'clique para pagar'}</p>
+                          <p className="text-xs text-slate-500">
+                            Despesa de conta · {paid ? 'quitada' : canSkipOccurrence ? 'pague ou marque como não usada' : 'pendente'}
+                          </p>
                         </div>
                         <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${badge.className}`}>{badge.label}</span>
-                        {!paid ? <span className="rounded-full border border-emerald-300/20 bg-emerald-500/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-100">Pagar</span> : null}
                       </div>
                     </div>
-                    <p className="shrink-0 font-display text-lg font-black text-white">{formatCurrency(transaction.amount)}</p>
+                    <div className="shrink-0 text-left sm:text-right">
+                      <p className="font-display text-lg font-black text-white">{formatCurrency(transaction.amount)}</p>
+                      {!paid ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 sm:justify-end">
+                          <button
+                            type="button"
+                            onClick={() => openAccountExpensePayment(transaction)}
+                            className="flex h-9 items-center gap-1 rounded-xl bg-emerald-500/90 px-3 text-xs font-black text-white transition hover:bg-emerald-400"
+                          >
+                            <CheckCircle2 size={14} />
+                            Pagar
+                          </button>
+                          {canSkipOccurrence ? (
+                            <button
+                              type="button"
+                              onClick={() => void onSkipFixedOccurrence(transaction)}
+                              className="flex h-9 items-center gap-1 rounded-xl border border-amber-300/25 bg-amber-500/10 px-3 text-xs font-black text-amber-100 transition hover:bg-amber-500/20"
+                            >
+                              Não usei
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </button>
+                </article>
               );
             })}
           </div>
