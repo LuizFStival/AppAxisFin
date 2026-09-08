@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { addMonths, formatDatePtBr, formatLocalDate, parseLocalDate } from './date';
 import { formatCurrencyInput, maskCurrencyInput, parseCurrencyInput } from './currency';
-import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './transactionMeta';
+import {
+  getTransactionExpenseNeed,
+  getTransactionInstallmentLabel,
+  getVisibleNotes,
+  hasInvoiceSettlementMeta,
+  hasRecurringSourceMeta,
+  readTransactionMeta,
+  writeTransactionNotes,
+} from './transactionMeta';
 
 assert.equal(parseCurrencyInput('R$ 1.234,56'), 1234.56);
 assert.equal(parseCurrencyInput(''), 0);
@@ -30,5 +38,10 @@ assert.deepEqual(readTransactionMeta(notes), {
 assert.deepEqual(readTransactionMeta('texto sem metadados'), {});
 assert.deepEqual(readTransactionMeta('[axisfin-meta:inválido]'), {});
 assert.equal(writeTransactionNotes('  somente texto  '), 'somente texto');
+assert.equal(getTransactionExpenseNeed(notes), 'essential');
+assert.equal(getTransactionInstallmentLabel(notes), '2/6');
+assert.equal(getTransactionInstallmentLabel('texto sem metadados'), undefined);
+assert.equal(hasInvoiceSettlementMeta(writeTransactionNotes(undefined, { paidAt: '2026-08-10', paidFromAccountId: 'account' })), true);
+assert.equal(hasRecurringSourceMeta(writeTransactionNotes(undefined, { recurringTransactionId: 'rule' })), true);
 
 console.log('currency, date and metadata tests passed');

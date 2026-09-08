@@ -68,6 +68,12 @@ function withoutRecurringOccurrenceMeta(transaction: Omit<Transaction, 'id'>): O
   };
 }
 
+function isSameRecurringOccurrence(transaction: Transaction, recurringTransactionId: string, recurringOccurrenceDate: string) {
+  const meta = readTransactionMeta(transaction.notes);
+  return (transaction.recurringTransactionId ?? meta.recurringTransactionId) === recurringTransactionId
+    && (transaction.recurringOccurrenceDate ?? meta.recurringOccurrenceDate) === recurringOccurrenceDate;
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('home');
   const [snapshot, setSnapshot] = useState<FinanceSnapshot>(emptyFinanceSnapshot);
@@ -126,12 +132,14 @@ export default function App() {
     setSnapshot((current) => ({ ...current, accounts }));
   }
 
-  async function runAppAction(action: () => Promise<void>, fallback: string) {
+  async function runAppAction<T>(action: () => Promise<T>, fallback: string): Promise<T | undefined> {
     try {
-      await action();
+      const result = await action();
       setAppError('');
+      return result;
     } catch (error) {
       setAppError(getUserFriendlyError(error, fallback));
+      return undefined;
     }
   }
 
@@ -582,9 +590,24 @@ export default function App() {
     const confirmed = window.confirm(`Marcar "${transaction.description}" como não usada neste mês? Apenas esta ocorrência será removida.`);
     if (!confirmed) return false;
 
+    const recurringRuleMeta = readTransactionMeta(recurringRule.notes);
+    const recurringRuleNotes = writeTransactionNotes(getVisibleNotes(recurringRule.notes), {
+      ...recurringRuleMeta,
+      recurringExcludedDates: Array.from(new Set([
+        ...(recurringRuleMeta.recurringExcludedDates ?? []),
+        recurringOccurrenceDate,
+      ])).sort(),
+    });
+
     await recurringRepository.excludeOccurrence(recurringRule, recurringOccurrenceDate);
     if (!transaction.isProjected) await transactionRepository.remove(transaction.id);
-    await loadSnapshot();
+    setSnapshot((current) => ({
+      ...current,
+      recurringTransactions: current.recurringTransactions.map((rule) => (
+        rule.id === recurringRule.id ? { ...rule, notes: recurringRuleNotes } : rule
+      )),
+      transactions: current.transactions.filter((item) => !isSameRecurringOccurrence(item, recurringTransactionId, recurringOccurrenceDate)),
+    }));
     await refreshAccounts();
     return true;
   }

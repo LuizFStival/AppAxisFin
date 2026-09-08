@@ -158,6 +158,8 @@ export function DashboardView({
   });
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
   const previousReimbursementsTotal = previousSummary.reimbursementsPending + previousSummary.reimbursementsReceived;
+  const cashMonthResult = Math.round((summary.accountInflow - summary.accountOutflow) * 100) / 100;
+  const personalCashMonthResult = Math.round((summary.accountInflowPersonal - summary.accountOutflowPersonal) * 100) / 100;
   const monthResult = summarizeMonthlyResult(transactions, activeMonth, cards, {
     includeReimbursements: reimbursementsEnabled,
   }).result;
@@ -322,6 +324,18 @@ export function DashboardView({
               </p>
             </button>
           </div>
+
+          <div className="mt-2 w-full rounded-2xl border border-white/8 bg-black/20 px-3 py-2 text-left">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Caixa do mês</p>
+              <p className={`font-mono text-sm font-bold ${cashMonthResult >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {hiddenMoney(showBalances, cashMonthResult)}
+              </p>
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">
+              Movimento real nas contas. Meu {hiddenMoney(showBalances, personalCashMonthResult)} • inclui terceiros.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -356,7 +370,7 @@ export function DashboardView({
           />
         ) : null}
         <StatCard
-          label="Resultado do mês"
+          label="Resultado pessoal"
           value={hiddenMoney(showBalances, monthResult)}
           tone={investmentGoal.target <= 0 ? 'info' : investmentGoal.progress >= 100 ? 'income' : investmentGoal.progress >= 50 ? 'neutral' : 'expense'}
           icon={Scale}
@@ -369,6 +383,7 @@ export function DashboardView({
                 <span className="block">Defina sua meta em Configurações</span>
               ) : (
                 <>
+                  <span className="block">Receitas {formatCurrency(summary.income)} - Despesas {formatCurrency(summary.expenses)}</span>
                   <span className="block">Meta {formatCurrency(investmentGoal.target)} • Economizado {formatCurrency(investmentGoal.saved)}</span>
                   <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/10">
                     <span className={`block h-full rounded-full ${investmentZone.color}`} style={{ width: `${Math.min(100, investmentGoal.progress)}%` }} />

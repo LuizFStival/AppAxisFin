@@ -1,16 +1,36 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRightLeft, Calculator, CalendarClock, Check, ChevronDown, CirclePlus, ClipboardList, CreditCard, Delete, Layers, Mic, Plus, Repeat, TrendingDown, UserRound, Wallet, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRightLeft, Calculator, Check, ChevronDown, CirclePlus, ClipboardList, CreditCard, Delete, Plus, UserRound, Wallet, X } from 'lucide-react';
 import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed, ExpenseSplitMode, MoneyFlow, ReimbursementPerson, Transaction } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { DateInput } from '../shared/DateInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
-import { addMonths, formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
+import { formatLocalDate } from '../../lib/utils/date';
 import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
-import { createSeriesId, getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
+import { getVisibleNotes, readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { hasDuplicateName } from '../../lib/utils/validation';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { parseMathExpression } from '../../lib/utils/mathExpression';
 import { parseQuickEntries } from '../../lib/utils/quickEntryParser';
+import {
+  buildMonthlyDates,
+  buildOpenEndedMonthlyDates,
+  expenseNeedOptions,
+  INVOICE_ADJUSTMENT_CATEGORY_NAME,
+  isInvoiceAdjustmentCategory,
+  isReimbursementCategory,
+  normalizeCategoryName,
+  PaymentSourceType,
+  REIMBURSEMENT_CATEGORY_NAME,
+} from './addEntryRules';
+import {
+  AddEntryDraft,
+  buildQuickEntryTransactions,
+} from './addEntryBuilder';
+import { AddEntrySavePlan, buildAddEntrySavePlan } from './addEntrySavePlan';
+import { ExpenseOptions } from './ExpenseOptions';
+import { QuickEntry, type QuickReviewItem } from './QuickEntry';
+import { ReimbursementFields } from './ReimbursementFields';
+import { SourceSelector } from './SourceSelector';
 
 interface AddEntryModalProps {
   isOpen: boolean;
@@ -32,28 +52,6 @@ interface AddEntryModalProps {
   ) => void | Promise<void>;
 }
 
-const expenseModes = [
-  { id: 'variable' as const, label: 'Variável', icon: TrendingDown },
-  { id: 'fixed' as const, label: 'Fixa', icon: Repeat },
-  { id: 'installment' as const, label: 'Parcelada', icon: Layers },
-];
-
-const expenseNeedOptions = [
-  { id: 'essential' as const, label: 'Essencial' },
-  { id: 'superfluous' as const, label: 'Supérflua' },
-];
-
-type PaymentSourceType = 'account' | 'card';
-const splitModeOptions = [
-  { id: 'none' as const, label: 'Só minha' },
-  { id: 'shared' as const, label: 'Dividir conta' },
-  { id: 'third_party_full' as const, label: '100% de terceiro' },
-];
-const OPEN_ENDED_FIXED_MONTHS = 12;
-const MAX_FIXED_MONTHS = 120;
-const REIMBURSEMENT_CATEGORY_NAME = 'Reembolsos';
-const INVOICE_ADJUSTMENT_CATEGORY_NAME = 'Ajustes de fatura';
-
 type SpeechRecognitionLike = {
   lang: string;
   interimResults: boolean;
@@ -65,47 +63,6 @@ type SpeechRecognitionLike = {
   start: () => void;
   stop: () => void;
 };
-
-function normalizeCategoryName(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase();
-}
-
-function isReimbursementCategory(category: Category): boolean {
-  const name = normalizeCategoryName(category.name);
-  return category.flow === 'expense' && (name === 'reembolso' || name === 'reembolsos');
-}
-
-function isInvoiceAdjustmentCategory(category: Category): boolean {
-  const name = normalizeCategoryName(category.name);
-  return category.flow === 'expense' && (name === 'ajuste de fatura' || name === 'ajustes de fatura');
-}
-
-function buildMonthlyDates(startDate: string, endDate: string, maxMonths = MAX_FIXED_MONTHS): string[] {
-  if (!startDate || !endDate || endDate < startDate) return [];
-  const dates: string[] = [];
-  let currentDate = startDate;
-
-  while (currentDate <= endDate && dates.length < maxMonths) {
-    dates.push(currentDate);
-    currentDate = addMonths(currentDate, 1);
-  }
-
-  return dates;
-}
-
-function buildOpenEndedMonthlyDates(startDate: string): string[] {
-  return buildMonthlyDates(startDate, addMonths(startDate, OPEN_ENDED_FIXED_MONTHS - 1), OPEN_ENDED_FIXED_MONTHS);
-}
-
-function parseEntryCount(value: string, minimum: number): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return minimum;
-  return Math.min(60, Math.max(minimum, parsed));
-}
 
 export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, reimbursementsEnabled, transaction, preferredCardId, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onSkipFixedOccurrence, onClose, onSave }: AddEntryModalProps) {
   const canUseReimbursements = reimbursementsEnabled || Boolean(transaction?.isReimbursable);
@@ -343,7 +300,6 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     && !isInvoiceCredit
     && personalAmount > 0
     && reimbursementAmount > 0;
-  const hasQuickOptions = isInvoiceCredit || splitMode !== 'none';
   const hasAdvancedContext = expenseMode !== 'variable'
     || isInvoiceCredit
     || splitMode !== 'none'
@@ -352,6 +308,26 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     || hasFixedEndDate
     || Boolean(isReimbursable)
     || Boolean(newCategoryName.trim());
+  const entryDraft: AddEntryDraft = {
+    flow,
+    amount: parsedAmount,
+    status,
+    notes,
+    categoryId,
+    sourceType,
+    accountId,
+    cardId,
+    splitMode,
+    expenseNeed,
+    isInvoiceCredit,
+    hasPersonalExpenseShare,
+    personalAmount,
+    reimbursementAmount,
+    reimbursementPersonId,
+    reimbursementStatus,
+    reimbursementReceivedAccountId,
+    reimbursementPeople,
+  };
   const quickDrafts = useMemo(() => parseQuickEntries(quickText), [quickText]);
   const quickReviewDrafts = quickDrafts.filter((draft) => !quickDeletedDraftIds.includes(draft.id));
 
@@ -365,7 +341,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     })?.id ?? quickCategoryId ?? expenseCategories[0]?.id ?? '';
   }
 
-  function getQuickDraftReview(draft: (typeof quickDrafts)[number]) {
+  function getQuickDraftReview(draft: (typeof quickDrafts)[number]): QuickReviewItem {
     const edit = quickDraftEdits[draft.id] ?? {};
     const amountInput = edit.amount ?? (draft.amount > 0 ? formatCurrencyInput(draft.amount) : DEFAULT_CURRENCY_INPUT);
     const amountValue = parseCurrencyInput(amountInput);
@@ -396,6 +372,20 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
   const quickReviewItems = quickReviewDrafts.map(getQuickDraftReview);
   const quickReadyItems = quickReviewItems.filter((item) => !item.error);
+
+  async function executeSavePlan(plan: AddEntrySavePlan) {
+    if (plan.kind === 'save') {
+      await onSave(plan.transaction, plan.scope);
+      return;
+    }
+
+    if (plan.kind === 'createRecurring') {
+      await onCreateRecurring(plan.transaction, plan.endDate);
+      return;
+    }
+
+    await Promise.all(plan.transactions.map((item) => onCreateRecurring(item, plan.endDate)));
+  }
 
   function updateQuickDraft(id: string, patch: { date?: string; description?: string; amount?: string; categoryId?: string }) {
     setQuickDraftEdits((current) => ({
@@ -489,30 +479,18 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
     setIsSaving(true);
     try {
-      await onSave(quickReadyItems.map((item) => ({
-        description: item.description.trim(),
-        amount: item.amount,
-        flow: 'expense' as const,
-        status: quickSourceType === 'card' ? 'pending' as const : 'paid' as const,
-        date: item.date,
-        notes: writeTransactionNotes(undefined, { entryMode: 'variable' }),
-        categoryId: item.categoryId,
-        accountId: quickSourceType === 'account' ? quickAccountId : undefined,
-        cardId: quickSourceType === 'card' ? quickCardId : undefined,
-        isReimbursable: false,
-        splitMode: 'none' as const,
-      })));
+      await onSave(buildQuickEntryTransactions({
+        sourceType: quickSourceType,
+        accountId: quickAccountId,
+        cardId: quickCardId,
+        items: quickReadyItems,
+      }));
       onClose();
     } catch (error) {
       setQuickError(getUserFriendlyError(error, 'Não foi possível salvar os lançamentos rápidos.'));
     } finally {
       setIsSaving(false);
     }
-  }
-
-  function formatDescriptionForMeta(descriptionValue: string, meta: ReturnType<typeof readTransactionMeta>): string {
-    if (meta.entryMode !== 'installment' || !meta.installmentNumber || !meta.totalInstallments) return descriptionValue;
-    return `${descriptionValue.replace(/\s\(\d+\/\d+\)$/, '')} (${meta.installmentNumber}/${meta.totalInstallments})`;
   }
 
   async function handleCreateCategory() {
@@ -660,96 +638,6 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     }
   }
 
-  function buildTransaction(dateValue: string, descriptionValue = description.trim(), meta = transactionMeta): Omit<Transaction, 'id'> {
-    const nextMeta = {
-      ...meta,
-      expenseNeed: hasPersonalExpenseShare ? expenseNeed || undefined : undefined,
-      invoiceAdjustment: flow === 'expense' && isInvoiceCredit ? 'credit' as const : undefined,
-    };
-    const shouldUseCard = flow === 'expense' && (sourceType === 'card' || isInvoiceCredit);
-    const shouldMarkReimbursement = flow === 'expense' && splitMode !== 'none' && !isInvoiceCredit;
-    return {
-      description: formatDescriptionForMeta(descriptionValue, meta),
-      amount: parsedAmount,
-      flow,
-      status: shouldUseCard ? 'pending' : status,
-      date: dateValue,
-      notes: writeTransactionNotes(notes, nextMeta),
-      categoryId,
-      accountId: shouldUseCard ? undefined : accountId,
-      cardId: shouldUseCard ? cardId || undefined : undefined,
-      isReimbursable: shouldMarkReimbursement,
-      splitMode: shouldMarkReimbursement ? splitMode : 'none',
-      personalAmount: shouldMarkReimbursement ? personalAmount : undefined,
-      reimbursementAmount: shouldMarkReimbursement ? reimbursementAmount : undefined,
-      reimbursementPersonId: shouldMarkReimbursement ? reimbursementPersonId : undefined,
-      reimbursementStatus: shouldMarkReimbursement ? reimbursementStatus : undefined,
-      reimbursementReceivedAt: shouldMarkReimbursement && reimbursementStatus === 'received' ? dateValue : undefined,
-      reimbursementReceivedAccountId: shouldMarkReimbursement && reimbursementStatus === 'received'
-        ? reimbursementReceivedAccountId || undefined
-        : undefined,
-    };
-  }
-
-  function buildSharedTransactions(dateValue: string, descriptionValue: string, meta = transactionMeta): Array<Omit<Transaction, 'id'>> {
-    const personName = reimbursementPeople.find((person) => person.id === reimbursementPersonId)?.name;
-    const baseMeta = {
-      ...meta,
-      invoiceAdjustment: undefined,
-    };
-    const personalMeta = {
-      ...baseMeta,
-      expenseNeed: expenseNeed || undefined,
-    };
-    const reimbursementMeta = {
-      ...baseMeta,
-      expenseNeed: undefined,
-    };
-    const shouldUseCard = sourceType === 'card';
-    const personalDescription = formatDescriptionForMeta(descriptionValue, personalMeta);
-    const reimbursementDescription = formatDescriptionForMeta(
-      personName ? `${descriptionValue} - ${personName}` : `${descriptionValue} - terceiro`,
-      reimbursementMeta,
-    );
-
-    return [
-      {
-        description: personalDescription,
-        amount: personalAmount,
-        flow: 'expense',
-        status: shouldUseCard ? 'pending' : status,
-        date: dateValue,
-        notes: writeTransactionNotes(notes, personalMeta),
-        categoryId,
-        accountId: shouldUseCard ? undefined : accountId,
-        cardId: shouldUseCard ? cardId || undefined : undefined,
-        isReimbursable: false,
-        splitMode: 'none',
-      },
-      {
-        description: reimbursementDescription,
-        amount: reimbursementAmount,
-        flow: 'expense',
-        status: shouldUseCard ? 'pending' : status,
-        date: dateValue,
-        notes: writeTransactionNotes(notes, reimbursementMeta),
-        categoryId,
-        accountId: shouldUseCard ? undefined : accountId,
-        cardId: shouldUseCard ? cardId || undefined : undefined,
-        isReimbursable: true,
-        splitMode: 'third_party_full',
-        personalAmount: 0,
-        reimbursementAmount,
-        reimbursementPersonId,
-        reimbursementStatus,
-        reimbursementReceivedAt: reimbursementStatus === 'received' ? dateValue : undefined,
-        reimbursementReceivedAccountId: reimbursementStatus === 'received'
-          ? reimbursementReceivedAccountId || undefined
-          : undefined,
-      },
-    ];
-  }
-
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setFormError('');
@@ -826,116 +714,29 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
     setIsSaving(true);
     try {
-    if (flow === 'transfer') {
-      await onSave({
-        description: description.trim(),
-        amount: parsedAmount,
+      await executeSavePlan(buildAddEntrySavePlan({
         flow,
-        status,
+        transaction,
+        transactionMeta,
+        expenseMode,
+        editScope,
+        shouldCreateSharedEntries,
+        hasPersonalExpenseShare,
+        expenseNeed,
+        isInvoiceCredit,
+        hasFixedEndDate,
+        fixedEndDate,
+        installmentCount,
         date,
-        notes: notes.trim() || undefined,
+        description,
+        notes,
+        amount: parsedAmount,
+        status,
         fromAccountId,
         toAccountId,
-      });
-      onClose();
-      return;
-    }
-
-    if (transaction) {
-      const meta = transactionMeta.seriesId
-        ? { ...transactionMeta, expenseNeed: hasPersonalExpenseShare ? expenseNeed || undefined : undefined, invoiceAdjustment: isInvoiceCredit ? 'credit' as const : undefined }
-        : { ...transactionMeta, entryMode: expenseMode, expenseNeed: hasPersonalExpenseShare ? expenseNeed || undefined : undefined, invoiceAdjustment: isInvoiceCredit ? 'credit' as const : undefined };
-      await onSave(buildTransaction(date, description.trim(), meta), editScope);
-      onClose();
-      return;
-    }
-
-    if (shouldCreateSharedEntries && expenseMode === 'fixed') {
-      const sharedTransactions = buildSharedTransactions(date, description.trim(), {
-        entryMode: 'fixed',
-        expenseNeed: expenseNeed || undefined,
-        generatedFrom: date,
-        generatedUntil: hasFixedEndDate ? fixedEndDate : undefined,
-      });
-      await Promise.all(sharedTransactions.map((item) =>
-        onCreateRecurring(item, hasFixedEndDate ? fixedEndDate : undefined),
-      ));
-      onClose();
-      return;
-    }
-
-    if (flow === 'expense' && expenseMode === 'fixed' && !isInvoiceCredit) {
-      await onCreateRecurring(buildTransaction(date, description.trim(), {
-        entryMode: 'fixed',
-        expenseNeed: hasPersonalExpenseShare ? expenseNeed || undefined : undefined,
-        generatedFrom: date,
-        generatedUntil: hasFixedEndDate ? fixedEndDate : undefined,
-      }), hasFixedEndDate ? fixedEndDate : undefined);
-      onClose();
-      return;
-    }
-
-    if (shouldCreateSharedEntries && expenseMode === 'installment') {
-      const seriesId = createSeriesId();
-      const reimbursementSeriesId = createSeriesId();
-      const total = parseEntryCount(installmentCount, 2);
-      const transactions = Array.from({ length: total }, (_, index) => {
-        const [personalEntry, reimbursementEntry] = buildSharedTransactions(addMonths(date, index), description.trim(), {
-          entryMode: 'installment',
-          expenseNeed: expenseNeed || undefined,
-          seriesId,
-          installmentNumber: index + 1,
-          totalInstallments: total,
-          generatedFrom: date,
-        });
-        return [
-          personalEntry,
-          {
-            ...reimbursementEntry,
-            notes: writeTransactionNotes(notes, {
-              entryMode: 'installment',
-              seriesId: reimbursementSeriesId,
-              installmentNumber: index + 1,
-              totalInstallments: total,
-              generatedFrom: date,
-            }),
-          },
-        ];
-      }).flat();
-      await onSave(transactions);
-      onClose();
-      return;
-    }
-
-    if (flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit) {
-      const seriesId = createSeriesId();
-      const total = parseEntryCount(installmentCount, 2);
-      const transactions = Array.from({ length: total }, (_, index) =>
-        buildTransaction(addMonths(date, index), description.trim(), {
-          entryMode: 'installment',
-          expenseNeed: hasPersonalExpenseShare ? expenseNeed || undefined : undefined,
-          seriesId,
-          installmentNumber: index + 1,
-          totalInstallments: total,
-          generatedFrom: date,
-        }),
-      );
-      await onSave(transactions);
-      onClose();
-      return;
-    }
-
-    if (shouldCreateSharedEntries) {
-      await onSave(buildSharedTransactions(date, description.trim(), {
-        entryMode: 'variable',
-        expenseNeed: expenseNeed || undefined,
+        entryDraft,
       }));
       onClose();
-      return;
-    }
-
-    await onSave(buildTransaction(date, description.trim(), { entryMode: 'variable', expenseNeed: hasPersonalExpenseShare ? expenseNeed || undefined : undefined }));
-    onClose();
     } catch (error) {
       setFormError(getUserFriendlyError(error, 'Não foi possível salvar o lançamento. Tente novamente.'));
     } finally {
@@ -945,150 +746,37 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
   if (!transaction && entryStep === 'quick') {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
-        <div className="premium-card flex max-h-[100dvh] w-full max-w-[760px] flex-col overflow-hidden rounded-none shadow-2xl md:max-h-[calc(100dvh-2rem)] md:rounded-[30px]">
-          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
-            <button type="button" onClick={() => setEntryStep('picker')} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-white">
-              <ArrowLeft size={22} />
-            </button>
-            <div className="min-w-0 text-center">
-              <h2 className="font-display text-lg font-bold text-white">Lançamento rápido</h2>
-              <p className="text-xs font-semibold text-slate-500">Cole ou dite os gastos da semana</p>
-            </div>
-            <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-400">
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="premium-scroll min-h-0 flex-1 overflow-y-auto p-5">
-            {quickError ? (
-              <p className="mb-3 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-                <AlertCircle size={16} />
-                {quickError}
-              </p>
-            ) : null}
-
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr]">
-              <div className="grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
-                <button type="button" onClick={() => setQuickSourceType('card')} disabled={cards.length === 0} className={`h-10 rounded-xl text-xs font-bold transition disabled:opacity-40 ${quickSourceType === 'card' ? 'bg-white text-black' : 'text-slate-400'}`}>Cartão</button>
-                <button type="button" onClick={() => setQuickSourceType('account')} className={`h-10 rounded-xl text-xs font-bold transition ${quickSourceType === 'account' ? 'bg-white text-black' : 'text-slate-400'}`}>Conta</button>
-              </div>
-              {quickSourceType === 'card' ? (
-                <select value={quickCardId} onChange={(event) => setQuickCardId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
-                  <option value="">Selecione o cartão</option>
-                  {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
-                </select>
-              ) : (
-                <select value={quickAccountId} onChange={(event) => setQuickAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
-                  <option value="">Selecione a conta</option>
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                </select>
-              )}
-              <select value={quickCategoryId} onChange={(event) => setQuickCategoryId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
-                <option value="">Categoria padrão</option>
-                {categories.filter((category) => category.flow === 'expense').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-              </select>
-            </div>
-
-            <label className="mt-4 grid gap-2 text-sm font-semibold text-slate-200">
-              Texto dos gastos
-              <textarea
-                value={quickText}
-                onChange={(event) => setQuickText(event.target.value)}
-                placeholder={'Exemplo:\n28/06 | Estacionamento Shopping Brei | 21,50 | Transporte\n29/06 Amazon R$ 82,28 Compras'}
-                className="min-h-40 resize-y rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm leading-relaxed text-white outline-none transition placeholder:text-slate-600 focus:border-violet-300"
-              />
-            </label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" onClick={isListeningQuickEntry ? stopQuickVoiceInput : startQuickVoiceInput} className={`flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold transition ${isListeningQuickEntry ? 'bg-rose-500/15 text-rose-100 hover:bg-rose-500/25' : 'bg-white/5 text-slate-200 hover:bg-white/10'}`}>
-                <Mic size={16} />
-                {isListeningQuickEntry ? 'Concluir item' : quickReviewItems.length > 0 ? 'Falar próximo item' : 'Ditado por voz'}
-              </button>
-              <button type="button" onClick={() => {
-                setQuickText('');
-                setQuickDraftEdits({});
-                setQuickDeletedDraftIds([]);
-              }} className="h-10 rounded-xl bg-white/5 px-4 text-sm font-bold text-slate-300 transition hover:bg-white/10">
-                Limpar
-              </button>
-            </div>
-
-            <section className="mt-4 rounded-2xl border border-white/10 bg-white/[0.025]">
-              <div className="flex items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
-                <p className="text-sm font-bold text-white">Revisão</p>
-                <p className="text-xs font-semibold text-slate-500">{quickReadyItems.length}/{quickReviewItems.length} prontos</p>
-              </div>
-              {quickReviewItems.length === 0 ? (
-                <div className="p-5 text-center text-sm font-semibold text-slate-500">Os itens detectados aparecem aqui antes de salvar.</div>
-              ) : (
-                <div className="divide-y divide-white/8">
-                  {quickReviewItems.map((item) => {
-                    return (
-                      <article key={item.id} className="grid gap-2 px-4 py-3 md:grid-cols-[128px_minmax(180px,1fr)_128px_minmax(150px,0.8fr)_40px] md:items-start">
-                        <label className="grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                          Data
-                          <input
-                            type="date"
-                            value={item.date}
-                            onChange={(event) => updateQuickDraft(item.id, { date: event.target.value })}
-                            className="h-10 rounded-xl border border-white/10 bg-black/20 px-2 text-xs font-bold normal-case tracking-normal text-white outline-none focus:border-violet-300"
-                          />
-                        </label>
-                        <label className="grid min-w-0 gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                          Título
-                          <input
-                            value={item.description}
-                            onChange={(event) => updateQuickDraft(item.id, { description: event.target.value })}
-                            className="h-10 min-w-0 rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-bold normal-case tracking-normal text-white outline-none focus:border-violet-300"
-                          />
-                          {item.error ? <span className="text-xs font-semibold normal-case tracking-normal text-rose-200">{item.error}</span> : null}
-                        </label>
-                        <label className="grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                          Valor
-                          <CurrencyInput
-                            value={item.amountInput}
-                            onChange={(value) => updateQuickDraft(item.id, { amount: value })}
-                            className="h-10 rounded-xl border border-white/10 bg-black/20 px-3 text-sm font-black normal-case tracking-normal text-white outline-none focus:border-violet-300"
-                          />
-                        </label>
-                        <label className="grid gap-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                          Categoria
-                          <select
-                            value={item.categoryId}
-                            onChange={(event) => updateQuickDraft(item.id, { categoryId: event.target.value })}
-                            className="h-10 rounded-xl border border-white/10 bg-black/20 px-2 text-xs font-bold normal-case tracking-normal text-white outline-none focus:border-violet-300"
-                          >
-                            <option value="">Selecione</option>
-                            {categories.filter((category) => category.flow === 'expense').map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                          </select>
-                        </label>
-                        <div className="flex md:justify-end md:pt-5">
-                          <button
-                            type="button"
-                            onClick={() => removeQuickDraft(item.id)}
-                            className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-500/10 text-rose-100 transition hover:bg-rose-500/20"
-                            title="Remover item"
-                            aria-label="Remover item"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          </div>
-
-          <div className="grid gap-2 border-t border-white/10 p-4 sm:grid-cols-[1fr_auto]">
-            <p className="text-xs font-semibold leading-relaxed text-slate-500">Revise antes de salvar. Itens com erro ficam fora do cadastro.</p>
-            <button type="button" onClick={handleQuickSave} disabled={isSaving || quickReadyItems.length === 0} className="h-11 rounded-xl bg-white px-5 text-sm font-black text-black transition hover:bg-slate-200 disabled:opacity-40">
-              {isSaving ? 'Salvando...' : `Salvar ${quickReadyItems.length} gasto${quickReadyItems.length === 1 ? '' : 's'}`}
-            </button>
-          </div>
-        </div>
-      </div>
+      <QuickEntry
+        accounts={accounts}
+        cards={cards}
+        categories={categories}
+        quickSourceType={quickSourceType}
+        quickCardId={quickCardId}
+        quickAccountId={quickAccountId}
+        quickCategoryId={quickCategoryId}
+        quickText={quickText}
+        quickError={quickError}
+        quickReviewItems={quickReviewItems}
+        quickReadyItems={quickReadyItems}
+        isListeningQuickEntry={isListeningQuickEntry}
+        isSaving={isSaving}
+        onBack={() => setEntryStep('picker')}
+        onClose={onClose}
+        onSourceTypeChange={setQuickSourceType}
+        onCardChange={setQuickCardId}
+        onAccountChange={setQuickAccountId}
+        onCategoryChange={setQuickCategoryId}
+        onTextChange={setQuickText}
+        onClear={() => {
+          setQuickText('');
+          setQuickDraftEdits({});
+          setQuickDeletedDraftIds([]);
+        }}
+        onToggleVoice={isListeningQuickEntry ? stopQuickVoiceInput : startQuickVoiceInput}
+        onUpdateDraft={updateQuickDraft}
+        onRemoveDraft={removeQuickDraft}
+        onSave={handleQuickSave}
+      />
     );
   }
 
@@ -1229,271 +917,62 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 </div>
               </label>
 
-              {flow === 'expense' && !isInvoiceCredit ? (
-                <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1.5 md:col-span-7">
-                  <p className="col-span-3 px-2 pb-0.5 pt-1 text-xs font-semibold text-slate-300">Tipo de lançamento</p>
-                  {expenseModes.map((option) => {
-                    const Icon = option.icon;
-                    const isDisabled = (lockedSourceType === 'account' && option.id === 'installment')
-                      || (Boolean(transaction) && (
-                        isGroupedTransaction
-                          ? option.id !== expenseMode
-                          : isRecurringOccurrence
-                            ? option.id === 'installment'
-                            : option.id !== expenseMode
-                      ));
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => {
-                          setExpenseMode(option.id);
-                          if (option.id === 'installment' && cards[0] && !cardId) setCardId(cards[0].id);
-                        }}
-                        disabled={isDisabled}
-                        className={`flex h-10 items-center justify-center gap-1.5 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          expenseMode === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'
-                        }`}
-                      >
-                        <Icon size={14} />
-                        <span>{option.label}</span>
-                      </button>
-                    );
-                  })}
-                  {expenseMode === 'installment' && !transaction ? (
-                    <label className="col-span-3 grid gap-1 px-2 pb-2 pt-1 text-xs font-semibold text-slate-400">
-                      Número de parcelas
-                      <input
-                        type="number"
-                        min={2}
-                        max={60}
-                        value={installmentCount}
-                        onChange={(event) => setInstallmentCount(event.target.value)}
-                        className="h-11 rounded-xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-violet-300"
-                      />
-                      <span className="text-[11px] font-medium text-slate-500">
-                        {`${parseEntryCount(installmentCount, 2)} parcelas serão criadas.`}
-                      </span>
-                    </label>
-                  ) : null}
-                </div>
+              {flow === 'expense' ? (
+                <ExpenseOptions
+                  cards={cards}
+                  cardId={cardId}
+                  lockedSourceType={lockedSourceType}
+                  expenseMode={expenseMode}
+                  installmentCount={installmentCount}
+                  transaction={transaction}
+                  isGroupedTransaction={isGroupedTransaction}
+                  isRecurringOccurrence={isRecurringOccurrence}
+                  isInvoiceCredit={isInvoiceCredit}
+                  canEditForwardEntries={canEditForwardEntries}
+                  editScope={editScope}
+                  onExpenseModeChange={setExpenseMode}
+                  onCardChange={setCardId}
+                  onInstallmentCountChange={setInstallmentCount}
+                  onEditScopeChange={setEditScope}
+                  onSkipFixedOccurrence={onSkipFixedOccurrence}
+                  onClose={onClose}
+                />
               ) : null}
 
-              {canEditForwardEntries ? (
-                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2 md:col-span-12">
-                  <p className="col-span-2 px-2 pb-1 text-xs font-bold text-amber-100">
-                    Aplicar alteração
-                  </p>
-                  <button type="button" onClick={() => setEditScope('single')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'single' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
-                    Apenas esta
-                  </button>
-                  <button type="button" onClick={() => setEditScope('forward')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'forward' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
-                    Esta e próximas
-                  </button>
-                  {isRecurringOccurrence ? (
-                    <>
-                      <p className="col-span-2 px-2 pt-1 text-[11px] font-semibold leading-relaxed text-amber-100/80">
-                        Para despesas fixas, alterações começam em “esta e próximas” para atualizar os próximos meses.
-                      </p>
-                      {transaction && onSkipFixedOccurrence ? (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const didSkip = await onSkipFixedOccurrence(transaction);
-                            if (didSkip !== false) onClose();
-                          }}
-                          className="col-span-2 h-10 rounded-xl border border-white/10 bg-white/5 text-xs font-bold text-slate-200 transition hover:border-amber-300/30 hover:bg-amber-500/15 hover:text-amber-100"
-                        >
-                          Não usei este mês
-                        </button>
-                      ) : null}
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {flow === 'expense' && (canUseReimbursements || lockedSourceType !== 'account') ? (
-                <div className="grid gap-2 md:col-span-12">
-                  <div className="flex flex-wrap gap-2">
-                    {lockedSourceType !== 'account' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleInvoiceCreditChange(!isInvoiceCredit);
-                          setIsQuickOptionsOpen(true);
-                        }}
-                        className={`h-8 rounded-full border px-3 text-[11px] font-bold transition ${isInvoiceCredit ? 'border-emerald-300 bg-emerald-400 text-slate-950' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:bg-white/10'}`}
-                      >
-                        Estorno fatura
-                      </button>
-                    ) : null}
-                    {canUseReimbursements ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsQuickOptionsOpen(true);
-                          if (splitMode === 'none') {
-                            void handleSplitModeChange('shared');
-                          } else {
-                            void handleSplitModeChange('none');
-                          }
-                        }}
-                        disabled={isInvoiceCredit}
-                        className={`h-8 rounded-full border px-3 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${splitMode !== 'none' ? 'border-amber-300 bg-amber-400 text-slate-950' : 'border-white/10 bg-white/[0.045] text-slate-300 hover:bg-white/10'}`}
-                      >
-                        Terceiro/reembolso
-                      </button>
-                    ) : null}
-                  </div>
-
-                  {hasQuickOptions ? (
-                    <button
-                      type="button"
-                      onClick={() => setIsQuickOptionsOpen((current) => !current)}
-                      className="flex h-8 w-fit items-center justify-center gap-1 rounded-full border border-white/10 bg-white/[0.035] px-3 text-[11px] font-bold text-slate-400 transition hover:bg-white/5"
-                    >
-                      {isQuickOptionsOpen ? 'Ocultar detalhes' : 'Ajustar detalhes'}
-                      <ChevronDown size={13} className={`transition ${isQuickOptionsOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                  ) : null}
-
-                  {isInvoiceCredit && isQuickOptionsOpen ? (
-                    <p className="mt-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-[11px] font-medium text-emerald-100/80">Use para devoluções e créditos do cartão. O valor reduz a fatura e não vira receita.</p>
-                  ) : null}
-
-                  {splitMode !== 'none' && isQuickOptionsOpen ? (
-                    <div className="mt-2 grid gap-3 rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-3">
-                      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-black/15 p-1">
-                        {splitModeOptions.map((option) => (
-                          <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => {
-                              void handleSplitModeChange(option.id);
-                            }}
-                            className={`min-h-10 rounded-xl px-2 text-[11px] font-bold transition ${splitMode === option.id ? 'bg-amber-400 text-slate-950' : 'text-slate-400'}`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                      {splitMode === 'shared' ? (
-                    <div className="mt-3 grid gap-3">
-                      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-black/15 p-1">
-                        <button type="button" onClick={() => setSplitType('percent')} className={`h-10 rounded-xl text-xs font-bold ${splitType === 'percent' ? 'bg-amber-400 text-slate-950' : 'text-slate-400'}`}>
-                          Percentual
-                        </button>
-                        <button type="button" onClick={() => setSplitType('fixed')} className={`h-10 rounded-xl text-xs font-bold ${splitType === 'fixed' ? 'bg-amber-400 text-slate-950' : 'text-slate-400'}`}>
-                          Valor fixo
-                        </button>
-                      </div>
-                      {splitType === 'percent' ? (
-                        <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                          Parte de terceiro (%)
-                          <input
-                            type="number"
-                            min={1}
-                            max={99}
-                            step={1}
-                            value={splitPercent}
-                            onChange={(event) => setSplitPercent(event.target.value)}
-                            className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300"
-                          />
-                        </label>
-                      ) : (
-                        <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                          Parte de terceiro (R$)
-                          <CurrencyInput
-                            value={splitFixedAmount}
-                            onChange={setSplitFixedAmount}
-                            className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300"
-                          />
-                        </label>
-                      )}
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
-                          <p className="text-[10px] font-bold uppercase text-emerald-100">Minha parte</p>
-                          <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrencyInput(personalAmount)}</p>
-                        </div>
-                        <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
-                          <p className="text-[10px] font-bold uppercase text-amber-100">Reembolso</p>
-                          <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrencyInput(reimbursementAmount)}</p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {isReimbursable ? (
-                    <div className="mt-3 grid gap-3">
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                          Quem deve
-                          <select value={reimbursementPersonId} onChange={(event) => setReimbursementPersonId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300">
-                            <option value="">Selecione</option>
-                            {reimbursementPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                          </select>
-                        </label>
-                        <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                          Status
-                          <select
-                            value={reimbursementStatus}
-                            onChange={(event) => {
-                              const nextStatus = event.target.value as 'pending' | 'received';
-                              setReimbursementStatus(nextStatus);
-                              if (nextStatus === 'received' && !reimbursementReceivedAccountId) {
-                                setReimbursementReceivedAccountId(accountId || accounts[0]?.id || '');
-                              }
-                              if (nextStatus === 'pending') {
-                                setReimbursementReceivedAccountId('');
-                              }
-                            }}
-                            className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300"
-                          >
-                            <option value="pending">A receber</option>
-                            <option value="received">Recebido</option>
-                          </select>
-                        </label>
-                      </div>
-                      {reimbursementStatus === 'received' ? (
-                        <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                          Conta onde o dinheiro entrou
-                          <select
-                            value={reimbursementReceivedAccountId}
-                            onChange={(event) => setReimbursementReceivedAccountId(event.target.value)}
-                            className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-emerald-300"
-                          >
-                            <option value="">Selecione</option>
-                            {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                          </select>
-                        </label>
-                      ) : null}
-                      <div className="flex gap-2">
-                        <input
-                          value={newPersonName}
-                          onChange={(event) => setNewPersonName(event.target.value)}
-                          placeholder="Nova pessoa"
-                          className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm text-white outline-none focus:border-amber-300"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCreatePerson}
-                          disabled={isCreatingPerson}
-                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 disabled:opacity-60"
-                          title="Cadastrar pessoa"
-                        >
-                          <Plus size={17} />
-                        </button>
-                      </div>
-                      {personError ? (
-                        <p className="flex items-center gap-2 text-xs text-rose-200">
-                          <AlertCircle size={14} />
-                          {personError}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                    </div>
-                  ) : null}
-                </div>
+              {flow === 'expense' ? (
+                <ReimbursementFields
+                  accounts={accounts}
+                  reimbursementPeople={reimbursementPeople}
+                  accountId={accountId}
+                  lockedSourceType={lockedSourceType}
+                  canUseReimbursements={canUseReimbursements}
+                  isInvoiceCredit={isInvoiceCredit}
+                  isQuickOptionsOpen={isQuickOptionsOpen}
+                  splitMode={splitMode}
+                  splitType={splitType}
+                  splitPercent={splitPercent}
+                  splitFixedAmount={splitFixedAmount}
+                  personalAmount={personalAmount}
+                  reimbursementAmount={reimbursementAmount}
+                  isReimbursable={isReimbursable}
+                  reimbursementPersonId={reimbursementPersonId}
+                  reimbursementStatus={reimbursementStatus}
+                  reimbursementReceivedAccountId={reimbursementReceivedAccountId}
+                  newPersonName={newPersonName}
+                  isCreatingPerson={isCreatingPerson}
+                  personError={personError}
+                  onInvoiceCreditChange={handleInvoiceCreditChange}
+                  onQuickOptionsOpenChange={setIsQuickOptionsOpen}
+                  onSplitModeChange={handleSplitModeChange}
+                  onSplitTypeChange={setSplitType}
+                  onSplitPercentChange={setSplitPercent}
+                  onSplitFixedAmountChange={setSplitFixedAmount}
+                  onReimbursementPersonChange={setReimbursementPersonId}
+                  onReimbursementStatusChange={setReimbursementStatus}
+                  onReimbursementReceivedAccountChange={setReimbursementReceivedAccountId}
+                  onNewPersonNameChange={setNewPersonName}
+                  onCreatePerson={handleCreatePerson}
+                />
               ) : null}
 
               {hasPersonalExpenseShare ? (
@@ -1522,75 +1001,24 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 </select>
               </label>
 
-                {flow === 'expense' ? (
-                  <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-                  {lockedSourceType === 'card' ? 'Cartão' : lockedSourceType === 'account' ? 'Conta' : 'Origem'}
-                  {lockedSourceType ? null : (
-                    <div className="grid min-w-0 grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
-                      <button
-                        type="button"
-                        onClick={() => setSourceType('account')}
-                        disabled={isInstallmentExpense || isInvoiceCredit}
-                        className={`h-10 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${sourceType === 'account' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
-                      >
-                        Conta
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSourceType('card')}
-                        className={`h-10 rounded-xl text-xs font-bold transition ${sourceType === 'card' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
-                      >
-                        Cartão
-                      </button>
-                    </div>
-                  )}
-                  {sourceType === 'account' ? (
-                    <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-                      {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                    </select>
-                  ) : (
-                    <select value={cardId} onChange={(event) => setCardId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-                      <option value="">Selecione</option>
-                      {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
-                    </select>
-                  )}
-                </div>
-              ) : (
-                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-                  Conta
-                  <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
-                    {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                  </select>
-                </label>
-              )}
-
-              {flow === 'expense' && sourceType === 'card' && cards.length === 0 ? (
-                <p className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-100 md:col-span-12">
-                  Cadastre um cartão antes de criar uma despesa no cartão.
-                </p>
-              ) : null}
-
-              {!(flow === 'expense' && (sourceType === 'card' || isInvoiceCredit)) ? (
-                <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-12">
-                  Estado
-                  <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-                    <option value="paid">Confirmado</option>
-                    <option value="pending">Pendente</option>
-                  </select>
-                </label>
-              ) : null}
-
-              {invoiceInfo ? (
-                <div className={`rounded-2xl border p-4 text-xs md:col-span-12 ${isEditingClosedInvoice ? 'border-amber-400/25 bg-amber-400/10 text-amber-100' : 'border-sky-400/20 bg-sky-400/10 text-sky-100'}`}>
-                  <div className="flex items-center gap-2 font-bold text-white">
-                    <CalendarClock size={16} />
-                    <span>{invoiceInfo.label}</span>
-                    <span className="ml-auto capitalize">{invoiceInfo.status}</span>
-                  </div>
-                  <p className="mt-2 text-slate-300">Consumo de {formatDatePtBr(invoiceInfo.startDate)} a {formatDatePtBr(invoiceInfo.endDate)}. Vencimento em {formatDatePtBr(invoiceInfo.dueDate)}.</p>
-                  {isEditingClosedInvoice ? <p className="mt-2 font-semibold">Esta fatura já fechou ou venceu. Edite com cuidado para não alterar meses passados por engano.</p> : null}
-                </div>
-              ) : null}
+              <SourceSelector
+                accounts={accounts}
+                cards={cards}
+                flow={flow}
+                lockedSourceType={lockedSourceType}
+                sourceType={sourceType}
+                accountId={accountId}
+                cardId={cardId}
+                status={status}
+                isInstallmentExpense={isInstallmentExpense}
+                isInvoiceCredit={isInvoiceCredit}
+                invoiceInfo={invoiceInfo}
+                isEditingClosedInvoice={isEditingClosedInvoice}
+                onSourceTypeChange={setSourceType}
+                onAccountChange={setAccountId}
+                onCardChange={setCardId}
+                onStatusChange={setStatus}
+              />
             </div>
 
             <button

@@ -22,13 +22,29 @@ import {
   summarizeDashboard,
 } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
-import { formatDatePtBr, formatLocalDate, parseLocalDate } from '../../lib/utils/date';
-import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
-import { readTransactionMeta } from '../../lib/utils/transactionMeta';
+import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
+import { getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
+import { getTransactionExpenseNeed, getTransactionInstallmentLabel, hasInvoiceSettlementMeta, hasRecurringSourceMeta } from '../../lib/utils/transactionMeta';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
+import {
+  daysBetween,
+  dueBadge,
+  filterCommitmentExpenses,
+  getCommitmentPeople,
+  getExpenseDueDate,
+  getFixedExpensesForMonth,
+  getInstallmentExpensesForMonth,
+  getPendingReimbursementsForMonth,
+  buildReimbursementPeopleSummaries,
+  buildMonthClosingChecklist,
+  MonthClosingItemId,
+  priorityKindLabel,
+  PriorityKind,
+  CommitmentOwner,
+} from './monthCenterRules';
 
 interface MonthCenterViewProps {
   accounts: Account[];
@@ -49,59 +65,12 @@ interface MonthCenterViewProps {
   onMarkAccountExpensePaid: (transaction: Transaction, input: { accountId: string; paymentDate: string }) => void | Promise<void>;
   onMarkReimbursementReceived: (transaction: Transaction, accountId: string, receivedAmount?: number) => void | Promise<void>;
   onCarryReimbursement: (transaction: Transaction) => void | Promise<void>;
-  onSkipFixedOccurrence: (transaction: Transaction) => void | Promise<void>;
+  onSkipFixedOccurrence: (transaction: Transaction) => boolean | void | Promise<boolean | void>;
 }
 
 type CenterTab = 'payments' | 'fixed' | 'closing';
 type CommitmentFilter = 'all' | 'fixed' | 'installment';
-type CommitmentOwner = 'mine' | 'others';
-type PriorityKind = 'invoice' | 'account';
 type PaymentStatusFilter = 'pending' | 'paid' | 'all';
-
-function daysBetween(date: string, today: string) {
-  return Math.round((parseLocalDate(date).getTime() - parseLocalDate(today).getTime()) / 86400000);
-}
-
-function getPersonName(people: ReimbursementPerson[], personId?: string) {
-  return people.find((person) => person.id === personId)?.name ?? 'Pessoa removida';
-}
-
-function isFixedExpense(transaction: Transaction, cards: Card[], activeMonth: string) {
-  if (transaction.flow !== 'expense') return false;
-  if (isInvoicePayment(transaction) || isInvoiceCredit(transaction)) return false;
-  if (getTransactionCompetenceMonth(transaction, cards) !== activeMonth) return false;
-
-  const meta = readTransactionMeta(transaction.notes);
-  return meta.entryMode === 'fixed'
-    || Boolean(transaction.recurringTransactionId)
-    || Boolean(meta.recurringTransactionId);
-}
-
-function isInstallmentExpense(transaction: Transaction, cards: Card[], activeMonth: string) {
-  if (transaction.flow !== 'expense') return false;
-  if (isInvoicePayment(transaction) || isInvoiceCredit(transaction)) return false;
-  if (getTransactionCompetenceMonth(transaction, cards) !== activeMonth) return false;
-
-  return readTransactionMeta(transaction.notes).entryMode === 'installment';
-}
-
-function getExpenseDueDate(transaction: Transaction, cards: Card[]) {
-  const card = transaction.cardId ? cards.find((item) => item.id === transaction.cardId) : undefined;
-  return card ? getCardInvoiceInfo(card, transaction.date).dueDate : transaction.date;
-}
-
-function dueBadge(dueDate: string, today: string) {
-  const days = daysBetween(dueDate, today);
-  if (days < 0) return { label: `${Math.abs(days)} dia${days === -1 ? '' : 's'} atrasado`, className: 'border-rose-400/20 bg-rose-500/15 text-rose-100' };
-  if (days === 0) return { label: 'vence hoje', className: 'border-amber-300/25 bg-amber-400/15 text-amber-100' };
-  if (days <= 3) return { label: `vence em ${days} dias`, className: 'border-amber-300/25 bg-amber-400/15 text-amber-100' };
-  return { label: `vence em ${formatDatePtBr(dueDate)}`, className: 'border-white/10 bg-white/5 text-slate-300' };
-}
-
-function priorityKindLabel(kind: PriorityKind) {
-  if (kind === 'invoice') return 'Fatura';
-  return 'Conta';
-}
 
 export function MonthCenterView({
   accounts,
@@ -212,14 +181,7 @@ export function MonthCenterView({
   );
 
   const pendingReimbursements = useMemo(() => (
-    transactions
-      .filter((transaction) => transaction.isReimbursable && transaction.reimbursementStatus !== 'received')
-      .filter((transaction) => getReimbursementMonthKey(transaction, cards) <= activeMonth)
-      .sort((left, right) => {
-        const leftDue = getReimbursementDueDate(left, cards) ?? left.date;
-        const rightDue = getReimbursementDueDate(right, cards) ?? right.date;
-        return leftDue.localeCompare(rightDue);
-      })
+    getPendingReimbursementsForMonth(transactions, cards, activeMonth)
   ), [activeMonth, cards, transactions]);
 
   const paymentPriorityItems = useMemo(() => {
@@ -247,70 +209,15 @@ export function MonthCenterView({
   }, [cards, onOpenCards, openAccountExpensePayment, pendingAccountExpenses, pendingInvoices]);
 
   const fixedExpenses = useMemo(() => (
-    transactions
-      .filter((transaction) => isFixedExpense(transaction, cards, activeMonth))
-      .sort((left, right) => {
-        const leftDueDate = getExpenseDueDate(left, cards);
-        const rightDueDate = getExpenseDueDate(right, cards);
-        return leftDueDate.localeCompare(rightDueDate) || left.description.localeCompare(right.description);
-      })
+    getFixedExpensesForMonth(transactions, cards, activeMonth)
   ), [activeMonth, cards, transactions]);
 
   const installmentExpenses = useMemo(() => (
-    transactions
-      .filter((transaction) => isInstallmentExpense(transaction, cards, activeMonth))
-      .sort((left, right) => {
-        const leftDueDate = getExpenseDueDate(left, cards);
-        const rightDueDate = getExpenseDueDate(right, cards);
-        const leftMeta = readTransactionMeta(left.notes);
-        const rightMeta = readTransactionMeta(right.notes);
-        return leftDueDate.localeCompare(rightDueDate)
-          || left.description.localeCompare(right.description)
-          || (leftMeta.installmentNumber ?? 0) - (rightMeta.installmentNumber ?? 0);
-      })
+    getInstallmentExpensesForMonth(transactions, cards, activeMonth)
   ), [activeMonth, cards, transactions]);
 
   const reimbursementPeopleSummaries = useMemo(() => {
-    const summaries = new Map<string, {
-      personId?: string;
-      personName: string;
-      total: number;
-      count: number;
-      overdueCount: number;
-      oldestDueDate?: string;
-      oldestTransaction?: Transaction;
-      hasPreviousMonth: boolean;
-    }>();
-
-    pendingReimbursements.forEach((transaction) => {
-      const key = transaction.reimbursementPersonId ?? 'unknown';
-      const dueDate = getReimbursementDueDate(transaction, cards) ?? transaction.date;
-      const current = summaries.get(key) ?? {
-        personId: transaction.reimbursementPersonId,
-        personName: getPersonName(people, transaction.reimbursementPersonId),
-        total: 0,
-        count: 0,
-        overdueCount: 0,
-        oldestDueDate: undefined,
-        oldestTransaction: undefined,
-        hasPreviousMonth: false,
-      };
-
-      current.total = roundMoney(current.total + getTransactionReimbursementAmount(transaction));
-      current.count += 1;
-      if (isReimbursementOverdue(transaction, cards, today)) current.overdueCount += 1;
-      if (!current.oldestDueDate || dueDate < current.oldestDueDate) {
-        current.oldestDueDate = dueDate;
-        current.oldestTransaction = transaction;
-      }
-      if (getReimbursementMonthKey(transaction, cards) < activeMonth) current.hasPreviousMonth = true;
-      summaries.set(key, current);
-    });
-
-    return Array.from(summaries.values()).sort((left, right) => {
-      if (left.overdueCount !== right.overdueCount) return right.overdueCount - left.overdueCount;
-      return right.total - left.total;
-    });
+    return buildReimbursementPeopleSummaries(pendingReimbursements, people, cards, activeMonth, today);
   }, [activeMonth, cards, pendingReimbursements, people, today]);
 
   const invoiceTotal = roundMoney(pendingInvoices.reduce((sum, item) => sum + item.total, 0));
@@ -318,24 +225,10 @@ export function MonthCenterView({
   const fixedExpenseTotal = roundMoney(fixedExpenses.reduce((sum, item) => sum + getPersonalExpenseSignedAmount(item), 0));
   const installmentExpenseTotal = roundMoney(installmentExpenses.reduce((sum, item) => sum + getPersonalExpenseSignedAmount(item), 0));
   const commitmentPeople = useMemo(() => {
-    const peopleMap = new Map<string, string>();
-    [...fixedExpenses, ...installmentExpenses].forEach((transaction) => {
-      if (getTransactionReimbursementAmount(transaction) <= 0) return;
-      const id = transaction.reimbursementPersonId ?? 'unknown';
-      peopleMap.set(id, getPersonName(people, transaction.reimbursementPersonId));
-    });
-    return Array.from(peopleMap.entries()).map(([id, name]) => ({ id, name })).sort((left, right) => left.name.localeCompare(right.name));
+    return getCommitmentPeople(fixedExpenses, installmentExpenses, people);
   }, [fixedExpenses, installmentExpenses, people]);
-  const visibleFixedExpenses = fixedExpenses.filter((transaction) => {
-    if (commitmentOwner === 'mine') return getPersonalExpenseSignedAmount(transaction) > 0;
-    if (getTransactionReimbursementAmount(transaction) <= 0) return false;
-    return commitmentPersonId === 'all' || (transaction.reimbursementPersonId ?? 'unknown') === commitmentPersonId;
-  });
-  const visibleInstallmentExpenses = installmentExpenses.filter((transaction) => {
-    if (commitmentOwner === 'mine') return getPersonalExpenseSignedAmount(transaction) > 0;
-    if (getTransactionReimbursementAmount(transaction) <= 0) return false;
-    return commitmentPersonId === 'all' || (transaction.reimbursementPersonId ?? 'unknown') === commitmentPersonId;
-  });
+  const visibleFixedExpenses = filterCommitmentExpenses(fixedExpenses, commitmentOwner, commitmentPersonId);
+  const visibleInstallmentExpenses = filterCommitmentExpenses(installmentExpenses, commitmentOwner, commitmentPersonId);
   const filteredFixedExpenses = commitmentFilter === 'installment' ? [] : visibleFixedExpenses;
   const filteredInstallmentExpenses = commitmentFilter === 'fixed' ? [] : visibleInstallmentExpenses;
   const visibleCommitmentCount = filteredFixedExpenses.length + filteredInstallmentExpenses.length;
@@ -378,7 +271,7 @@ export function MonthCenterView({
   const topCategory = expensesByCategory(transactions, categories, activeMonth, cards)[0];
   const superfluousTotal = roundMoney(monthTransactions
     .filter((transaction) => transaction.flow === 'expense' && !isInvoicePayment(transaction))
-    .filter((transaction) => readTransactionMeta(transaction.notes).expenseNeed === 'superfluous')
+    .filter((transaction) => getTransactionExpenseNeed(transaction.notes) === 'superfluous')
     .reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0));
   const monthResult = roundMoney(summary.income - summary.expenses);
   const previousResult = roundMoney(previousSummary.income - previousSummary.expenses);
@@ -388,56 +281,39 @@ export function MonthCenterView({
   const overdueReimbursements = pendingReimbursements.filter((transaction) => isReimbursementOverdue(transaction, cards, today));
   const paidInvoices = cards.length - pendingInvoices.length;
 
-  const closingItems = [
-    {
-      id: 'invoices',
-      done: pendingInvoices.length === 0,
-      title: 'Faturas do mês',
-      detail: pendingInvoices.length === 0 ? 'Todas as faturas com lançamento ativo estão quitadas.' : `${pendingInvoices.length} fatura${pendingInvoices.length === 1 ? '' : 's'} ainda em aberto.`,
-      action: 'Ver cartões',
-      onClick: () => onOpenCards(),
-    },
-    {
-      id: 'account-expenses',
-      done: pendingAccountExpenses.length === 0,
-      title: 'Despesas fora do cartão',
-      detail: pendingAccountExpenses.length === 0 ? 'Nenhuma despesa de conta pendente neste mês.' : `${pendingAccountExpenses.length} despesa${pendingAccountExpenses.length === 1 ? '' : 's'} pendente${pendingAccountExpenses.length === 1 ? '' : 's'} para resolver.`,
-      action: 'Ver transações',
-      onClick: onOpenTransactions,
-    },
-    {
-      id: 'fixed-expenses',
-      done: fixedExpenses.length > 0 || installmentExpenses.length > 0,
-      title: 'Fixas e parceladas do mês',
-      detail: fixedExpenses.length > 0 || installmentExpenses.length > 0
-        ? `${fixedExpenses.length} fixa${fixedExpenses.length === 1 ? '' : 's'} e ${installmentExpenses.length} parcelada${installmentExpenses.length === 1 ? '' : 's'} em ${formatMonthLabel(activeMonth)}.`
-        : 'Nenhuma despesa fixa ou parcelada encontrada neste mês.',
-      action: 'Ver compromissos',
-      onClick: () => setTab('fixed'),
-    },
-    {
-      id: 'reimbursements',
-      done: !reimbursementsEnabled || pendingReimbursements.length === 0,
-      title: 'Reembolsos e terceiros',
-      detail: !reimbursementsEnabled
-        ? 'Reembolsos desativados no perfil.'
-        : pendingReimbursements.length === 0
-          ? 'Nada pendente de terceiros.'
-          : `${formatCurrency(reimbursementTotal)} ainda a receber. ${oldPendingReimbursements.length > 0 ? 'Há pendências de meses anteriores.' : 'Você pode receber ou manter em acompanhamento.'}`,
-      action: 'Ver reembolsos',
-      onClick: () => onOpenReimbursements(),
-    },
-    {
-      id: 'review',
-      done: monthTransactions.length > 0,
-      title: 'Lançamentos revisados',
-      detail: monthTransactions.length > 0 ? `${monthTransactions.length} lançamento${monthTransactions.length === 1 ? '' : 's'} encontrado${monthTransactions.length === 1 ? '' : 's'} no mês.` : 'Ainda não há lançamentos neste mês para conferir.',
-      action: 'Ver transações',
-      onClick: onOpenTransactions,
-    },
-  ];
+  const closingItems = buildMonthClosingChecklist({
+    activeMonth,
+    pendingInvoiceCount: pendingInvoices.length,
+    pendingAccountExpenseCount: pendingAccountExpenses.length,
+    fixedExpenseCount: fixedExpenses.length,
+    installmentExpenseCount: installmentExpenses.length,
+    pendingReimbursementCount: pendingReimbursements.length,
+    oldPendingReimbursementCount: oldPendingReimbursements.length,
+    reimbursementTotal,
+    monthTransactionCount: monthTransactions.length,
+    reimbursementsEnabled,
+  });
 
   const canCloseMonth = closingItems.every((item) => item.done);
+
+  function handleClosingItemAction(id: MonthClosingItemId) {
+    if (id === 'invoices') {
+      onOpenCards();
+      return;
+    }
+
+    if (id === 'fixed-expenses') {
+      setTab('fixed');
+      return;
+    }
+
+    if (id === 'reimbursements') {
+      onOpenReimbursements();
+      return;
+    }
+
+    onOpenTransactions();
+  }
 
   return (
     <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-4 text-white md:pt-6">
@@ -614,8 +490,7 @@ export function MonthCenterView({
             })}
             {visibleAccountExpenses.map((transaction) => {
               const paid = transaction.status === 'paid';
-              const meta = readTransactionMeta(transaction.notes);
-              const canSkipOccurrence = !paid && Boolean(transaction.recurringTransactionId || meta.recurringTransactionId);
+              const canSkipOccurrence = !paid && Boolean(transaction.recurringTransactionId || hasRecurringSourceMeta(transaction.notes));
               const badge = paid
                 ? { label: 'paga', className: 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' }
                 : dueBadge(transaction.date, today);
@@ -788,9 +663,8 @@ export function MonthCenterView({
                   const invoiceInfo = card ? getCardInvoiceInfo(card, transaction.date) : undefined;
                   const dueDate = invoiceInfo?.dueDate ?? transaction.date;
                   const badge = dueBadge(dueDate, today);
-                  const meta = readTransactionMeta(transaction.notes);
-                  const paid = transaction.cardId ? Boolean(meta.paidAt) : transaction.status === 'paid';
-                  const canSkipOccurrence = Boolean(transaction.recurringTransactionId || meta.recurringTransactionId);
+                  const paid = transaction.cardId ? hasInvoiceSettlementMeta(transaction.notes) : transaction.status === 'paid';
+                  const canSkipOccurrence = Boolean(transaction.recurringTransactionId || hasRecurringSourceMeta(transaction.notes));
 
                   return (
                     <article key={transaction.id} className="grid gap-3 px-4 py-3 transition hover:bg-white/[0.035] md:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_150px_120px_120px] md:items-center">
@@ -832,9 +706,8 @@ export function MonthCenterView({
                   const invoiceInfo = card ? getCardInvoiceInfo(card, transaction.date) : undefined;
                   const dueDate = invoiceInfo?.dueDate ?? transaction.date;
                   const badge = dueBadge(dueDate, today);
-                  const meta = readTransactionMeta(transaction.notes);
-                  const paid = transaction.cardId ? Boolean(meta.paidAt) : transaction.status === 'paid';
-                  const installmentLabel = meta.installmentNumber && meta.totalInstallments ? `${meta.installmentNumber}/${meta.totalInstallments}` : 'parcela';
+                  const paid = transaction.cardId ? hasInvoiceSettlementMeta(transaction.notes) : transaction.status === 'paid';
+                  const installmentLabel = getTransactionInstallmentLabel(transaction.notes) ?? 'parcela';
 
                   return (
                     <article key={transaction.id} className="grid gap-3 px-4 py-3 transition hover:bg-white/[0.035] md:grid-cols-[minmax(0,1.4fr)_minmax(180px,0.8fr)_150px_120px] md:items-center">
@@ -882,7 +755,7 @@ export function MonthCenterView({
                       <p className="font-bold text-white">{item.title}</p>
                       <p className="mt-1 text-xs leading-relaxed text-slate-400">{item.detail}</p>
                     </div>
-                    <button type="button" onClick={item.onClick} className="hidden h-8 shrink-0 rounded-xl bg-white/5 px-3 text-xs font-bold text-slate-200 hover:bg-white/10 sm:block">{item.action}</button>
+                    <button type="button" onClick={() => handleClosingItemAction(item.id)} className="hidden h-8 shrink-0 rounded-xl bg-white/5 px-3 text-xs font-bold text-slate-200 hover:bg-white/10 sm:block">{item.action}</button>
                   </div>
                 </article>
               ))}
