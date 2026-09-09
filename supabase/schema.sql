@@ -397,10 +397,14 @@ create table if not exists public.notifications (
 );
 
 create index if not exists accounts_user_id_idx on public.accounts(user_id);
-create unique index if not exists accounts_user_id_name_ci_idx on public.accounts (user_id, lower(trim(name)));
+create unique index if not exists accounts_user_id_name_ci_idx
+on public.accounts (user_id, lower(trim(name)))
+where is_active;
 create index if not exists cards_user_id_idx on public.cards(user_id);
 create index if not exists cards_account_id_idx on public.cards(account_id);
-create unique index if not exists cards_user_id_name_ci_idx on public.cards (user_id, lower(trim(name)));
+create unique index if not exists cards_user_id_name_ci_idx
+on public.cards (user_id, lower(trim(name)))
+where is_active;
 create index if not exists categories_user_id_idx on public.categories(user_id);
 create unique index if not exists categories_user_flow_name_ci_unique
 on public.categories (user_id, flow, lower(trim(name)));

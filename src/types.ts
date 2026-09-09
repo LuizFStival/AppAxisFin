@@ -20,6 +20,7 @@ export interface Account {
   balance: number;
   color: string;
   institution: string;
+  isActive: boolean;
 }
 
 export interface Card {
@@ -32,6 +33,7 @@ export interface Card {
   closingDay: number;
   color: string;
   network: CardNetwork;
+  isActive: boolean;
 }
 
 export interface Category {

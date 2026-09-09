@@ -24,6 +24,7 @@ type AccountRow = {
   institution: string | null;
   balance: number | string;
   color: string;
+  is_active?: boolean | null;
 };
 
 type CardRow = {
@@ -35,6 +36,7 @@ type CardRow = {
   closing_day: number;
   due_day: number;
   color: string;
+  is_active?: boolean | null;
 };
 
 type CategoryRow = {
@@ -107,6 +109,7 @@ export function mapAccount(row: AccountRow): Account {
     institution: row.institution ?? row.name,
     balance: Number(row.balance),
     color: row.color,
+    isActive: row.is_active ?? true,
   };
 }
 
@@ -121,6 +124,7 @@ export function mapCard(row: CardRow): Card {
     closingDay: row.closing_day,
     color: row.color,
     network: row.network,
+    isActive: row.is_active ?? true,
   };
 }
 
@@ -366,8 +370,8 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
   await cleanupLegacyStarterFinance(userId);
 
   const [accountsResult, cardsResult, categoriesResult, reimbursementPeopleResult, recurringTransactionsResult, transactionsResult] = await Promise.all([
-    client.from('accounts').select('id, name, type, institution, balance, color').eq('user_id', userId).order('created_at'),
-    client.from('cards').select('id, name, account_id, network, credit_limit, closing_day, due_day, color').eq('user_id', userId).order('created_at'),
+    client.from('accounts').select('id, name, type, institution, balance, color, is_active').eq('user_id', userId).order('created_at'),
+    client.from('cards').select('id, name, account_id, network, credit_limit, closing_day, due_day, color, is_active').eq('user_id', userId).order('created_at'),
     client.from('categories').select('id, name, flow, icon, color, is_system').eq('user_id', userId).order('name'),
     client.from('reimbursement_people').select('id, name, phone, notes').eq('user_id', userId).order('name'),
     client

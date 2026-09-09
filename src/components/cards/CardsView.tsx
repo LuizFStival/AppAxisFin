@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, Trash2, UserRound } from 'lucide-react';
+import { Archive, ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, RotateCcw, Trash2, UserRound } from 'lucide-react';
 import { Account, Card, Category, ReimbursementPerson, Transaction } from '../../types';
 import { formatCurrency, getCategoryName, getExpenseSignedAmount, getPersonalExpenseSignedAmount, getTransactionReimbursementAmount, isCardInvoicePaid, isInvoiceCredit } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
@@ -37,6 +37,8 @@ interface CardsViewProps {
   onUpdateCardClosingDay: (card: Card, closingDay: number) => Promise<void>;
   onEditCard: (card: Card) => void;
   onDeleteCard: (card: Card) => void;
+  onArchiveCard: (card: Card) => void;
+  onRestoreCard: (card: Card) => void;
 }
 
 function getInvoiceTransactions(card: Card, transactions: Transaction[], closingMonth: string) {
@@ -126,10 +128,13 @@ export function CardsView({
   onUpdateCardClosingDay,
   onEditCard,
   onDeleteCard,
+  onArchiveCard,
+  onRestoreCard,
 }: CardsViewProps) {
   const [search, setSearch] = useState('');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseViewFilter>('all');
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null);
   const [dragTargetTransactionId, setDragTargetTransactionId] = useState<string | null>(null);
   const pointerDragRef = useRef({
@@ -140,8 +145,11 @@ export function CardsView({
     hasMoved: false,
   });
   const selectedCard = cards.find((card) => card.id === selectedCardId);
+  const activeCards = cards.filter((card) => card.isActive);
+  const archivedCards = cards.filter((card) => !card.isActive);
+  const visibleCards = showArchived ? archivedCards : activeCards;
   const invoices = useMemo(() => {
-    return cards.map((card) => {
+    return visibleCards.map((card) => {
       const invoice = getCardInvoiceInfoForClosingMonth(card, activeMonth, formatLocalDate(new Date()));
       const invoiceTransactions = getInvoiceTransactions(card, transactions, activeMonth);
       const total = invoiceTransactions.reduce((sum, transaction) => sum + (isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount), 0);
@@ -176,7 +184,7 @@ export function CardsView({
         reimbursementBreakdown,
       };
     });
-  }, [activeMonth, cards, transactions]);
+  }, [activeMonth, transactions, visibleCards]);
   const selectedInvoice = selectedCard
     ? invoices.find((item) => item.card.id === selectedCard.id)
     : null;
@@ -315,10 +323,29 @@ export function CardsView({
           <section className="premium-card mt-4 shrink-0 rounded-2xl p-4">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Faturas que fecham no mês</p>
             <p className="mt-1 font-display text-2xl font-bold text-white">{formatCurrency(totalAllCards)}</p>
-            <p className="mt-1 text-xs text-slate-500">{invoices.reduce((sum, item) => sum + item.transactions.length, 0)} lançamentos em {cards.length} cartão{cards.length === 1 ? '' : 'ões'}</p>
+            <p className="mt-1 text-xs text-slate-500">{invoices.reduce((sum, item) => sum + item.transactions.length, 0)} lançamentos em {visibleCards.length} cartão{visibleCards.length === 1 ? '' : 'ões'}</p>
           </section>
 
           <section className="premium-scroll mt-5 min-h-[260px] flex-1 space-y-3 overflow-y-auto pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                {showArchived ? 'Cartões arquivados' : 'Cartões ativos'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowArchived((current) => !current)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+              >
+                {showArchived ? 'Ver ativos' : `Arquivados ${archivedCards.length}`}
+              </button>
+            </div>
+            {invoices.length === 0 ? (
+              <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
+                <CreditCard size={22} className="mx-auto mb-2 text-slate-500" />
+                <p className="text-sm font-bold text-white">{showArchived ? 'Nenhum cartão arquivado' : 'Nenhum cartão ativo'}</p>
+                <p className="mt-1 text-xs text-slate-500">{showArchived ? 'Cartões parados aparecerão aqui sem perder histórico.' : 'Cadastre seus cartões para acompanhar as faturas.'}</p>
+              </div>
+            ) : null}
             {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, reimbursementPending, invoiceCreditTotal, personalTotal }) => {
               const progress = card.limit > 0 ? Math.max(0, Math.min(100, (total / card.limit) * 100)) : 0;
               const displayStatus = getInvoiceDisplayStatus(invoice.status, invoiceTransactions);
@@ -395,6 +422,35 @@ export function CardsView({
                       <p className="mt-1 text-[10px] font-semibold text-emerald-200">Descontos/estornos: -{formatCurrency(invoiceCreditTotal)}</p>
                     ) : null}
                   </button>
+                  <div className="mt-3 flex justify-end gap-2 border-t border-white/8 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => onEditCard(card)}
+                      className="flex h-8 items-center gap-1.5 rounded-lg bg-white/5 px-3 text-xs font-bold text-slate-200 transition hover:bg-sky-500/20 hover:text-sky-100"
+                    >
+                      <Pencil size={14} />
+                      Editar
+                    </button>
+                    {card.isActive ? (
+                      <button
+                        type="button"
+                        onClick={() => onArchiveCard(card)}
+                        className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 text-xs font-bold text-amber-200 transition hover:bg-amber-500/20"
+                      >
+                        <Archive size={14} />
+                        Arquivar
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onRestoreCard(card)}
+                        className="flex h-8 items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/20"
+                      >
+                        <RotateCcw size={14} />
+                        Desarquivar
+                      </button>
+                    )}
+                  </div>
                 </article>
               );
             })}

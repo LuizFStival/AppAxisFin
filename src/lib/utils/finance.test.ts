@@ -22,8 +22,8 @@ import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverd
 import { Account, Card, Category, Transaction } from '../../types';
 
 const accounts: Account[] = [
-  { id: 'acc-main', name: 'Principal', type: 'checking', balance: 1200, color: '#3B82F6', institution: 'Banco' },
-  { id: 'acc-save', name: 'Reserva', type: 'savings', balance: 300, color: '#10B981', institution: 'Banco' },
+  { id: 'acc-main', name: 'Principal', type: 'checking', balance: 1200, color: '#3B82F6', institution: 'Banco', isActive: true },
+  { id: 'acc-save', name: 'Reserva', type: 'savings', balance: 300, color: '#10B981', institution: 'Banco', isActive: true },
 ];
 
 const cards: Card[] = [
@@ -37,6 +37,7 @@ const cards: Card[] = [
     closingDay: 1,
     color: '#8B5CF6',
     network: 'mastercard',
+    isActive: true,
   },
 ];
 
@@ -227,6 +228,7 @@ const splitCard: Card = {
   closingDay: 26,
   color: '#8B5CF6',
   network: 'mastercard',
+  isActive: true,
 };
 const splitInvoicePaymentDashboard = summarizeDashboard(accounts, [
   {
@@ -380,6 +382,7 @@ const closesOnTwentySix: Card = {
   closingDay: 26,
   color: '#8B5CF6',
   network: 'mastercard',
+  isActive: true,
 };
 
 assert.deepEqual(getCardInvoiceInfo(closesOnTwentySix, '2026-05-26', '2026-06-12'), {

@@ -3,8 +3,8 @@ import type { Account, Card, Transaction } from '../../types';
 import { calculateCashForecast } from './cashForecast';
 import { writeTransactionNotes } from './transactionMeta';
 
-const accounts: Account[] = [{ id: 'account', name: 'Conta', type: 'checking', balance: 1000, color: '#fff', institution: 'Banco' }];
-const cards: Card[] = [{ id: 'card', name: 'Cartão', accountId: 'account', limit: 2000, used: 0, dueDay: 10, closingDay: 1, color: '#000', network: 'visa' }];
+const accounts: Account[] = [{ id: 'account', name: 'Conta', type: 'checking', balance: 1000, color: '#fff', institution: 'Banco', isActive: true }];
+const cards: Card[] = [{ id: 'card', name: 'Cartão', accountId: 'account', limit: 2000, used: 0, dueDay: 10, closingDay: 1, color: '#000', network: 'visa', isActive: true }];
 const transactions: Transaction[] = [
   { id: 'income', description: 'Salário', amount: 1500, flow: 'income', status: 'pending', date: '2026-07-05', accountId: 'account' },
   { id: 'income-paid', description: 'Já recebido', amount: 300, flow: 'income', status: 'paid', date: '2026-07-04', accountId: 'account' },

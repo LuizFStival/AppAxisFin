@@ -11,7 +11,7 @@ import {
 } from './monthCenterRules';
 
 const cards: Card[] = [
-  { id: 'card', name: 'NuCrédito', accountId: 'account', limit: 3000, used: 0, dueDay: 2, closingDay: 26, color: '#8b5cf6', network: 'mastercard' },
+  { id: 'card', name: 'NuCrédito', accountId: 'account', limit: 3000, used: 0, dueDay: 2, closingDay: 26, color: '#8b5cf6', network: 'mastercard', isActive: true },
 ];
 const people: ReimbursementPerson[] = [
   { id: 'person', name: 'Huboox' },

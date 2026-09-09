@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CreditCard, Pencil, Plus, Trash2, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Archive, ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CreditCard, Pencil, Plus, RotateCcw, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { Account, Card, Category, Transaction } from '../../types';
 import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCategoryName, getPaymentSource, shiftMonthKey } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
@@ -16,7 +16,8 @@ interface AccountsViewProps {
   onSelectAccount: (accountId: string) => void;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
-  onDeleteAccount: (account: Account) => void;
+  onArchiveAccount: (account: Account) => void;
+  onRestoreAccount: (account: Account) => void;
   onOpenInvoice: (cardId: string, period: string) => void;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
@@ -47,16 +48,21 @@ export function AccountsView({
   onSelectAccount,
   onAddAccount,
   onEditAccount,
-  onDeleteAccount,
+  onArchiveAccount,
+  onRestoreAccount,
   onOpenInvoice,
   onPreviousMonth,
   onNextMonth,
   onCurrentMonth,
 }: AccountsViewProps) {
-  const totalBalance = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const [showArchived, setShowArchived] = useState(false);
+  const activeAccounts = accounts.filter((account) => account.isActive);
+  const archivedAccounts = accounts.filter((account) => !account.isActive);
+  const visibleAccounts = showArchived ? archivedAccounts : activeAccounts;
+  const totalBalance = activeAccounts.reduce((sum, account) => sum + account.balance, 0);
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? null;
   const accountMonthlySummaries = useMemo(() => {
-    return accounts.map((account) => {
+    return visibleAccounts.map((account) => {
       const entries = transactions.flatMap((transaction) =>
         getAccountMovementEntries(transaction, account.id, cards)
           .filter((entry) => entry.month === activeMonth)
@@ -73,7 +79,7 @@ export function AccountsView({
         count: entries.length,
       };
     });
-  }, [accounts, activeMonth, cards, transactions]);
+  }, [activeMonth, cards, transactions, visibleAccounts]);
   const monthlyInflow = accountMonthlySummaries.reduce((sum, item) => sum + item.inflow, 0);
   const monthlyOutflow = accountMonthlySummaries.reduce((sum, item) => sum + item.outflow, 0);
   const monthlyNet = monthlyInflow - monthlyOutflow;
@@ -81,7 +87,7 @@ export function AccountsView({
   const accountCashEvolution = useMemo(() => {
     return Array.from({ length: 6 }, (_, index) => {
       const month = shiftMonthKey(activeMonth, index - 5);
-      const entries = accounts.flatMap((account) =>
+      const entries = activeAccounts.flatMap((account) =>
         transactions.flatMap((transaction) =>
           getAccountMovementEntries(transaction, account.id, cards)
             .filter((entry) => entry.month === month)
@@ -99,7 +105,7 @@ export function AccountsView({
         net: inflow - outflow,
       };
     });
-  }, [accounts, activeMonth, cards, transactions]);
+  }, [activeAccounts, activeMonth, cards, transactions]);
   const previousCashNet = accountCashEvolution.at(-2)?.net ?? 0;
   const currentCashNet = accountCashEvolution.at(-1)?.net ?? 0;
   const cashTrendDelta = currentCashNet - previousCashNet;
@@ -232,11 +238,23 @@ export function AccountsView({
           </section>
 
           <section className="premium-scroll mt-5 min-h-[260px] flex-1 space-y-3 overflow-y-auto pb-4">
-            {accounts.length === 0 ? (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                {showArchived ? 'Contas arquivadas' : 'Contas ativas'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowArchived((current) => !current)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+              >
+                {showArchived ? 'Ver ativas' : `Arquivadas ${archivedAccounts.length}`}
+              </button>
+            </div>
+            {visibleAccounts.length === 0 ? (
               <div className="premium-card-soft rounded-2xl border-dashed p-5 text-center">
                 <Wallet size={22} className="mx-auto mb-2 text-slate-500" />
-                <p className="text-sm font-semibold text-slate-300">Nenhuma conta cadastrada</p>
-                <p className="mt-1 text-xs text-slate-500">Adicione suas contas reais para o saldo do app nascer correto.</p>
+                <p className="text-sm font-semibold text-slate-300">{showArchived ? 'Nenhuma conta arquivada' : 'Nenhuma conta cadastrada'}</p>
+                <p className="mt-1 text-xs text-slate-500">{showArchived ? 'Contas que você parar de usar aparecerão aqui.' : 'Adicione suas contas reais para o saldo do app nascer correto.'}</p>
               </div>
             ) : (
               accountMonthlySummaries.map(({ account, net, count }) => (
@@ -274,14 +292,25 @@ export function AccountsView({
                       >
                         <Pencil size={14} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteAccount(account)}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-rose-300 transition hover:bg-rose-500/20 hover:text-rose-100"
-                        title="Excluir conta"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {account.isActive ? (
+                        <button
+                          type="button"
+                          onClick={() => onArchiveAccount(account)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-amber-300 transition hover:bg-amber-500/20 hover:text-amber-100"
+                          title="Arquivar conta"
+                        >
+                          <Archive size={14} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onRestoreAccount(account)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-100"
+                          title="Desarquivar conta"
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </article>

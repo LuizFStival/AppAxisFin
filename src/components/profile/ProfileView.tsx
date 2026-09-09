@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Check, ChevronDown, ChevronUp, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, PiggyBank, Plus, Tags, Trash2, Wallet, X } from 'lucide-react';
+import { Archive, Bell, Check, ChevronDown, ChevronUp, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, PiggyBank, Plus, RotateCcw, Tags, Trash2, Wallet, X } from 'lucide-react';
 import { Account, Card, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
@@ -23,10 +23,12 @@ interface ProfileViewProps {
   onUpdateReportWidgets: (widgets: ReportWidgetId[]) => Promise<void>;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
-  onDeleteAccount: (account: Account) => void;
+  onArchiveAccount: (account: Account) => void;
+  onRestoreAccount: (account: Account) => void;
   onAddCard: () => void;
   onEditCard: (card: Card) => void;
-  onDeleteCard: (card: Card) => void;
+  onArchiveCard: (card: Card) => void;
+  onRestoreCard: (card: Card) => void;
   onAddCategory: (flow: Category['flow']) => void;
   onEditCategory: (category: Category) => void;
   onDeleteCategory: (category: Category) => void;
@@ -65,10 +67,12 @@ export function ProfileView({
   onUpdateReportWidgets,
   onAddAccount,
   onEditAccount,
-  onDeleteAccount,
+  onArchiveAccount,
+  onRestoreAccount,
   onAddCard,
   onEditCard,
-  onDeleteCard,
+  onArchiveCard,
+  onRestoreCard,
   onAddCategory,
   onEditCategory,
   onDeleteCategory,
@@ -539,7 +543,9 @@ export function ProfileView({
                 </span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-white">{account.name}</p>
-                  <p className="text-xs text-slate-500">{account.institution || account.type}</p>
+                  <p className="text-xs text-slate-500">
+                    {account.institution || account.type}{account.isActive ? '' : ' - arquivada'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -551,14 +557,25 @@ export function ProfileView({
                 >
                   <Pencil size={16} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onDeleteAccount(account)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl text-rose-300 hover:bg-rose-500/10"
-                  aria-label={`Excluir conta ${account.name}`}
-                >
-                  <Trash2 size={16} />
-                </button>
+                {account.isActive ? (
+                  <button
+                    type="button"
+                    onClick={() => onArchiveAccount(account)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-amber-300 hover:bg-amber-500/10"
+                    aria-label={`Arquivar conta ${account.name}`}
+                  >
+                    <Archive size={16} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onRestoreAccount(account)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-emerald-300 hover:bg-emerald-500/10"
+                    aria-label={`Desarquivar conta ${account.name}`}
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -596,7 +613,9 @@ export function ProfileView({
                 </span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-white">{card.name}</p>
-                  <p className="text-xs text-slate-500">Fecha dia {card.closingDay} - vence dia {card.dueDay}</p>
+                  <p className="text-xs text-slate-500">
+                    Fecha dia {card.closingDay} - vence dia {card.dueDay}{card.isActive ? '' : ' - arquivado'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -608,14 +627,25 @@ export function ProfileView({
                 >
                   <Pencil size={16} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onDeleteCard(card)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl text-rose-300 hover:bg-rose-500/10"
-                  aria-label={`Excluir cartão ${card.name}`}
-                >
-                  <Trash2 size={16} />
-                </button>
+                {card.isActive ? (
+                  <button
+                    type="button"
+                    onClick={() => onArchiveCard(card)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-amber-300 hover:bg-amber-500/10"
+                    aria-label={`Arquivar cartão ${card.name}`}
+                  >
+                    <Archive size={16} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onRestoreCard(card)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl text-emerald-300 hover:bg-emerald-500/10"
+                    aria-label={`Desarquivar cartão ${card.name}`}
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                )}
               </div>
             </div>
           ))}

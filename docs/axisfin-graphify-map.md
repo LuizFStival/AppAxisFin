@@ -6,9 +6,9 @@ Atualizado em 2026-09-08 a partir de `src/graphify-out/GRAPH_REPORT.md`.
 
 - Escopo analisado: `src/`
 - Arquivos de código: 87
-- Nós no grafo: 684
-- Conexões: 2276
-- Comunidades: 25
+- Nós no grafo: 686
+- Conexões: 2280
+- Comunidades: 28
 - Custo de tokens: 0 input / 0 output
 - Ciclos de importação: nenhum detectado
 
@@ -64,6 +64,10 @@ Prioridades sugeridas:
 - Regerado o grafo incremental: 683 nós, 2272 conexões e 26 comunidades.
 - Corrigida a ação `Não usei` para remover a ocorrência fixa imediatamente do estado local após gravar a exclusão na regra recorrente.
 - Regerado o grafo incremental: 684 nós, 2276 conexões e 25 comunidades.
+- Adicionado arquivamento/desarquivamento de contas e cartões, mantendo histórico e escondendo itens inativos dos fluxos principais.
+- Ajustados repositórios, snapshot financeiro e telas de Contas, Cartões e Perfil para respeitar `is_active`.
+- Atualizada a regra de unicidade para permitir reaproveitar nomes arquivados sem conflito entre itens ativos.
+- Regerado o grafo incremental: 686 nós, 2280 conexões e 28 comunidades.
 
 ## Funcionalidades Para Reorganizar
 

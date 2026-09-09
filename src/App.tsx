@@ -150,12 +150,38 @@ export default function App() {
     recurringTransactions: snapshot.recurringTransactions,
     transactions: snapshot.transactions,
   });
+  const activeAccounts = useMemo(() => snapshot.accounts.filter((account) => account.isActive), [snapshot.accounts]);
+  const activeCards = useMemo(() => snapshot.cards.filter((card) => card.isActive), [snapshot.cards]);
+  const accountOptionsForCardModal = useMemo(() => {
+    const linkedAccount = editingCard?.accountId
+      ? snapshot.accounts.find((account) => account.id === editingCard.accountId)
+      : undefined;
+    const options = linkedAccount && !linkedAccount.isActive ? [linkedAccount, ...activeAccounts] : activeAccounts;
+    return Array.from(new Map(options.map((account) => [account.id, account])).values());
+  }, [activeAccounts, editingCard, snapshot.accounts]);
+  const accountsForEntryModal = useMemo(() => {
+    const relatedAccountIds = [
+      editingTransaction?.accountId,
+      editingTransaction?.fromAccountId,
+      editingTransaction?.toAccountId,
+      editingTransaction?.reimbursementReceivedAccountId,
+    ].filter(Boolean) as string[];
+    const relatedAccounts = snapshot.accounts.filter((account) => relatedAccountIds.includes(account.id));
+    return Array.from(new Map([...activeAccounts, ...relatedAccounts].map((account) => [account.id, account])).values());
+  }, [activeAccounts, editingTransaction, snapshot.accounts]);
+  const cardsForEntryModal = useMemo(() => {
+    const relatedCard = editingTransaction?.cardId
+      ? snapshot.cards.find((card) => card.id === editingTransaction.cardId)
+      : undefined;
+    const options = relatedCard && !relatedCard.isActive ? [...activeCards, relatedCard] : activeCards;
+    return Array.from(new Map(options.map((card) => [card.id, card])).values());
+  }, [activeCards, editingTransaction, snapshot.cards]);
 
   const summary = useMemo(
-    () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth, snapshot.cards, {
+    () => summarizeDashboard(activeAccounts, snapshot.transactions, activeMonth, snapshot.cards, {
       includeReimbursements: user.reimbursementsEnabled,
     }),
-    [activeMonth, snapshot.accounts, snapshot.cards, snapshot.transactions, user.reimbursementsEnabled],
+    [activeAccounts, activeMonth, snapshot.cards, snapshot.transactions, user.reimbursementsEnabled],
   );
 
   async function handleSaveAccount(input: {
@@ -827,6 +853,22 @@ export default function App() {
     }
   }
 
+  async function handleSetAccountActive(account: FinanceSnapshot['accounts'][number], isActive: boolean) {
+    const confirmed = window.confirm(`${isActive ? 'Desarquivar' : 'Arquivar'} a conta "${account.name}"? ${isActive ? 'Ela voltará para listas e lançamentos.' : 'Ela sairá das listas principais, mas o histórico será mantido.'}`);
+    if (!confirmed) return;
+
+    try {
+      const saved = await accountRepository.setActive(account.id, isActive);
+      setSnapshot((current) => ({
+        ...current,
+        accounts: current.accounts.map((item) => item.id === saved.id ? saved : item),
+      }));
+      if (!isActive && selectedAccountId === account.id) setSelectedAccountId('');
+    } catch (error) {
+      alert(getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} a conta. Tente novamente.`));
+    }
+  }
+
   async function handleDeleteCard(card: FinanceSnapshot['cards'][number]) {
     const linkedTransactions = snapshot.transactions.filter((transaction) => transaction.cardId === card.id).length;
     const confirmed = window.confirm(`Excluir o cartão "${card.name}"? Esta ação apaga o cartão e ${linkedTransactions} lançamento(s) das faturas vinculadas. Não pode ser desfeita.`);
@@ -841,6 +883,22 @@ export default function App() {
       }));
     } catch (error) {
       alert(getUserFriendlyError(error, 'Não foi possível excluir o cartão. Tente novamente.'));
+    }
+  }
+
+  async function handleSetCardActive(card: FinanceSnapshot['cards'][number], isActive: boolean) {
+    const confirmed = window.confirm(`${isActive ? 'Desarquivar' : 'Arquivar'} o cartão "${card.name}"? ${isActive ? 'Ele voltará para listas e lançamentos.' : 'Ele sairá das listas principais, mas as faturas antigas serão mantidas.'}`);
+    if (!confirmed) return;
+
+    try {
+      const saved = await cardRepository.setActive(card.id, isActive);
+      setSnapshot((current) => ({
+        ...current,
+        cards: current.cards.map((item) => item.id === saved.id ? saved : item),
+      }));
+      if (!isActive && selectedCardId === card.id) setSelectedCardId('');
+    } catch (error) {
+      alert(getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} o cartão. Tente novamente.`));
     }
   }
 
@@ -924,7 +982,7 @@ export default function App() {
         {currentView === 'home' ? (
           <DashboardView
           userName={user.name}
-          accounts={snapshot.accounts}
+          accounts={activeAccounts}
           cards={snapshot.cards}
           categories={snapshot.categories}
           transactions={snapshot.transactions}
@@ -1040,7 +1098,8 @@ export default function App() {
             setEditingAccount(account);
             setIsAddAccountOpen(true);
           }}
-          onDeleteAccount={handleDeleteAccount}
+          onArchiveAccount={(account) => void handleSetAccountActive(account, false)}
+          onRestoreAccount={(account) => void handleSetAccountActive(account, true)}
           onOpenInvoice={(cardId, period) => {
             setSelectedCardId(cardId);
             setActiveMonth(period);
@@ -1081,6 +1140,8 @@ export default function App() {
             setIsAddCardOpen(true);
           }}
           onDeleteCard={handleDeleteCard}
+          onArchiveCard={(card) => void handleSetCardActive(card, false)}
+          onRestoreCard={(card) => void handleSetCardActive(card, true)}
         />
       ) : null}
 
@@ -1192,7 +1253,8 @@ export default function App() {
             setEditingAccount(account);
             setIsAddAccountOpen(true);
           }}
-          onDeleteAccount={handleDeleteAccount}
+          onArchiveAccount={(account) => void handleSetAccountActive(account, false)}
+          onRestoreAccount={(account) => void handleSetAccountActive(account, true)}
           onAddCard={() => {
             setEditingCard(null);
             setIsAddCardOpen(true);
@@ -1201,7 +1263,8 @@ export default function App() {
             setEditingCard(card);
             setIsAddCardOpen(true);
           }}
-          onDeleteCard={handleDeleteCard}
+          onArchiveCard={(card) => void handleSetCardActive(card, false)}
+          onRestoreCard={(card) => void handleSetCardActive(card, true)}
           onAddCategory={(flow) => {
             setEditingCategory(null);
             setNewCategoryFlow(flow);
@@ -1222,13 +1285,13 @@ export default function App() {
         {isAddOpen ? (
           <AddEntryModal
             isOpen
-            accounts={snapshot.accounts}
-            cards={snapshot.cards}
+            accounts={accountsForEntryModal}
+            cards={cardsForEntryModal}
             categories={snapshot.categories}
             reimbursementPeople={snapshot.reimbursementPeople}
             reimbursementsEnabled={user.reimbursementsEnabled}
             transaction={editingTransaction}
-            preferredCardId={currentView === 'cards' ? (selectedCardId || snapshot.cards[0]?.id) : undefined}
+            preferredCardId={currentView === 'cards' ? (selectedCardId || activeCards[0]?.id) : undefined}
             onCreateCategory={handleCreateCategoryFromEntry}
             onCreateReimbursementPerson={handleCreateReimbursementPerson}
             onCreateRecurring={handleCreateRecurring}
@@ -1253,7 +1316,7 @@ export default function App() {
         {isAddAccountOpen ? (
           <AddAccountModal
             isOpen
-            accounts={snapshot.accounts}
+            accounts={activeAccounts}
             account={editingAccount}
             onClose={() => {
               setIsAddAccountOpen(false);
@@ -1266,8 +1329,8 @@ export default function App() {
         {isAddCardOpen ? (
           <AddCardModal
             isOpen
-            accounts={snapshot.accounts}
-            cards={snapshot.cards}
+            accounts={accountOptionsForCardModal}
+            cards={activeCards}
             card={editingCard}
             onClose={() => {
               setIsAddCardOpen(false);
