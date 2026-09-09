@@ -15,6 +15,7 @@ import {
   NotificationsView,
   ProfileView,
   ReimbursementsView,
+  ReserveBoxesView,
   ReportsView,
   TransactionsView,
   ViewLoadingFallback,
@@ -26,14 +27,15 @@ import { useInvoiceOrdering } from './features/cards/useInvoiceOrdering';
 import { categoryRepository } from './features/categories/categoryRepository';
 import { clearFinanceSnapshot, loadFinanceSnapshot } from './features/finance/financeStore';
 import { reimbursementRepository } from './features/reimbursements/reimbursementRepository';
+import { reserveBoxRepository } from './features/reserve-boxes/reserveBoxRepository';
 import { profileRepository } from './features/profile/profileRepository';
 import { useNotifications } from './features/notifications/useNotifications';
 import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
-import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, Transaction } from './types';
+import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, ReserveBoxMovementType, Transaction } from './types';
 import { getCurrentMonthKey, getTransactionReimbursementBaseAmount, getTransactionReimbursementReceivedAmount, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
 import { getCardInvoiceClosingMonth } from './lib/utils/cardInvoices';
-import { addMonths } from './lib/utils/date';
+import { addMonths, formatLocalDate } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
 import { getUserFriendlyError } from './lib/utils/userFriendlyError';
 
@@ -43,6 +45,8 @@ const emptyFinanceSnapshot: FinanceSnapshot = {
   categories: [],
   reimbursementPeople: [],
   recurringTransactions: [],
+  reserveBoxes: [],
+  reserveBoxMovements: [],
   transactions: [],
 };
 
@@ -208,6 +212,14 @@ export default function App() {
     }));
   }
 
+  async function handleUpdateAccountBalance(account: FinanceSnapshot['accounts'][number], balance: number, date: string = formatLocalDate(new Date())) {
+    const saved = await accountRepository.updateBalance(account.id, balance, date);
+    setSnapshot((current) => ({
+      ...current,
+      accounts: current.accounts.map((item) => item.id === saved.id ? saved : item),
+    }));
+  }
+
   async function handleSaveCard(input: {
     name: string;
     accountId?: string;
@@ -232,6 +244,57 @@ export default function App() {
       ...current,
       cards: [...current.cards, saved],
     }));
+  }
+
+  async function handleCreateReserveBox(input: {
+    name: string;
+    institution: string;
+    cdiPercent: number;
+    initialBalance: number;
+    createdOn: string;
+    goal?: string;
+    color: string;
+    icon: string;
+  }) {
+    const saved = await reserveBoxRepository.create(input);
+    setSnapshot((current) => ({
+      ...current,
+      reserveBoxes: [...current.reserveBoxes, saved],
+    }));
+  }
+
+  async function handleAddReserveBoxMovement(input: {
+    reserveBoxId: string;
+    type: ReserveBoxMovementType;
+    amount: number;
+    date: string;
+    description?: string;
+    createAccountIncome?: boolean;
+    accountId?: string;
+  }) {
+    const result = await reserveBoxRepository.addMovement(input);
+
+    if (input.type === 'withdrawal' && input.createAccountIncome && input.accountId) {
+      const boxName = snapshot.reserveBoxes.find((box) => box.id === input.reserveBoxId)?.name ?? 'caixinha';
+      await transactionRepository.create({
+        description: `Resgate ${boxName}`,
+        amount: input.amount,
+        flow: 'income',
+        status: 'paid',
+        date: input.date,
+        accountId: input.accountId,
+        notes: input.description ? `Resgate de caixinha: ${input.description}` : 'Resgate de caixinha',
+      });
+    }
+
+    const loaded = await loadFinanceSnapshot();
+    setSnapshot({
+      ...loaded,
+      reserveBoxes: loaded.reserveBoxes.map((box) => box.id === result.box.id ? result.box : box),
+      reserveBoxMovements: loaded.reserveBoxMovements.some((movement) => movement.id === result.movement.id)
+        ? loaded.reserveBoxMovements
+        : [result.movement, ...loaded.reserveBoxMovements],
+    });
   }
 
   function assignInvoiceSortOrderToNewTransactions(transactions: Array<Omit<Transaction, 'id'>>): Array<Omit<Transaction, 'id'>> {
@@ -986,6 +1049,7 @@ export default function App() {
           cards={snapshot.cards}
           categories={snapshot.categories}
           transactions={snapshot.transactions}
+          reserveBoxes={snapshot.reserveBoxes}
           activeMonth={activeMonth}
           summary={summary}
           savingsPreferences={user}
@@ -1018,6 +1082,7 @@ export default function App() {
             setSelectedCardId(cardId ?? '');
             setCurrentView('cards');
           }}
+          onViewReserves={() => setCurrentView('reserves')}
           onViewReimbursements={() => {
             setSelectedReimbursementPersonId(null);
             setCurrentView('reimbursements');
@@ -1098,6 +1163,7 @@ export default function App() {
             setEditingAccount(account);
             setIsAddAccountOpen(true);
           }}
+          onUpdateAccountBalance={handleUpdateAccountBalance}
           onArchiveAccount={(account) => void handleSetAccountActive(account, false)}
           onRestoreAccount={(account) => void handleSetAccountActive(account, true)}
           onOpenInvoice={(cardId, period) => {
@@ -1142,6 +1208,17 @@ export default function App() {
           onDeleteCard={handleDeleteCard}
           onArchiveCard={(card) => void handleSetCardActive(card, false)}
           onRestoreCard={(card) => void handleSetCardActive(card, true)}
+        />
+      ) : null}
+
+      {currentView === 'reserves' ? (
+        <ReserveBoxesView
+          boxes={snapshot.reserveBoxes}
+          movements={snapshot.reserveBoxMovements}
+          accounts={activeAccounts}
+          showBalances={showBalances}
+          onCreateBox={handleCreateReserveBox}
+          onAddMovement={handleAddReserveBoxMovement}
         />
       ) : null}
 

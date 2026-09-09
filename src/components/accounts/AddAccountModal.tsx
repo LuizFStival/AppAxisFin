@@ -203,7 +203,7 @@ export function AddAccountModal({ isOpen, accounts, account, onClose, onSave }: 
           </label>
 
           <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Saldo inicial
+            {account ? 'Saldo atual' : 'Saldo inicial'}
             <CurrencyInput value={balance} onChange={setBalance} />
           </label>
         </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeftRight, BarChart3, CalendarCheck2, CreditCard, HandCoins, Home, MoreHorizontal, Plus, Target, User, Wallet } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarCheck2, CreditCard, HandCoins, Home, MoreHorizontal, PiggyBank, Plus, Target, User, Wallet } from 'lucide-react';
 import { AppView } from '../../types';
 
 interface BottomNavigationProps {
@@ -19,6 +19,7 @@ const moreItems = [
   { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
   { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
   { id: 'accounts' as const, label: 'Contas', icon: Wallet },
+  { id: 'reserves' as const, label: 'Caixinhas', icon: PiggyBank },
   { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },
   { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
   { id: 'profile' as const, label: 'Perfil', icon: User },

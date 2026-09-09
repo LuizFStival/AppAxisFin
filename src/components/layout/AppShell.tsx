@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeftRight, BarChart3, CalendarCheck2, CreditCard, HandCoins, Home, Plus, Target, User, Wallet } from 'lucide-react';
+import { ArrowLeftRight, BarChart3, CalendarCheck2, CreditCard, HandCoins, Home, PiggyBank, Plus, Target, User, Wallet } from 'lucide-react';
 import { AppView } from '../../types';
 import { BottomNavigation } from './BottomNavigation';
 import { PwaInstallPrompt } from '../pwa/PwaInstallPrompt';
@@ -19,6 +19,7 @@ const desktopItems = [
   { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
   { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
   { id: 'accounts' as const, label: 'Contas', icon: Wallet },
+  { id: 'reserves' as const, label: 'Caixinhas', icon: PiggyBank },
   { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },
   { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
   { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },

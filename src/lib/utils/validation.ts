@@ -17,13 +17,14 @@ export function hasDuplicateName(name: string, existing: string[], excludeName?:
 }
 
 export class DuplicateNameError extends Error {
-  readonly entityLabel: 'conta' | 'cartao' | 'categoria';
+  readonly entityLabel: 'conta' | 'cartao' | 'categoria' | 'caixinha';
 
-  constructor(entityLabel: 'conta' | 'cartao' | 'categoria') {
+  constructor(entityLabel: 'conta' | 'cartao' | 'categoria' | 'caixinha') {
     const messages = {
       conta: 'Já existe uma conta com esse nome.',
       cartao: 'Já existe um cartão com esse nome.',
       categoria: 'Já existe uma categoria com esse nome para esse tipo.',
+      caixinha: 'Já existe uma caixinha com esse nome.',
     };
 
     super(messages[entityLabel]);

@@ -14,6 +14,8 @@ const userTables = [
   'installments',
   'goals',
   'goal_movements',
+  'reserve_boxes',
+  'reserve_box_movements',
   'budgets',
   'notifications',
 ];
@@ -25,6 +27,8 @@ for (const table of userTables) {
 assert.match(schema, /revoke all privileges on table public\.%i from anon/);
 assert.match(schema, /revoke all privileges on table public\.%i from authenticated/);
 assert.match(schema, /grant select, insert on table public\.goal_movements to authenticated/);
+assert.match(schema, /grant select, insert on table public\.reserve_box_movements to authenticated/);
+assert.match(schema, /revoke execute on function public\.apply_reserve_box_movement\(\) from public, anon, authenticated/);
 assert.match(schema, /grant select, update on table public\.profiles to authenticated/);
 assert.match(schema, /revoke execute on function public\.create_profile_for_new_user\(\) from public, anon, authenticated/);
 assert.doesNotMatch(schema, /create policy[\s\S]{0,200}auth\.role\(\)/);

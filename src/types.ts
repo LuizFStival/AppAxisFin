@@ -7,17 +7,19 @@ export type ReimbursementStatus = 'pending' | 'received';
 export type ExpenseSplitMode = 'none' | 'shared' | 'third_party_full';
 export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
 export type CardNetwork = 'mastercard' | 'visa' | 'elo' | 'other';
-export type AppView = 'home' | 'month-center' | 'transactions' | 'accounts' | 'cards' | 'reimbursements' | 'goals' | 'reports' | 'notifications' | 'profile';
+export type AppView = 'home' | 'month-center' | 'transactions' | 'accounts' | 'cards' | 'reserves' | 'reimbursements' | 'goals' | 'reports' | 'notifications' | 'profile';
 export type TransactionTab = 'general' | 'cards' | 'accounts';
 export type DashboardTransactionFilter = 'income' | 'expenses' | 'reimbursements' | 'result' | 'received' | 'paid' | 'pending';
 export type SavingsGoalMode = 'fixed' | 'salary_percentage';
 export type ReportWidgetId = 'income' | 'expenses' | 'savings_rate' | 'average_expenses';
+export type ReserveBoxMovementType = 'deposit' | 'withdrawal' | 'yield' | 'balance_update';
 
 export interface Account {
   id: string;
   name: string;
   type: AccountType;
   balance: number;
+  lastBalanceUpdate: string;
   color: string;
   institution: string;
   isActive: boolean;
@@ -84,6 +86,31 @@ export interface Budget {
   categoryId: string;
   period: string;
   limitAmount: number;
+}
+
+export interface ReserveBox {
+  id: string;
+  name: string;
+  institution: string;
+  cdiPercent: number;
+  initialBalance: number;
+  currentBalance: number;
+  createdOn: string;
+  goal?: string;
+  color: string;
+  icon: string;
+  lastBalanceUpdate: string;
+  isActive: boolean;
+}
+
+export interface ReserveBoxMovement {
+  id: string;
+  reserveBoxId: string;
+  type: ReserveBoxMovementType;
+  amount: number;
+  date: string;
+  description?: string;
+  createdAt?: string;
 }
 
 export interface AppNotification {
@@ -176,6 +203,8 @@ export interface FinanceSnapshot {
   categories: Category[];
   reimbursementPeople: ReimbursementPerson[];
   recurringTransactions: RecurringTransaction[];
+  reserveBoxes: ReserveBox[];
+  reserveBoxMovements: ReserveBoxMovement[];
   transactions: Transaction[];
 }
 

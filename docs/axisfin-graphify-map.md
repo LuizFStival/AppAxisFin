@@ -1,14 +1,14 @@
 # AxisFin Graphify Map
 
-Atualizado em 2026-09-08 a partir de `src/graphify-out/GRAPH_REPORT.md`.
+Atualizado em 2026-09-09 a partir de `src/graphify-out/GRAPH_REPORT.md`.
 
 ## Resultado do Mapeamento
 
 - Escopo analisado: `src/`
-- Arquivos de código: 87
-- Nós no grafo: 686
-- Conexões: 2280
-- Comunidades: 28
+- Arquivos de código: 93
+- Nós no grafo: 745
+- Conexões: 2483
+- Comunidades: 27
 - Custo de tokens: 0 input / 0 output
 - Ciclos de importação: nenhum detectado
 
@@ -68,6 +68,22 @@ Prioridades sugeridas:
 - Ajustados repositórios, snapshot financeiro e telas de Contas, Cartões e Perfil para respeitar `is_active`.
 - Atualizada a regra de unicidade para permitir reaproveitar nomes arquivados sem conflito entre itens ativos.
 - Regerado o grafo incremental: 686 nós, 2280 conexões e 28 comunidades.
+
+### 2026-09-09
+
+- Criada a seção `Caixinhas e Reservas` para acompanhar reservas separadas do saldo disponível em conta corrente.
+- Adicionado domínio de `ReserveBox` e `ReserveBoxMovement`, com saldo atual, CDI, instituição, objetivo, identificação visual e histórico.
+- Criado helper de cálculo em `reserveBoxes.ts` para total consolidado, saldo esperado e rendimento CDI estimado.
+- Adicionada integração na Home com bloco de resumo das caixinhas sem alterar o cálculo de caixa do mês.
+- Criadas tabelas Supabase `reserve_boxes` e `reserve_box_movements`, com RLS, grants e trigger de atualização de saldo.
+- Adicionados testes para regras de reserva e cobertura de segurança do schema.
+- Regerado o grafo incremental: 738 nós, 2457 conexões e 25 comunidades.
+- Adicionada atualização manual de saldo real nas contas correntes, com data de conferência separada das caixinhas.
+- Criada migration para `accounts.last_balance_update`, mantendo histórico operacional de quando o saldo de conta foi conferido.
+- Regerado o grafo incremental: 742 nós, 2475 conexões e 28 comunidades.
+- Corrigida a compatibilidade do app quando o Supabase remoto ainda não tem as migrations de caixinhas e conferência de saldo.
+- O carregamento principal agora ignora temporariamente `reserve_boxes` ausente e cai para o formato antigo de `accounts` quando `last_balance_update` ainda não existe.
+- Regerado o grafo incremental: 745 nós, 2483 conexões e 27 comunidades.
 
 ## Funcionalidades Para Reorganizar
 

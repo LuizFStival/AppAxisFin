@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { Archive, ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, CreditCard, Pencil, Plus, RotateCcw, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { AlertCircle, Archive, ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Calendar, Check, CreditCard, Pencil, Plus, RotateCcw, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react';
 import { Account, Card, Category, Transaction } from '../../types';
 import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCategoryName, getPaymentSource, shiftMonthKey } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { MonthNavigator } from '../shared/MonthNavigator';
+import { CurrencyInput } from '../shared/CurrencyInput';
+import { formatLocalDate } from '../../lib/utils/date';
+import { formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 
 interface AccountsViewProps {
   accounts: Account[];
@@ -16,6 +19,7 @@ interface AccountsViewProps {
   onSelectAccount: (accountId: string) => void;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
+  onUpdateAccountBalance: (account: Account, balance: number, date: string) => Promise<void>;
   onArchiveAccount: (account: Account) => void;
   onRestoreAccount: (account: Account) => void;
   onOpenInvoice: (cardId: string, period: string) => void;
@@ -38,6 +42,12 @@ function isAccountTransaction(transaction: Transaction, accountId: string) {
     || transaction.reimbursementReceivedAccountId === accountId;
 }
 
+function formatDatePtBr(date: string) {
+  const [year, month, day] = date.split('-');
+  if (!year || !month || !day) return date;
+  return `${day}/${month}/${year}`;
+}
+
 export function AccountsView({
   accounts,
   cards,
@@ -48,6 +58,7 @@ export function AccountsView({
   onSelectAccount,
   onAddAccount,
   onEditAccount,
+  onUpdateAccountBalance,
   onArchiveAccount,
   onRestoreAccount,
   onOpenInvoice,
@@ -56,6 +67,7 @@ export function AccountsView({
   onCurrentMonth,
 }: AccountsViewProps) {
   const [showArchived, setShowArchived] = useState(false);
+  const [balanceAccount, setBalanceAccount] = useState<Account | null>(null);
   const activeAccounts = accounts.filter((account) => account.isActive);
   const archivedAccounts = accounts.filter((account) => !account.isActive);
   const visibleAccounts = showArchived ? archivedAccounts : activeAccounts;
@@ -283,6 +295,9 @@ export function AccountsView({
                     <p className="whitespace-nowrap font-mono text-sm font-bold text-white">
                       {formatCurrency(account.balance)}
                     </p>
+                    <p className="mt-1 whitespace-nowrap text-[10px] text-slate-500">
+                      Conferido {formatDatePtBr(account.lastBalanceUpdate)}
+                    </p>
                     <div className="mt-2 flex justify-end gap-1">
                       <button
                         type="button"
@@ -291,6 +306,14 @@ export function AccountsView({
                         title="Editar conta"
                       >
                         <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBalanceAccount(account)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-emerald-300 transition hover:bg-emerald-500/20 hover:text-emerald-100"
+                        title="Atualizar saldo"
+                      >
+                        <Wallet size={14} />
                       </button>
                       {account.isActive ? (
                         <button
@@ -327,9 +350,21 @@ export function AccountsView({
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo atual</p>
                 <p className="mt-2 font-display text-3xl font-bold text-white">{formatCurrency(selectedAccount.balance)}</p>
-                <p className="mt-1 truncate text-xs text-slate-500">{accountTypeLabels[selectedAccount.type]} - {selectedAccount.institution}</p>
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  {accountTypeLabels[selectedAccount.type]} - {selectedAccount.institution} - conferido {formatDatePtBr(selectedAccount.lastBalanceUpdate)}
+                </p>
               </div>
-              <BankLogo account={selectedAccount} />
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBalanceAccount(selectedAccount)}
+                  className="flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-xs font-bold text-black transition hover:bg-slate-200"
+                >
+                  <Wallet size={15} />
+                  Atualizar saldo
+                </button>
+                <BankLogo account={selectedAccount} />
+              </div>
             </div>
           </section>
 
@@ -399,6 +434,128 @@ export function AccountsView({
           </section>
         </>
       ) : null}
+
+      {balanceAccount ? (
+        <AccountBalanceModal
+          account={balanceAccount}
+          onClose={() => setBalanceAccount(null)}
+          onSave={async (balance, date) => {
+            await onUpdateAccountBalance(balanceAccount, balance, date);
+            setBalanceAccount(null);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AccountBalanceModal({
+  account,
+  onClose,
+  onSave,
+}: {
+  account: Account;
+  onClose: () => void;
+  onSave: (balance: number, date: string) => Promise<void>;
+}) {
+  const [balance, setBalance] = useState(formatCurrencyInput(account.balance));
+  const [date, setDate] = useState(formatLocalDate(new Date()));
+  const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const parsedBalance = parseCurrencyInput(balance);
+  const difference = parsedBalance - account.balance;
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError('');
+
+    if (parsedBalance < 0) {
+      setError('Informe um saldo válido.');
+      return;
+    }
+
+    if (!date) {
+      setError('Informe a data da conferência.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await onSave(parsedBalance, date);
+    } catch {
+      setError('Não foi possível atualizar o saldo. Tente novamente.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <form onSubmit={handleSubmit} className="premium-card w-full max-w-md rounded-t-[28px] p-5 shadow-2xl sm:rounded-[28px]">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Conta corrente</p>
+            <h2 className="truncate font-display text-lg font-bold text-white">Atualizar saldo</h2>
+          </div>
+          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">
+            <X size={18} />
+          </button>
+        </div>
+
+        {error ? (
+          <p className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            <AlertCircle size={16} />
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+          <div className="flex items-center gap-3">
+            <BankLogo account={account} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-white">{account.name}</p>
+              <p className="text-xs text-slate-500">{account.institution} - saldo atual {formatCurrency(account.balance)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-1 text-xs font-semibold text-slate-400">
+            Saldo real conferido
+            <CurrencyInput value={balance} onChange={setBalance} />
+          </label>
+
+          <label className="grid gap-1 text-xs font-semibold text-slate-400">
+            Data da conferência
+            <div className="relative">
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 pr-11 text-white outline-none focus:border-sky-400"
+              />
+              <Calendar className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+            </div>
+          </label>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-white/8 bg-black/20 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Diferença da conferência</p>
+          <p className={`mt-1 font-mono text-sm font-bold ${difference >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {difference >= 0 ? '+' : '-'}{formatCurrency(Math.abs(difference))}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Isso atualiza só a conta corrente. Caixinhas e reservas continuam separadas.</p>
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200 disabled:opacity-60"
+        >
+          <Check size={18} />
+          {isSaving ? 'Salvando...' : 'Salvar saldo'}
+        </button>
+      </form>
     </div>
   );
 }

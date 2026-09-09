@@ -9,15 +9,17 @@ import {
   Eye,
   EyeOff,
   HandCoins,
+  PiggyBank,
   Plus,
   Scale,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction, UserProfile } from '../../types';
+import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, ReserveBox, Transaction, UserProfile } from '../../types';
 import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCurrentMonthKey, getExpenseSignedAmount, isCardInvoicePaid, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
+import { summarizeReserveBoxes } from '../../lib/utils/reserveBoxes';
 import { StatCard } from '../shared/StatCard';
 import { BankLogo } from '../shared/BankLogo';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
@@ -28,6 +30,7 @@ interface DashboardViewProps {
   cards: Card[];
   categories: Category[];
   transactions: Transaction[];
+  reserveBoxes: ReserveBox[];
   activeMonth: string;
   summary: DashboardSummary;
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
@@ -45,6 +48,7 @@ interface DashboardViewProps {
   onOpenNotifications: () => void;
   onViewAccounts: (accountId?: string) => void;
   onViewCards: (cardId?: string) => void;
+  onViewReserves: () => void;
   onViewReimbursements: () => void;
   onViewDashboardTransactions: (filter: DashboardTransactionFilter) => void;
   onPayInvoice: (input: {
@@ -120,6 +124,7 @@ export function DashboardView({
   cards,
   categories,
   transactions,
+  reserveBoxes,
   activeMonth,
   summary,
   savingsPreferences,
@@ -136,6 +141,7 @@ export function DashboardView({
   onOpenNotifications,
   onViewAccounts,
   onViewCards,
+  onViewReserves,
   onViewReimbursements,
   onViewDashboardTransactions,
   onPayInvoice,
@@ -157,6 +163,7 @@ export function DashboardView({
     includeReimbursements: reimbursementsEnabled,
   });
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
+  const reserveSummary = summarizeReserveBoxes(reserveBoxes, formatLocalDate(new Date()));
   const previousReimbursementsTotal = previousSummary.reimbursementsPending + previousSummary.reimbursementsReceived;
   const cashMonthResult = Math.round((summary.accountInflow - summary.accountOutflow) * 100) / 100;
   const personalCashMonthResult = Math.round((summary.accountInflowPersonal - summary.accountOutflowPersonal) * 100) / 100;
@@ -400,6 +407,35 @@ export function DashboardView({
           }
           onClick={() => onViewDashboardTransactions('result')}
         />
+      </section>
+
+      <section className="app-page-gutters mt-4">
+        <button
+          type="button"
+          onClick={onViewReserves}
+          className="cosmic-card cosmic-card-hover grid w-full gap-3 rounded-3xl border border-violet-400/20 p-4 text-left sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-200">
+              <PiggyBank size={20} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Caixinhas</p>
+              <h2 className="truncate font-display text-lg font-bold text-white">{hiddenMoney(showBalances, reserveSummary.totalBalance)}</h2>
+              <p className="mt-0.5 truncate text-xs text-slate-500">{reserveSummary.count} ativa{reserveSummary.count === 1 ? '' : 's'} • fora do caixa disponível</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:w-72">
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-500/10 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-sky-200">CDI estimado</p>
+              <p className="mt-1 font-mono text-xs font-bold text-white">{hiddenMoney(showBalances, reserveSummary.estimatedYield)}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/10 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Esperado</p>
+              <p className="mt-1 font-mono text-xs font-bold text-white">{hiddenMoney(showBalances, reserveSummary.expectedBalance)}</p>
+            </div>
+          </div>
+        </button>
       </section>
 
       <section className="app-page-gutters mt-4">

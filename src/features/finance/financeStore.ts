@@ -1,17 +1,20 @@
-import { mockCategories } from '../../data/mockData';
+import { mockCategories, mockReserveBoxes } from '../../data/mockData';
 import { assertSupabaseConfigured, supabase } from '../../lib/supabase/supabaseClient';
-import { addMonths } from '../../lib/utils/date';
+import { addMonths, formatLocalDate } from '../../lib/utils/date';
 import { getCurrentMonthKey } from '../../lib/utils/finance';
 import { readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
-import { Account, Card, Category, FinanceSnapshot, RecurringTransaction, ReimbursementPerson, Transaction } from '../../types';
+import { Account, Card, Category, FinanceSnapshot, RecurringTransaction, ReimbursementPerson, ReserveBox, ReserveBoxMovement, Transaction } from '../../types';
 
 const starterCategoryPromises = new Map<string, Promise<void>>();
+const starterReserveBoxPromises = new Map<string, Promise<boolean>>();
 const emptyFinanceSnapshot: FinanceSnapshot = {
   accounts: [],
   cards: [],
   categories: [],
   reimbursementPeople: [],
   recurringTransactions: [],
+  reserveBoxes: [],
+  reserveBoxMovements: [],
   transactions: [],
 };
 const legacyStarterAccountNames = ['Carteira', 'Nubank', 'C6 Bank'];
@@ -23,6 +26,7 @@ type AccountRow = {
   type: Account['type'];
   institution: string | null;
   balance: number | string;
+  last_balance_update?: string | null;
   color: string;
   is_active?: boolean | null;
 };
@@ -101,6 +105,49 @@ type RecurringTransactionRow = {
   is_active: boolean;
 };
 
+type ReserveBoxRow = {
+  id: string;
+  name: string;
+  institution: string;
+  cdi_percent: number | string;
+  initial_balance: number | string;
+  current_balance: number | string;
+  created_on: string;
+  goal: string | null;
+  color: string;
+  icon: string;
+  last_balance_update: string;
+  is_active?: boolean | null;
+};
+
+type ReserveBoxMovementRow = {
+  id: string;
+  reserve_box_id: string;
+  movement_type: ReserveBoxMovement['type'];
+  amount: number | string;
+  movement_date: string;
+  description: string | null;
+  created_at?: string | null;
+};
+
+function errorText(error: unknown) {
+  if (!error || typeof error !== 'object') return '';
+  const values = Object.values(error as Record<string, unknown>)
+    .filter((value): value is string => typeof value === 'string');
+  return values.join(' ').toLowerCase();
+}
+
+export function isMissingRemoteSchemaError(error: unknown, identifiers: string[]) {
+  const text = errorText(error);
+  return identifiers.some((identifier) => text.includes(identifier.toLowerCase()))
+    && (
+      text.includes('schema cache')
+      || text.includes('could not find')
+      || text.includes('does not exist')
+      || text.includes('not found')
+    );
+}
+
 export function mapAccount(row: AccountRow): Account {
   return {
     id: row.id,
@@ -108,6 +155,7 @@ export function mapAccount(row: AccountRow): Account {
     type: row.type,
     institution: row.institution ?? row.name,
     balance: Number(row.balance),
+    lastBalanceUpdate: row.last_balance_update ?? formatLocalDate(new Date()),
     color: row.color,
     isActive: row.is_active ?? true,
   };
@@ -195,6 +243,35 @@ export function mapReimbursementPerson(row: ReimbursementPersonRow): Reimburseme
     name: row.name,
     phone: row.phone ?? undefined,
     notes: row.notes ?? undefined,
+  };
+}
+
+export function mapReserveBox(row: ReserveBoxRow): ReserveBox {
+  return {
+    id: row.id,
+    name: row.name,
+    institution: row.institution,
+    cdiPercent: Number(row.cdi_percent),
+    initialBalance: Number(row.initial_balance),
+    currentBalance: Number(row.current_balance),
+    createdOn: row.created_on,
+    goal: row.goal ?? undefined,
+    color: row.color,
+    icon: row.icon,
+    lastBalanceUpdate: row.last_balance_update,
+    isActive: row.is_active ?? true,
+  };
+}
+
+export function mapReserveBoxMovement(row: ReserveBoxMovementRow): ReserveBoxMovement {
+  return {
+    id: row.id,
+    reserveBoxId: row.reserve_box_id,
+    type: row.movement_type,
+    amount: Number(row.amount),
+    date: row.movement_date,
+    description: row.description ?? undefined,
+    createdAt: row.created_at ?? undefined,
   };
 }
 
@@ -297,6 +374,52 @@ async function ensureStarterCategories(userId: string) {
   return starterCategoryPromise;
 }
 
+async function ensureStarterReserveBoxes(userId: string) {
+  const existingPromise = starterReserveBoxPromises.get(userId);
+  if (existingPromise) return existingPromise;
+
+  const starterReserveBoxPromise = ensureStarterReserveBoxesOnce(userId).finally(() => {
+    starterReserveBoxPromises.delete(userId);
+  });
+
+  starterReserveBoxPromises.set(userId, starterReserveBoxPromise);
+  return starterReserveBoxPromise;
+}
+
+async function ensureStarterReserveBoxesOnce(userId: string): Promise<boolean> {
+  const client = assertSupabaseConfigured();
+  const { count: reserveBoxCount, error: reserveBoxCountError } = await client
+    .from('reserve_boxes')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  if (isMissingRemoteSchemaError(reserveBoxCountError, ['reserve_boxes'])) return false;
+  if (reserveBoxCountError) throw reserveBoxCountError;
+  if (reserveBoxCount) return true;
+
+  const today = formatLocalDate(new Date());
+  const { error } = await client.from('reserve_boxes').insert(
+    mockReserveBoxes.map((box) => ({
+      user_id: userId,
+      name: box.name,
+      institution: box.institution,
+      cdi_percent: box.cdiPercent,
+      initial_balance: box.initialBalance,
+      current_balance: box.currentBalance,
+      created_on: today,
+      goal: box.goal ?? null,
+      color: box.color,
+      icon: box.icon,
+      last_balance_update: today,
+      is_active: true,
+    })),
+  );
+
+  if (isMissingRemoteSchemaError(error, ['reserve_boxes'])) return false;
+  if (error) throw error;
+  return true;
+}
+
 async function ensureStarterCategoriesOnce(userId: string) {
   const client = assertSupabaseConfigured();
   const { count: categoryCount, error: categoryCountError } = await client
@@ -367,10 +490,31 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
 
   const client = assertSupabaseConfigured();
   await ensureStarterCategories(userId);
+  const reserveBoxesAvailable = await ensureStarterReserveBoxes(userId);
   await cleanupLegacyStarterFinance(userId);
 
-  const [accountsResult, cardsResult, categoriesResult, reimbursementPeopleResult, recurringTransactionsResult, transactionsResult] = await Promise.all([
-    client.from('accounts').select('id, name, type, institution, balance, color, is_active').eq('user_id', userId).order('created_at'),
+  const accountSelect = await client.from('accounts').select('id, name, type, institution, balance, last_balance_update, color, is_active').eq('user_id', userId).order('created_at');
+  const accountsResult = accountSelect.error && isMissingRemoteSchemaError(accountSelect.error, ['last_balance_update'])
+    ? await client.from('accounts').select('id, name, type, institution, balance, color, is_active').eq('user_id', userId).order('created_at')
+    : accountSelect;
+
+  const reserveBoxesPromise = reserveBoxesAvailable
+    ? client
+      .from('reserve_boxes')
+      .select('id, name, institution, cdi_percent, initial_balance, current_balance, created_on, goal, color, icon, last_balance_update, is_active')
+      .eq('user_id', userId)
+      .order('created_at')
+    : Promise.resolve({ data: [], error: null });
+  const reserveBoxMovementsPromise = reserveBoxesAvailable
+    ? client
+      .from('reserve_box_movements')
+      .select('id, reserve_box_id, movement_type, amount, movement_date, description, created_at')
+      .eq('user_id', userId)
+      .order('movement_date', { ascending: false })
+      .order('created_at', { ascending: false })
+    : Promise.resolve({ data: [], error: null });
+
+  const [cardsResult, categoriesResult, reimbursementPeopleResult, recurringTransactionsResult, reserveBoxesResult, reserveBoxMovementsResult, transactionsResult] = await Promise.all([
     client.from('cards').select('id, name, account_id, network, credit_limit, closing_day, due_day, color, is_active').eq('user_id', userId).order('created_at'),
     client.from('categories').select('id, name, flow, icon, color, is_system').eq('user_id', userId).order('name'),
     client.from('reimbursement_people').select('id, name, phone, notes').eq('user_id', userId).order('name'),
@@ -379,6 +523,8 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
       .select('id, description, amount, flow, status, start_date, end_date, interval_months, category_id, account_id, card_id, notes, is_reimbursable, split_mode, personal_amount, reimbursement_amount, reimbursement_person_id, reimbursement_status, is_active')
       .eq('user_id', userId)
       .order('start_date', { ascending: false }),
+    reserveBoxesPromise,
+    reserveBoxMovementsPromise,
     client
       .from('transactions')
       .select('id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, split_mode, personal_amount, reimbursement_amount, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at')
@@ -392,6 +538,8 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
   if (categoriesResult.error) throw categoriesResult.error;
   if (reimbursementPeopleResult.error) throw reimbursementPeopleResult.error;
   if (recurringTransactionsResult.error) throw recurringTransactionsResult.error;
+  if (reserveBoxesResult.error && !isMissingRemoteSchemaError(reserveBoxesResult.error, ['reserve_boxes'])) throw reserveBoxesResult.error;
+  if (reserveBoxMovementsResult.error && !isMissingRemoteSchemaError(reserveBoxMovementsResult.error, ['reserve_box_movements'])) throw reserveBoxMovementsResult.error;
   if (transactionsResult.error) throw transactionsResult.error;
   const transactions = (transactionsResult.data ?? []).map(mapTransaction);
   const recurringTransactions = (recurringTransactionsResult.data ?? []).map(mapRecurringTransaction);
@@ -403,6 +551,8 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
     categories: (categoriesResult.data ?? []).map(mapCategory),
     reimbursementPeople: (reimbursementPeopleResult.data ?? []).map(mapReimbursementPerson),
     recurringTransactions,
+    reserveBoxes: (reserveBoxesResult.data ?? []).map(mapReserveBox),
+    reserveBoxMovements: (reserveBoxMovementsResult.data ?? []).map(mapReserveBoxMovement),
     transactions: [...transactions, ...projectedTransactions],
   };
 }

@@ -3,6 +3,7 @@ import { DuplicateNameError, hasDuplicateName, isPostgresUniqueViolation } from 
 import { Account, AccountType } from '../../types';
 import {
   assertCurrentUserId,
+  isMissingRemoteSchemaError,
   loadFinanceSnapshot,
   mapAccount,
 } from '../finance/financeStore';
@@ -102,9 +103,20 @@ export const accountRepository = {
     return mapAccount(data);
   },
 
-  async updateBalance(id: string, balance: number): Promise<Account> {
+  async updateBalance(id: string, balance: number, lastBalanceUpdate: string): Promise<Account> {
     const userId = await assertCurrentUserId();
     const client = assertSupabaseConfigured();
+    const updateWithDate = await client
+      .from('accounts')
+      .update({ balance, last_balance_update: lastBalanceUpdate })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select('id, name, type, institution, balance, color, is_active')
+      .single();
+
+    if (!updateWithDate.error) return mapAccount(updateWithDate.data);
+    if (!isMissingRemoteSchemaError(updateWithDate.error, ['last_balance_update'])) throw updateWithDate.error;
+
     const { data, error } = await client
       .from('accounts')
       .update({ balance })
@@ -125,7 +137,7 @@ export const accountRepository = {
       .update({ is_active: isActive })
       .eq('id', id)
       .eq('user_id', userId)
-      .select('id, name, type, institution, balance, color, is_active')
+      .select('id, name, type, institution, balance, last_balance_update, color, is_active')
       .single();
 
     if (error) {

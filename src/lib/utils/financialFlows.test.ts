@@ -4,7 +4,7 @@ import { expensesByCategory, getAccountSignedAmount, getExpenseSignedAmount, sum
 import { writeTransactionNotes } from './transactionMeta';
 
 const accounts: Account[] = [
-  { id: 'main', name: 'Conta', type: 'checking', balance: 900, color: '#fff', institution: 'Banco', isActive: true },
+  { id: 'main', name: 'Conta', type: 'checking', balance: 900, lastBalanceUpdate: '2026-06-01', color: '#fff', institution: 'Banco', isActive: true },
 ];
 const categories: Category[] = [
   { id: 'food', name: 'Alimentação', flow: 'expense', color: '#f00', icon: 'Utensils' },
@@ -47,7 +47,7 @@ assert.equal(getAccountSignedAmount(transactions[7], 'reserve'), 80);
 
 const investmentAccounts: Account[] = [
   ...accounts,
-  { id: 'broker', name: 'Corretora', type: 'investment', balance: 200, color: '#fff', institution: 'Corretora', isActive: true },
+  { id: 'broker', name: 'Corretora', type: 'investment', balance: 200, lastBalanceUpdate: '2026-06-01', color: '#fff', institution: 'Corretora', isActive: true },
 ];
 const investmentTransactions: Transaction[] = [
   { id: 'salary', description: 'Salário', amount: 3000, flow: 'income', status: 'paid', date: '2026-06-05', accountId: 'main' },

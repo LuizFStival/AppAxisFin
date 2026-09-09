@@ -22,8 +22,8 @@ import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverd
 import { Account, Card, Category, Transaction } from '../../types';
 
 const accounts: Account[] = [
-  { id: 'acc-main', name: 'Principal', type: 'checking', balance: 1200, color: '#3B82F6', institution: 'Banco', isActive: true },
-  { id: 'acc-save', name: 'Reserva', type: 'savings', balance: 300, color: '#10B981', institution: 'Banco', isActive: true },
+  { id: 'acc-main', name: 'Principal', type: 'checking', balance: 1200, lastBalanceUpdate: '2026-06-01', color: '#3B82F6', institution: 'Banco', isActive: true },
+  { id: 'acc-save', name: 'Reserva', type: 'savings', balance: 300, lastBalanceUpdate: '2026-06-01', color: '#10B981', institution: 'Banco', isActive: true },
 ];
 
 const cards: Card[] = [
