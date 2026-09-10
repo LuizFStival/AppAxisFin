@@ -48,7 +48,7 @@ AxisFin é um aplicativo web mobile-first para controle financeiro pessoal. O ap
 - Balanço mensal com receitas, reembolsos esperados, gastos pessoais e valores de terceiros discriminados; compras de cartão entram no mês da fatura pelo fechamento do cartão, não apenas pela data da compra.
 - A navegação preserva o mês ativo entre Dashboard, Transações, Contas, Cartões, Reembolsos e Relatórios.
 - Categorias com ícones, cores, criação, edição, exclusão e separação entre entradas e despesas.
-- Relatório detalhado mensal com visão Geral/Apenas meu, totais de entradas e saídas, balanço, reembolsos, meta mensal para investir, evolução diária, comparação dos últimos seis meses e gastos por categoria; a visão Geral usa entradas e saídas totais, enquanto Apenas meu isola receitas e gastos pessoais, com composição direta nos cards principais.
+- Relatório detalhado mensal com visão Geral/Apenas meu, totais de entradas e saídas, balanço, reembolsos, meta mensal para investir, composição de despesas fixas/parceladas/variáveis, evolução diária, comparação dos últimos seis meses e gastos por categoria; a visão Geral usa entradas e saídas totais, enquanto Apenas meu isola receitas e gastos pessoais, com composição direta nos cards principais.
 - Indicadores do relatório podem ser ativados, ocultados e reordenados no Perfil; a organização é persistida por usuário e o resumo mensal pode ser baixado em CSV.
 - Meta mensal para investir configurável por valor fixo ou percentual do salário, com opção de considerar salário pendente; o progresso usa o valor economizado no mês, independentemente de aporte em conta de investimento.
 - Perfil com atalhos operacionais, cartões e categorias.
@@ -100,6 +100,36 @@ src/
 Os componentes cuidam da interface. Os repositories cuidam de leitura/escrita por feature. `financeStore` centraliza snapshot, bootstrap de categorias e mapeamento dos dados vindos do Supabase. A sessão fica isolada em `useAuthSession`, enquanto `useInvoiceOrdering` encapsula a persistência diferida da ordem da fatura.
 
 As telas e os modais secundários usam carregamento sob demanda com `React.lazy` e `Suspense`. O bundle inicial mantém autenticação, shell e regras centrais; relatórios e demais áreas são baixados apenas quando acessados.
+
+## Mapa Graphify
+
+O mapa estrutural do app fica salvo em `src/graphify-out/`. Não é preciso reconstruir para consultar a visualização já gerada.
+
+Abrir o mapa existente:
+
+```bash
+npm run graphify:view
+```
+
+Ver apenas o caminho/URL local do HTML:
+
+```bash
+npm run graphify:path
+```
+
+Arquivos principais:
+
+```text
+src/graphify-out/graph.html       # visualização interativa
+src/graphify-out/GRAPH_REPORT.md  # relatório de comunidades, god nodes e perguntas sugeridas
+src/graphify-out/graph.json       # grafo bruto para consultas/ferramentas
+```
+
+Reconstrua o mapa apenas depois de mudanças relevantes em `src/`:
+
+```bash
+npm run graphify:src
+```
 
 ## Supabase
 

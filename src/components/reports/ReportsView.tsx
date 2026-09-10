@@ -40,6 +40,7 @@ import { Account, Card, Category, ReportWidgetId, Transaction, UserProfile } fro
 import {
   expensesByCategory,
   formatCurrency,
+  getFinancialMonthKey,
   formatMonthLabel,
   getPersonalExpenseSignedAmount,
   getTransactionCompetenceMonth,
@@ -50,7 +51,10 @@ import {
   shiftMonthKey,
   summarizeMonthlyInvestmentGoal,
   summarizeMonthlyResult,
+  roundMoney,
 } from '../../lib/utils/finance';
+import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
+import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { BudgetSection } from './BudgetSection';
 
@@ -92,6 +96,12 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
   Briefcase,
   Laptop,
   MoreHorizontal,
+};
+
+const EXPENSE_BREAKDOWN_COLORS: Record<string, string> = {
+  installment: '#A78BFA',
+  fixed: '#F59E0B',
+  variable: '#38BDF8',
 };
 
 function getChange(current: number, previous: number) {
@@ -189,7 +199,40 @@ export function ReportsView({
       Icon: CATEGORY_ICONS[category?.icon ?? ''] ?? Tags,
     };
   });
-  const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month);
+  const monthTransactions = useMemo(
+    () => transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month),
+    [cards, month, transactions],
+  );
+  const expenseBreakdown = useMemo(() => {
+    const personalBreakdown = summarizeExpenseBreakdown(
+      monthTransactions.filter((transaction) =>
+        transaction.flow === 'expense'
+        && !isInvoicePayment(transaction)
+      ),
+      getPersonalExpenseSignedAmount,
+    );
+
+    if (effectiveReportScope === 'personal' || !reimbursementsEnabled) return personalBreakdown;
+
+    const thirdPartyBreakdown = summarizeExpenseBreakdown(
+      transactions
+        .filter(isThirdPartyExpense)
+        .filter((transaction) => cards.length > 0
+          ? getReimbursementMonthKey(transaction, cards) === month
+          : getFinancialMonthKey(transaction) === month),
+      getTransactionReimbursementAmount,
+    );
+
+    return personalBreakdown.map((item) => {
+      const thirdPartyItem = thirdPartyBreakdown.find((candidate) => candidate.key === item.key);
+      return {
+        ...item,
+        total: roundMoney(item.total + (thirdPartyItem?.total ?? 0)),
+        count: item.count + (thirdPartyItem?.count ?? 0),
+      };
+    });
+  }, [cards, effectiveReportScope, month, monthTransactions, reimbursementsEnabled, transactions]);
+  const expenseBreakdownTotal = expenseBreakdown.reduce((sum, item) => sum + Math.max(0, item.total), 0);
   const monthlyEvolution = useMemo(() => {
     return Array.from({ length: 6 }, (_, index) => shiftMonthKey(month, index - 5)).map((period) => {
       const result = summarizeMonthlyResult(transactions, period, cards, {
@@ -243,6 +286,9 @@ export function ReportsView({
       ['Indicador', 'Valor'],
       ['Receitas', report.current.income],
       ['Despesas pessoais', report.current.expenses],
+      ['Despesas parceladas', expenseBreakdown.find((item) => item.key === 'installment')?.total ?? 0],
+      ['Despesas fixas', expenseBreakdown.find((item) => item.key === 'fixed')?.total ?? 0],
+      ['Despesas variáveis', expenseBreakdown.find((item) => item.key === 'variable')?.total ?? 0],
       ['Resultado', balance],
       ['Meta mensal para investir', savingsGoal.target],
       ['Economizado', savingsGoal.saved],
@@ -391,6 +437,37 @@ export function ReportsView({
             </p>
             <ChangeBadge current={balance} previous={previousBalance} />
           </div>
+        </div>
+      </section>
+
+      <section className="premium-card mt-3 rounded-[22px] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-rose-300">Composição das despesas</p>
+            <h2 className="font-display text-lg font-bold text-white">Fixo, parcelado e variável</h2>
+          </div>
+          <TrendingDown size={20} className="shrink-0 text-rose-300" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {expenseBreakdown.map((item) => {
+            const percentage = expenseBreakdownTotal > 0 ? (Math.max(0, item.total) / expenseBreakdownTotal) * 100 : 0;
+            return (
+              <div key={item.key} className="min-w-0">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-slate-100">{item.label}</span>
+                    <span className="block text-[10px] text-slate-500">
+                      {item.count} {item.count === 1 ? 'lançamento' : 'lançamentos'} · {percentage.toFixed(1).replace('.', ',')}%
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-mono text-sm font-bold text-white">{formatCurrency(item.total)}</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8">
+                  <div className="h-full rounded-full" style={{ width: `${percentage}%`, backgroundColor: EXPENSE_BREAKDOWN_COLORS[item.key] }} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 

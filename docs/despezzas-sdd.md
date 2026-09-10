@@ -23,7 +23,7 @@ Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel
 - Em `Entradas`, reembolsos recebidos aparecem agrupados por pessoa/empresa e abrem a tela de Reembolsos já filtrada no mês ativo.
 - A tela de Contas possui visão mensal com entradas, saídas, resultado, quantidade de movimentos, tendência de caixa dos últimos seis meses com barras separadas para entrada e saída, e detalhe por conta, mantendo o saldo atual como caixa real.
 - A tela de Cartões mostra o total da fatura separado entre valor próprio e valor de terceiros, além de pendências de reembolso e descontos/estornos quando existirem.
-- Em Relatórios, o escopo `Geral` usa total de entradas e total de saídas com terceiros/reembolsos; o escopo `Apenas meu` mostra receitas e despesas pessoais. Os cards principais de entradas e saídas exibem a composição entre valores próprios e de terceiros. A meta mensal para investir exibe progresso real acima de 100% quando o usuário supera a meta.
+- Em Relatórios, o escopo `Geral` usa total de entradas e total de saídas com terceiros/reembolsos; o escopo `Apenas meu` mostra receitas e despesas pessoais. Os cards principais de entradas e saídas exibem a composição entre valores próprios e de terceiros, e o relatório detalha despesas fixas, parceladas e variáveis com valor, quantidade e percentual. A meta mensal para investir exibe progresso real acima de 100% quando o usuário supera a meta.
 - A navegação desktop exibe a marca AxisFin no menu lateral. Quando a preferência de reembolsos está desativada, o menu Reembolsos e os blocos/filtros de terceiros ficam ocultos no Dashboard, Transações e Relatórios.
 - A migration `20260709183704_relax_paid_card_invoice_items.sql` ajusta o pagamento de faturas para permitir itens de cartão com status pago quando ainda não possuem metadados de fatura quitada, preservando a proteção contra pagamento duplicado.
 
@@ -209,6 +209,7 @@ O produto deve abrir diretamente como app financeiro. A landing nao deve aparece
 - Relatorios com:
   - Cards financeiros.
   - Grafico simples de fluxo.
+  - Composicao de despesas fixas, parceladas e variaveis.
   - Gastos por categoria.
 - Perfil com dados do usuario, configuracoes, notificacoes e ajuda.
 - Categorias iniciais como ponto de partida por usuario.
@@ -478,6 +479,7 @@ Deve exibir:
 - Saldo liquido.
 - Quantidade de lancamentos.
 - Grafico de fluxo.
+- Composicao de despesas fixas, parceladas e variaveis.
 - Gastos por categoria.
 - Futuro: comparativo entre meses.
 
