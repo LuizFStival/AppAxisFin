@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound, X } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, isInvoiceCredit, isInvoicePayment, isThirdPartyExpense, shiftMonthKey } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, getPendingInvoiceSummaries, getPersonalExpenseSignedAmount, getTransactionCompetenceMonth, getTransactionPersonalAmount, getTransactionReimbursementAmount, getTransactionReimbursementReceivedAmount, isInvoiceCredit, isInvoicePayment, isPendingAccountExpense, isThirdPartyExpense, shiftMonthKey, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { ExpenseViewFilter } from '../../lib/utils/expenseFilters';
+import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
 import { ExpenseFilterChips } from '../shared/ExpenseFilterChips';
 import { CollapsibleSearch } from '../shared/CollapsibleSearch';
 import { MonthNavigator } from '../shared/MonthNavigator';
@@ -21,6 +22,7 @@ interface TransactionsViewProps {
   onToggleStatus: (transaction: Transaction, paymentAccountId?: string) => void;
   onEdit: (transaction: Transaction) => void;
   onDelete: (transaction: Transaction) => void;
+  onOpenReimbursements: (personId?: string) => void;
 }
 
 const tabs: { id: TransactionTab; label: string }[] = [
@@ -68,30 +70,27 @@ function matchesScopedExpenseFilter(transaction: Transaction, filter: ExpenseVie
   return (meta.entryMode ?? 'variable') === filter;
 }
 
-function matchesDashboardFilter(transaction: Transaction, selectedMonth: string, filter: DashboardTransactionFilter) {
-  if (getFinancialMonthKey(transaction) !== selectedMonth) return false;
+function matchesDashboardFilter(transaction: Transaction, selectedMonth: string, filter: DashboardTransactionFilter, cards: Card[]) {
+  if (filter === 'received') {
+    return transaction.flow === 'income' && transaction.status === 'paid' && getFinancialMonthKey(transaction) === selectedMonth;
+  }
+  if (getTransactionCompetenceMonth(transaction, cards) !== selectedMonth) return false;
   if (filter === 'income') return transaction.flow === 'income';
-  if (filter === 'expenses') return transaction.flow === 'expense' && !isThirdPartyExpense(transaction) && !isInvoicePayment(transaction);
+  if (filter === 'expenses') return transaction.flow === 'expense' && getTransactionPersonalAmount(transaction) > 0 && !isInvoicePayment(transaction);
   if (filter === 'reimbursements') return isThirdPartyExpense(transaction);
   if (filter === 'result') return !isInvoicePayment(transaction);
-  if (filter === 'received') return transaction.flow === 'income' && transaction.status === 'paid';
-  return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId && !isThirdPartyExpense(transaction);
+  return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId;
 }
 
 function isPendingExpenseOrInvoice(transaction: Transaction) {
-  if (transaction.flow !== 'expense' || isInvoicePayment(transaction) || isInvoiceCredit(transaction)) return false;
-  if (transaction.cardId) {
-    const meta = readTransactionMeta(transaction.notes);
-    return !Boolean(meta.paidAt && meta.paidFromAccountId);
-  }
-  return transaction.status === 'pending';
+  return isPendingAccountExpense(transaction, getFinancialMonthKey(transaction));
 }
 
-function matchesMovementFilter(transaction: Transaction, selectedMonth: string, filter: MovementFilter) {
-  if (getFinancialMonthKey(transaction) !== selectedMonth) return false;
+function matchesMovementFilter(transaction: Transaction, selectedMonth: string, filter: MovementFilter, cards: Card[]) {
+  if (getTransactionCompetenceMonth(transaction, cards) !== selectedMonth) return false;
   if (filter === 'all') return true;
   if (filter === 'pending') return isPendingExpenseOrInvoice(transaction);
-  return matchesDashboardFilter(transaction, selectedMonth, filter);
+  return matchesDashboardFilter(transaction, selectedMonth, filter, cards);
 }
 
 function getReimbursementPersonName(people: ReimbursementPerson[], personId?: string) {
@@ -135,8 +134,9 @@ export function TransactionsView({
   onToggleStatus,
   onEdit,
   onDelete,
+  onOpenReimbursements,
 }: TransactionsViewProps) {
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
+  const [selectedMonth, setSelectedMonth] = useState(activeMonth);
   const [tab, setTab] = useState<TransactionTab>('general');
   const [search, setSearch] = useState('');
   const [expenseScope, setExpenseScope] = useState<ExpenseScope>('all');
@@ -171,56 +171,113 @@ export function TransactionsView({
   }
 
   useEffect(() => {
+    setSelectedMonth(activeMonth);
+  }, [activeMonth]);
+
+  useEffect(() => {
     setMovementFilter(
       dashboardFilter === 'income' || dashboardFilter === 'received'
         ? 'income'
         : dashboardFilter === 'expenses' || dashboardFilter === 'paid'
           ? 'expenses'
+          : dashboardFilter === 'pending'
+            ? 'pending'
           : 'all',
     );
-    setDashboardDetailFilter(dashboardFilter);
+    setDashboardDetailFilter(dashboardFilter === 'pending' ? null : dashboardFilter);
     if (!dashboardFilter) return;
-    setSelectedMonth(activeMonth);
     setTab('general');
     setExpenseScope('all');
     setExpenseFilter('personal');
   }, [activeMonth, dashboardFilter]);
 
+  const pendingInvoiceSummaries = useMemo(() => {
+    if (movementFilter !== 'pending' || dashboardDetailFilter) return [];
+    return getPendingInvoiceSummaries(cards, transactions, selectedMonth);
+  }, [cards, dashboardDetailFilter, movementFilter, selectedMonth, transactions]);
+
   const sourceTransactions = useMemo(() => {
     return transactions
       .filter((transaction) => {
+        if (!reimbursementsEnabled && isThirdPartyExpense(transaction)) return false;
         const matchesView = dashboardDetailFilter
-          ? matchesDashboardFilter(transaction, selectedMonth, dashboardDetailFilter)
-          : matchesMovementFilter(transaction, selectedMonth, movementFilter);
+          ? matchesDashboardFilter(transaction, selectedMonth, dashboardDetailFilter, cards)
+          : matchesMovementFilter(transaction, selectedMonth, movementFilter, cards);
         return matchesView && matchesTransactionSource(transaction, tab);
       })
       .filter((transaction) => transaction.description.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [cards, dashboardDetailFilter, movementFilter, search, selectedMonth, tab, transactions]);
+  }, [cards, dashboardDetailFilter, movementFilter, reimbursementsEnabled, search, selectedMonth, tab, transactions]);
   const filteredTransactions = useMemo(() => {
     if (expenseScope === 'all') return sourceTransactions;
     return sourceTransactions
       .filter((transaction) => transaction.flow === 'expense')
       .filter((transaction) => expenseScope === 'others'
         ? isThirdPartyExpense(transaction)
-        : !isThirdPartyExpense(transaction))
+        : getTransactionPersonalAmount(transaction) > 0)
       .filter((transaction) => matchesScopedExpenseFilter(transaction, expenseFilter));
   }, [expenseFilter, expenseScope, sourceTransactions]);
+  const receivedReimbursementGroups = useMemo(() => {
+    if (!reimbursementsEnabled || movementFilter !== 'income' || tab === 'cards' || expenseScope !== 'all') return [];
+    const term = search.trim().toLowerCase();
+    const groups = new Map<string, { id: string; name: string; total: number; count: number }>();
+
+    transactions
+      .filter((transaction) =>
+        isThirdPartyExpense(transaction)
+        && getTransactionReimbursementReceivedAmount(transaction) > 0
+        && getReimbursementMonthKey(transaction, cards) === selectedMonth
+      )
+      .forEach((transaction) => {
+        const key = transaction.reimbursementPersonId ?? 'unknown';
+        const name = getReimbursementPersonName(reimbursementPeople, transaction.reimbursementPersonId);
+        if (term && !name.toLowerCase().includes(term) && !transaction.description.toLowerCase().includes(term)) return;
+        const current = groups.get(key) ?? { id: key, name, total: 0, count: 0 };
+        current.total += getTransactionReimbursementReceivedAmount(transaction);
+        current.count += 1;
+        groups.set(key, current);
+      });
+
+    return Array.from(groups.values())
+      .sort((left, right) => right.total - left.total);
+  }, [cards, expenseScope, movementFilter, reimbursementPeople, search, selectedMonth, tab, transactions]);
+  const pendingInvoiceTotal = useMemo(
+    () => pendingInvoiceSummaries.reduce((sum, invoice) => sum + invoice.total, 0),
+    [pendingInvoiceSummaries],
+  );
   const viewTotal = useMemo(() => {
-    return filteredTransactions.reduce((sum, transaction) => {
+    if (dashboardDetailFilter === 'received') {
+      const transactionTotal = filteredTransactions.reduce((sum, transaction) => {
+        if (transaction.flow === 'income') return sum + transaction.amount;
+        return sum;
+      }, 0);
+      return transactionTotal + receivedReimbursementGroups.reduce((sum, group) => sum + group.total, 0);
+    }
+    if (dashboardDetailFilter === 'paid') {
+      return filteredTransactions.reduce((sum, transaction) => {
+        if (transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId) return sum - transaction.amount;
+        return sum;
+      }, 0);
+    }
+    const transactionTotal = filteredTransactions.reduce((sum, transaction) => {
       if (isInvoicePayment(transaction)) return sum;
       if (transaction.flow === 'income') return sum + transaction.amount;
       if (isInvoiceCredit(transaction)) return sum + transaction.amount;
+      if (transaction.flow === 'expense' && expenseScope === 'personal') return sum - getPersonalExpenseSignedAmount(transaction);
+      if (transaction.flow === 'expense' && expenseScope === 'others') return sum - getTransactionReimbursementAmount(transaction);
       if (transaction.flow === 'expense') return sum - transaction.amount;
       return sum;
     }, 0);
-  }, [filteredTransactions, movementFilter]);
+    if (movementFilter === 'income') {
+      return transactionTotal + receivedReimbursementGroups.reduce((sum, group) => sum + group.total, 0);
+    }
+    return movementFilter === 'pending' ? transactionTotal - pendingInvoiceTotal : transactionTotal;
+  }, [dashboardDetailFilter, expenseScope, filteredTransactions, movementFilter, pendingInvoiceTotal, receivedReimbursementGroups]);
   const spendingSummary = useMemo(() => {
     return sourceTransactions.reduce((summary, transaction) => {
       if (transaction.flow !== 'expense' || isInvoicePayment(transaction)) return summary;
-      const amount = isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
-      if (isThirdPartyExpense(transaction)) summary.others += amount;
-      else summary.personal += amount;
+      summary.personal += getPersonalExpenseSignedAmount(transaction);
+      summary.others += getTransactionReimbursementAmount(transaction);
       return summary;
     }, { personal: 0, others: 0 });
   }, [sourceTransactions]);
@@ -233,24 +290,34 @@ export function TransactionsView({
   const reimbursementSummary = useMemo(() => {
     return sourceTransactions.reduce((summary, transaction) => {
       if (!isThirdPartyExpense(transaction)) return summary;
-      const amount = isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
-      if (transaction.reimbursementStatus === 'received') summary.received += amount;
-      else summary.pending += amount;
+      const amount = getTransactionReimbursementAmount(transaction);
+      summary.received += getTransactionReimbursementReceivedAmount(transaction);
+      if (transaction.reimbursementStatus !== 'received') summary.pending += amount;
       return summary;
     }, { pending: 0, received: 0 });
   }, [sourceTransactions]);
   const scopedExpenseTransactions = useMemo(() => {
     if (expenseScope === 'others') return sourceTransactions.filter(isThirdPartyExpense);
-    return sourceTransactions.filter((transaction) => transaction.flow === 'expense' && !isThirdPartyExpense(transaction) && !isInvoicePayment(transaction));
+    return sourceTransactions.filter((transaction) => transaction.flow === 'expense' && getTransactionPersonalAmount(transaction) > 0 && !isInvoicePayment(transaction));
   }, [expenseScope, sourceTransactions]);
   const expenseBreakdown = useMemo(
-    () => summarizeExpenseBreakdown(scopedExpenseTransactions),
-    [scopedExpenseTransactions],
+    () => summarizeExpenseBreakdown(
+      scopedExpenseTransactions,
+      expenseScope === 'others' ? getTransactionReimbursementAmount : getPersonalExpenseSignedAmount,
+    ),
+    [expenseScope, scopedExpenseTransactions],
   );
   const hasExpenseBreakdown = expenseScope !== 'all' && expenseBreakdown.some((item) => item.count > 0);
-  const totalInflows = incomeTotal + spendingSummary.others;
-  const totalOutflows = spendingSummary.personal + spendingSummary.others;
-  const monthlyBalance = totalInflows - totalOutflows;
+  const monthlyResult = useMemo(
+    () => summarizeMonthlyResult(transactions, selectedMonth, cards, { includeReimbursements: reimbursementsEnabled }),
+    [cards, reimbursementsEnabled, selectedMonth, transactions],
+  );
+  const totalInflows = monthlyResult.totalInflows;
+  const totalOutflows = monthlyResult.totalOutflows;
+  const monthlyBalance = monthlyResult.result;
+  const visibleItemCount = filteredTransactions.length
+    + receivedReimbursementGroups.length
+    + (movementFilter === 'pending' ? pendingInvoiceSummaries.length : 0);
   const totalLabel = movementFilter === 'income'
     ? 'Total de entradas'
     : movementFilter === 'expenses'
@@ -271,7 +338,7 @@ export function TransactionsView({
       : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 pt-7 md:px-8 md:pt-8">
+    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-7 md:pt-8">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">Movimentações</p>
@@ -287,16 +354,16 @@ export function TransactionsView({
         className="mt-4 shrink-0"
       />
 
-      <div className="mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl bg-white/5 p-1">
+      <div className="premium-card-soft mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl p-1">
         {tabs.map((item) => (
-          <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`h-11 rounded-xl text-xs font-bold transition sm:text-sm ${tab === item.id ? 'bg-sky-500 text-white' : 'text-slate-400'}`}>
+          <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`h-11 rounded-xl text-xs font-bold transition sm:text-sm ${tab === item.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
             {item.label}
           </button>
         ))}
       </div>
 
       <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Filtro de movimentações</p>
-      <div className="mt-1.5 grid shrink-0 grid-cols-4 gap-1 rounded-xl border border-white/8 bg-[#101319] p-1">
+      <div className="premium-card-soft mt-1.5 grid shrink-0 grid-cols-4 gap-1 rounded-xl p-1">
         {movementFilters.map((filter) => (
           <button
             key={filter.id}
@@ -308,7 +375,7 @@ export function TransactionsView({
               setExpenseFilter('personal');
             }}
             className={`h-9 rounded-lg text-xs font-bold transition ${
-              movementFilter === filter.id ? 'bg-sky-500/20 text-sky-200' : 'text-slate-500 hover:text-slate-300'
+              movementFilter === filter.id ? 'bg-white text-black' : 'text-slate-500 hover:bg-white/5 hover:text-slate-300'
             }`}
           >
             {filter.label}
@@ -351,7 +418,7 @@ export function TransactionsView({
       )}
 
       {movementFilter === 'all' && expenseScope === 'all' ? (
-        <section className="mt-4 shrink-0 overflow-hidden rounded-2xl border border-white/8 bg-[#101319]">
+        <section className="premium-card mt-4 shrink-0 overflow-hidden rounded-2xl">
           <div className="flex items-end justify-between gap-4 px-4 pb-3 pt-3.5">
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Balanço do mês</p>
@@ -389,18 +456,22 @@ export function TransactionsView({
                   <span>Receitas</span>
                   <span className="font-mono text-slate-300">{formatCurrency(incomeTotal)}</span>
                 </div>
-                  <div className="flex items-center justify-between gap-2 text-amber-300/80">
-                    <span>Reembolsos</span>
-                    <span className="font-mono">{formatCurrency(spendingSummary.others)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 pl-2 text-amber-200">
-                    <span>Concluídos</span>
-                    <span className="font-mono">{formatCurrency(reimbursementSummary.received)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 pl-2 text-slate-500">
-                    <span>Pendentes</span>
-                    <span className="font-mono text-slate-300">{formatCurrency(reimbursementSummary.pending)}</span>
-                  </div>
+                  {reimbursementsEnabled ? (
+                    <>
+                      <div className="flex items-center justify-between gap-2 text-amber-300/80">
+                        <span>Reembolsos</span>
+                        <span className="font-mono">{formatCurrency(monthlyResult.reimbursementsExpected)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 pl-2 text-amber-200">
+                        <span>Concluídos</span>
+                        <span className="font-mono">{formatCurrency(reimbursementSummary.received)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 pl-2 text-slate-500">
+                        <span>Pendentes</span>
+                        <span className="font-mono text-slate-300">{formatCurrency(reimbursementSummary.pending)}</span>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
               <div className="border-l border-white/8 px-3 py-3">
@@ -417,17 +488,19 @@ export function TransactionsView({
                   <span>Meus gastos</span>
                   <span className="font-mono">{formatCurrency(spendingSummary.personal)}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExpenseScope('others');
-                    setExpenseFilter('personal');
-                  }}
-                  className="flex w-full items-center justify-between gap-2 text-amber-300/80 transition hover:text-amber-200"
-                >
-                  <span>Dos outros</span>
-                  <span className="font-mono">{formatCurrency(spendingSummary.others)}</span>
-                </button>
+                {reimbursementsEnabled ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpenseScope('others');
+                      setExpenseFilter('personal');
+                    }}
+                    className="flex w-full items-center justify-between gap-2 text-amber-300/80 transition hover:text-amber-200"
+                  >
+                    <span>Dos outros</span>
+                    <span className="font-mono">{formatCurrency(monthlyResult.thirdPartyExpenses)}</span>
+                  </button>
+                ) : null}
                   <div className="flex items-center justify-between gap-2 border-t border-white/8 pt-1.5 font-bold text-slate-300">
                     <span>Total</span>
                     <span className="font-mono">{formatCurrency(totalOutflows)}</span>
@@ -438,10 +511,10 @@ export function TransactionsView({
           ) : null}
         </section>
       ) : (
-        <section className="mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/8 bg-[#101319] px-4 py-3">
+        <section className="premium-card mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl px-4 py-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{totalLabel}</p>
-            <p className="mt-0.5 text-xs text-slate-500">{filteredTransactions.length} lançamento{filteredTransactions.length === 1 ? '' : 's'}</p>
+            <p className="mt-0.5 text-xs text-slate-500">{visibleItemCount} item{visibleItemCount === 1 ? '' : 's'}</p>
             {totalHint ? <p className="mt-1 truncate text-[10px] text-slate-600">{totalHint}</p> : null}
           </div>
           <p className={`whitespace-nowrap text-right font-mono text-base font-bold tracking-tight ${viewTotal >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
@@ -470,9 +543,72 @@ export function TransactionsView({
         </section>
       ) : null}
 
-      <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-        {filteredTransactions.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
+      <section className="premium-scroll mt-5 min-h-[220px] flex-1 space-y-3 overflow-y-auto pb-4">
+        {movementFilter === 'pending' && pendingInvoiceSummaries.length > 0 ? (
+          <div className="space-y-3">
+            {pendingInvoiceSummaries.map(({ card, invoice, itemCount, total }) => (
+              <article
+                key={`${card.id}:${invoice.period}`}
+                className="cosmic-card cosmic-card-hover relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4"
+                style={{
+                  borderColor: `${card.color}55`,
+                  backgroundImage: `linear-gradient(90deg, ${card.color}1f, transparent 62%)`,
+                }}
+              >
+                <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: card.color }} />
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl" style={{ backgroundColor: `${card.color}1f`, color: card.color }}>
+                  <CreditCard size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="mb-1.5 inline-flex rounded-md border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest" style={{ borderColor: `${card.color}44`, backgroundColor: `${card.color}1a`, color: card.color }}>
+                    Fatura pendente
+                  </span>
+                  <p className="truncate text-sm font-bold text-white">{card.name} - {invoice.label}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {itemCount} lançamento{itemCount === 1 ? '' : 's'} • vence {invoice.dueDate.slice(8, 10)}/{invoice.dueDate.slice(5, 7)}
+                  </p>
+                  <span className="mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold" style={{ borderColor: `${card.color}44`, backgroundColor: `${card.color}1a`, color: card.color }}>
+                    Pague pela aba Cartões
+                  </span>
+                </div>
+                <p className="shrink-0 text-right font-mono text-sm font-bold text-rose-300">-{formatCurrency(total)}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+
+        {receivedReimbursementGroups.length > 0 ? (
+          <div className="space-y-3">
+            {receivedReimbursementGroups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => onOpenReimbursements(group.id)}
+                className="cosmic-card cosmic-card-hover relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-amber-400/20 p-4 text-left"
+              >
+                <span className="absolute inset-y-0 left-0 w-1 bg-amber-400" />
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-100">
+                  <UserRound size={18} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="mb-1.5 inline-flex rounded-md border border-amber-400/20 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-amber-100">
+                    Reembolso recebido
+                  </span>
+                  <span className="block truncate text-sm font-bold text-white">{group.name}</span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    {group.count} despesa{group.count === 1 ? '' : 's'} no mês - abrir Reembolsos
+                  </span>
+                </span>
+                <span className="shrink-0 text-right font-mono text-sm font-bold text-emerald-300">
+                  +{formatCurrency(group.total)}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {visibleItemCount === 0 ? (
+          <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
             <p className="text-sm font-bold text-white">Nenhum lançamento neste filtro</p>
             <p className="mt-1 text-xs text-slate-500">Escolha outro tipo de despesa ou limpe a busca.</p>
           </div>
@@ -492,8 +628,8 @@ export function TransactionsView({
               key={transaction.id}
               className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4 ${
                 isCardEntry
-                  ? 'border-violet-400/20 bg-gradient-to-r from-violet-500/[0.09] to-[#101319]'
-                  : 'border-sky-400/15 bg-gradient-to-r from-sky-500/[0.06] to-[#101319]'
+                  ? 'cosmic-card cosmic-card-hover border-violet-400/20'
+                  : 'cosmic-card cosmic-card-hover border-sky-400/15'
               }`}
             >
               <span className={`absolute inset-y-0 left-0 w-1 ${isCardEntry ? 'bg-violet-500' : 'bg-sky-500'}`} />
@@ -593,7 +729,7 @@ export function TransactionsView({
 
       {paymentTransaction ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-6">
-          <div className="w-full max-w-md rounded-t-2xl border border-white/10 bg-[#101319] p-5 shadow-2xl md:rounded-2xl">
+          <div className="premium-card w-full max-w-md rounded-t-2xl p-5 shadow-2xl md:rounded-2xl">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">Confirmar pagamento</p>
@@ -618,7 +754,7 @@ export function TransactionsView({
                   setPaymentAccountId(event.target.value);
                   setPaymentError('');
                 }}
-                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm font-semibold text-white outline-none focus:border-sky-400"
+                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-semibold text-white outline-none focus:border-violet-300"
               >
                 {accounts.length === 0 ? <option value="">Nenhuma conta cadastrada</option> : null}
                 {accounts.map((account) => (
@@ -643,7 +779,7 @@ export function TransactionsView({
                 type="button"
                 onClick={confirmPaymentAccount}
                 disabled={accounts.length === 0}
-                className="h-11 rounded-lg bg-sky-500 text-sm font-black text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                className="h-11 rounded-lg bg-white text-sm font-black text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               >
                 Marcar como pago
               </button>

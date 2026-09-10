@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { mockUser } from '../../data/mockData';
 import { profileRepository } from '../profile/profileRepository';
+import type { ProfilePreferences } from '../profile/profileRepository';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase/supabaseClient';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import type { UserProfile } from '../../types';
@@ -23,29 +24,45 @@ export function useAuthSession({ loadFinance, setAppError }: UseAuthSessionOptio
     loadFinanceRef.current = loadFinance;
   }, [loadFinance]);
 
-  function hydrateUserProfile(sessionUser: User) {
-    setUser({
+  function buildUserProfile(sessionUser: User, preferences?: ProfilePreferences): UserProfile {
+    return {
       id: sessionUser.id,
       name: sessionUser.user_metadata.full_name ?? sessionUser.email ?? 'Usuário',
       email: sessionUser.email ?? '',
       plan: 'AxisFin',
-      reimbursementsEnabled: false,
-      savingsGoalMode: 'salary_percentage',
-      savingsGoalAmount: 0,
-      savingsGoalPercentage: 20,
-      includePendingSalary: true,
-      reportWidgets: ['income', 'expenses', 'savings_rate', 'average_expenses'],
-    });
+      reimbursementsEnabled: preferences?.reimbursementsEnabled ?? false,
+      savingsGoalMode: preferences?.savingsGoalMode ?? 'salary_percentage',
+      savingsGoalAmount: preferences?.savingsGoalAmount ?? 0,
+      savingsGoalPercentage: preferences?.savingsGoalPercentage ?? 20,
+      includePendingSalary: preferences?.includePendingSalary ?? true,
+      reportWidgets: preferences?.reportWidgets ?? ['income', 'expenses', 'savings_rate', 'average_expenses'],
+    };
+  }
 
-    void profileRepository.getPreferences(sessionUser.id)
-      .then((preferences) => {
-        setUser((current) => current.id === sessionUser.id
-          ? { ...current, ...preferences }
-          : current);
-      })
-      .catch((error: unknown) => {
-        setAppError(getUserFriendlyError(error, 'Não foi possível carregar suas preferências. Tente novamente.'));
+  async function hydrateUserProfile(sessionUser: User) {
+    try {
+      const preferences = await profileRepository.getPreferences(sessionUser.id);
+      const profile = buildUserProfile(sessionUser, preferences);
+      setUser(profile);
+      return profile;
+    } catch (error: unknown) {
+      setAppError(getUserFriendlyError(error, 'Não foi possível carregar suas preferências. Tente novamente.'));
+      const fallbackProfile = buildUserProfile(sessionUser);
+      setUser((current) => {
+        if (current.id !== sessionUser.id) return fallbackProfile;
+
+        return {
+          ...fallbackProfile,
+          reimbursementsEnabled: current.reimbursementsEnabled,
+          savingsGoalMode: current.savingsGoalMode,
+          savingsGoalAmount: current.savingsGoalAmount,
+          savingsGoalPercentage: current.savingsGoalPercentage,
+          includePendingSalary: current.includePendingSalary,
+          reportWidgets: current.reportWidgets,
+        };
       });
+      return fallbackProfile;
+    }
   }
 
   useEffect(() => {
@@ -54,8 +71,9 @@ export function useAuthSession({ loadFinance, setAppError }: UseAuthSessionOptio
       return;
     }
 
-    void supabase.auth.getSession()
-      .then(({ data, error }) => {
+    void (async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
         if (error) {
           setAppError(getUserFriendlyError(error, 'Não foi possível verificar sua sessão. Entre novamente.'));
           setIsAuthLoading(false);
@@ -68,38 +86,48 @@ export function useAuthSession({ loadFinance, setAppError }: UseAuthSessionOptio
         const isRecoveryUrl = hashParams.get('type') === 'recovery' || queryParams.get('type') === 'recovery';
 
         if (sessionUser && !isRecoveryUrl) {
-          hydrateUserProfile(sessionUser);
+          await hydrateUserProfile(sessionUser);
           setIsAuthenticated(true);
-          void loadFinanceRef.current();
+          await loadFinanceRef.current();
         } else if (sessionUser && isRecoveryUrl) {
-          hydrateUserProfile(sessionUser);
+          await hydrateUserProfile(sessionUser);
           setIsPasswordRecovery(true);
           setIsAuthenticated(false);
         }
         setIsAuthLoading(false);
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         setAppError(getUserFriendlyError(error, 'Não foi possível verificar sua sessão. Entre novamente.'));
         setIsAuthLoading(false);
-      });
+      }
+    })();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'INITIAL_SESSION') return;
+
       const sessionUser = session?.user;
       if (event === 'PASSWORD_RECOVERY') {
-        if (sessionUser) hydrateUserProfile(sessionUser);
-        setIsPasswordRecovery(true);
-        setIsAuthenticated(false);
+        void (async () => {
+          if (sessionUser) await hydrateUserProfile(sessionUser);
+          setIsPasswordRecovery(true);
+          setIsAuthenticated(false);
+        })();
         return;
       }
 
-      setIsAuthenticated(Boolean(sessionUser));
-      if (sessionUser) {
+      if (!sessionUser) {
+        setIsAuthenticated(false);
         setIsPasswordRecovery(false);
-        hydrateUserProfile(sessionUser);
-        void loadFinanceRef.current();
+        return;
       }
+
+      void (async () => {
+        setIsPasswordRecovery(false);
+        await hydrateUserProfile(sessionUser);
+        setIsAuthenticated(true);
+        await loadFinanceRef.current();
+      })();
     });
 
     return () => subscription.unsubscribe();

@@ -1,5 +1,6 @@
 import type { Account, Card, Transaction } from '../../types';
 import { formatLocalDate, parseLocalDate } from './date';
+import { getTransactionReimbursementAmount } from './finance';
 import { getReimbursementDueDate } from './reimbursements';
 import { readTransactionMeta } from './transactionMeta';
 
@@ -67,12 +68,11 @@ export function calculateCashForecast(
           id: `reimbursement:${transaction.id}`,
           date: eventDate,
           description: transaction.description,
-          amount: transaction.amount,
+          amount: getTransactionReimbursementAmount(transaction),
           kind: 'reimbursement',
           overdue: dueDate < today,
         });
       }
-      return;
     }
 
     const meta = readTransactionMeta(transaction.notes);

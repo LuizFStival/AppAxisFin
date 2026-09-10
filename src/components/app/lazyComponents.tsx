@@ -1,8 +1,10 @@
 import { lazy } from 'react';
 
 export const DashboardView = lazy(() => import('../dashboard/DashboardView').then((module) => ({ default: module.DashboardView })));
+export const MonthCenterView = lazy(() => import('../month-center/MonthCenterView').then((module) => ({ default: module.MonthCenterView })));
 export const AccountsView = lazy(() => import('../accounts/AccountsView').then((module) => ({ default: module.AccountsView })));
 export const CardsView = lazy(() => import('../cards/CardsView').then((module) => ({ default: module.CardsView })));
+export const ReserveBoxesView = lazy(() => import('../reserve-boxes/ReserveBoxesView').then((module) => ({ default: module.ReserveBoxesView })));
 export const TransactionsView = lazy(() => import('../transactions/TransactionsView').then((module) => ({ default: module.TransactionsView })));
 export const ReimbursementsView = lazy(() => import('../reimbursements/ReimbursementsView').then((module) => ({ default: module.ReimbursementsView })));
 export const ReportsView = lazy(() => import('../reports/ReportsView').then((module) => ({ default: module.ReportsView })));

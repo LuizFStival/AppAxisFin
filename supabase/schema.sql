@@ -54,6 +54,7 @@ create table if not exists public.accounts (
   type text not null check (type in ('checking', 'savings', 'cash', 'investment')),
   institution text,
   balance numeric(14,2) not null default 0,
+  last_balance_update date not null default current_date,
   color text not null default '#3B82F6',
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
@@ -113,6 +114,9 @@ create table if not exists public.transactions (
   to_account_id uuid references public.accounts(id) on delete set null,
   notes text,
   is_reimbursable boolean not null default false,
+  split_mode text not null default 'none',
+  personal_amount numeric(14,2),
+  reimbursement_amount numeric(14,2),
   reimbursement_person_id uuid references public.reimbursement_people(id) on delete set null,
   reimbursement_status text check (reimbursement_status in ('pending', 'received')),
   reimbursement_received_at date,
@@ -165,6 +169,29 @@ create table if not exists public.transactions (
         )
       )
     )
+  ),
+  constraint transactions_split_amounts_check check (
+    (
+      is_reimbursable = false
+      and split_mode = 'none'
+      and personal_amount is null
+      and reimbursement_amount is null
+    )
+    or
+    (
+      is_reimbursable = true
+      and flow = 'expense'
+      and split_mode in ('shared', 'third_party_full')
+      and personal_amount is not null
+      and reimbursement_amount is not null
+      and personal_amount >= 0
+      and reimbursement_amount > 0
+      and personal_amount + reimbursement_amount = amount
+      and (
+        (split_mode = 'shared' and personal_amount > 0)
+        or (split_mode = 'third_party_full' and personal_amount = 0)
+      )
+    )
   )
 );
 
@@ -183,6 +210,9 @@ create table if not exists public.recurring_transactions (
   card_id uuid references public.cards(id) on delete set null,
   notes text,
   is_reimbursable boolean not null default false,
+  split_mode text not null default 'none',
+  personal_amount numeric(14,2),
+  reimbursement_amount numeric(14,2),
   reimbursement_person_id uuid references public.reimbursement_people(id) on delete set null,
   reimbursement_status text check (reimbursement_status in ('pending', 'received')),
   is_active boolean not null default true,
@@ -205,6 +235,30 @@ create table if not exists public.recurring_transactions (
       and flow = 'expense'
       and reimbursement_person_id is not null
       and reimbursement_status = 'pending'
+    )
+  ),
+  constraint recurring_transactions_split_amounts_check check (
+    (
+      is_reimbursable = false
+      and split_mode = 'none'
+      and personal_amount is null
+      and reimbursement_amount is null
+    )
+    or
+    (
+      is_reimbursable = true
+      and flow = 'expense'
+      and split_mode in ('shared', 'third_party_full')
+      and personal_amount is not null
+      and reimbursement_amount is not null
+      and personal_amount >= 0
+      and reimbursement_amount > 0
+      and personal_amount + reimbursement_amount = amount
+      and reimbursement_status = 'pending'
+      and (
+        (split_mode = 'shared' and personal_amount > 0)
+        or (split_mode = 'third_party_full' and personal_amount = 0)
+      )
     )
   )
 );
@@ -270,6 +324,60 @@ create table if not exists public.goal_movements (
     foreign key (goal_id, user_id) references public.goals(id, user_id) on delete cascade
 );
 
+create table if not exists public.commitments (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  total_value numeric(14,2) not null check (total_value > 0),
+  my_share_percent numeric(5,2) not null default 50 check (my_share_percent > 0 and my_share_percent <= 100),
+  partner_person_id uuid references public.reimbursement_people(id) on delete set null,
+  monthly_amount numeric(14,2) check (monthly_amount is null or monthly_amount > 0),
+  installment_count int check (installment_count is null or installment_count > 0),
+  start_date date,
+  paid_amount numeric(14,2) not null default 0 check (paid_amount >= 0),
+  color text not null default '#8B5CF6',
+  status text not null default 'active' check (status in ('active', 'completed', 'archived')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.reserve_boxes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  institution text not null default 'Outro',
+  cdi_percent numeric(6,2) not null default 100 check (cdi_percent >= 0 and cdi_percent <= 300),
+  initial_balance numeric(14,2) not null default 0 check (initial_balance >= 0),
+  current_balance numeric(14,2) not null default 0 check (current_balance >= 0),
+  created_on date not null default current_date,
+  goal text,
+  color text not null default '#8B5CF6',
+  icon text not null default 'PiggyBank',
+  last_balance_update date not null default current_date,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (id, user_id)
+);
+
+create table if not exists public.reserve_box_movements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  reserve_box_id uuid not null,
+  movement_type text not null check (movement_type in ('deposit', 'withdrawal', 'yield', 'balance_update')),
+  amount numeric(14,2) not null check (amount >= 0),
+  movement_date date not null default current_date,
+  description text,
+  created_at timestamptz not null default now(),
+  constraint reserve_box_movements_box_owner_fk
+    foreign key (reserve_box_id, user_id) references public.reserve_boxes(id, user_id) on delete cascade,
+  constraint reserve_box_movements_positive_check check (
+    (movement_type = 'balance_update' and amount >= 0)
+    or
+    (movement_type <> 'balance_update' and amount > 0)
+  )
+);
+
 create or replace function public.apply_goal_movement()
 returns trigger
 language plpgsql
@@ -300,6 +408,53 @@ create trigger goal_movements_apply_amount
 before insert on public.goal_movements
 for each row execute function public.apply_goal_movement();
 
+create or replace function public.apply_reserve_box_movement()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  current_amount numeric(14,2);
+  next_amount numeric(14,2);
+begin
+  select current_balance into current_amount
+  from public.reserve_boxes
+  where id = new.reserve_box_id
+    and user_id = new.user_id
+  for update;
+
+  if current_amount is null then
+    raise exception 'Caixinha nao encontrada para o usuario atual.';
+  end if;
+
+  next_amount := case new.movement_type
+    when 'deposit' then current_amount + new.amount
+    when 'yield' then current_amount + new.amount
+    when 'withdrawal' then current_amount - new.amount
+    when 'balance_update' then new.amount
+    else current_amount
+  end;
+
+  if next_amount < 0 then
+    raise exception 'O valor retirado e maior que o saldo atual da caixinha.';
+  end if;
+
+  update public.reserve_boxes
+  set current_balance = next_amount,
+      last_balance_update = new.movement_date
+  where id = new.reserve_box_id
+    and user_id = new.user_id;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists reserve_box_movements_apply_amount on public.reserve_box_movements;
+create trigger reserve_box_movements_apply_amount
+before insert on public.reserve_box_movements
+for each row execute function public.apply_reserve_box_movement();
+
 create table if not exists public.budgets (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -327,10 +482,14 @@ create table if not exists public.notifications (
 );
 
 create index if not exists accounts_user_id_idx on public.accounts(user_id);
-create unique index if not exists accounts_user_id_name_ci_idx on public.accounts (user_id, lower(trim(name)));
+create unique index if not exists accounts_user_id_name_ci_idx
+on public.accounts (user_id, lower(trim(name)))
+where is_active;
 create index if not exists cards_user_id_idx on public.cards(user_id);
 create index if not exists cards_account_id_idx on public.cards(account_id);
-create unique index if not exists cards_user_id_name_ci_idx on public.cards (user_id, lower(trim(name)));
+create unique index if not exists cards_user_id_name_ci_idx
+on public.cards (user_id, lower(trim(name)))
+where is_active;
 create index if not exists categories_user_id_idx on public.categories(user_id);
 create unique index if not exists categories_user_flow_name_ci_unique
 on public.categories (user_id, flow, lower(trim(name)));
@@ -358,6 +517,14 @@ create index if not exists installments_transaction_id_idx on public.installment
 create index if not exists installments_invoice_id_idx on public.installments(invoice_id);
 create index if not exists goals_user_id_idx on public.goals(user_id);
 create index if not exists goal_movements_user_goal_idx on public.goal_movements(user_id, goal_id, created_at desc);
+create index if not exists commitments_user_id_idx on public.commitments(user_id);
+create index if not exists commitments_partner_person_id_idx on public.commitments(partner_person_id);
+create index if not exists commitments_user_status_idx on public.commitments(user_id, status);
+create index if not exists reserve_boxes_user_id_idx on public.reserve_boxes(user_id);
+create index if not exists reserve_boxes_user_active_idx on public.reserve_boxes(user_id, is_active);
+create index if not exists reserve_boxes_user_institution_idx on public.reserve_boxes(user_id, institution);
+create unique index if not exists reserve_boxes_user_id_name_ci_idx on public.reserve_boxes(user_id, lower(trim(name))) where is_active;
+create index if not exists reserve_box_movements_user_box_idx on public.reserve_box_movements(user_id, reserve_box_id, movement_date desc, created_at desc);
 create index if not exists budgets_user_id_period_idx on public.budgets(user_id, period);
 create index if not exists budgets_category_id_idx on public.budgets(category_id);
 create index if not exists notifications_user_id_created_at_idx on public.notifications(user_id, created_at desc);
@@ -419,7 +586,7 @@ begin
     and old.reimbursement_status = 'received'
     and old.reimbursement_received_account_id is not null then
     update public.accounts
-    set balance = balance - old.amount
+    set balance = balance - coalesce(old.reimbursement_amount, old.amount)
     where id = old.reimbursement_received_account_id and user_id = old.user_id;
   end if;
 
@@ -439,7 +606,7 @@ begin
     and new.reimbursement_status = 'received'
     and new.reimbursement_received_account_id is not null then
     update public.accounts
-    set balance = balance + new.amount
+    set balance = balance + coalesce(new.reimbursement_amount, new.amount)
     where id = new.reimbursement_received_account_id and user_id = new.user_id;
   end if;
 
@@ -476,6 +643,16 @@ create trigger goals_set_updated_at
 before update on public.goals
 for each row execute function public.set_updated_at();
 
+drop trigger if exists commitments_set_updated_at on public.commitments;
+create trigger commitments_set_updated_at
+before update on public.commitments
+for each row execute function public.set_updated_at();
+
+drop trigger if exists reserve_boxes_set_updated_at on public.reserve_boxes;
+create trigger reserve_boxes_set_updated_at
+before update on public.reserve_boxes
+for each row execute function public.set_updated_at();
+
 drop trigger if exists budgets_set_updated_at on public.budgets;
 create trigger budgets_set_updated_at
 before update on public.budgets
@@ -497,6 +674,9 @@ alter table public.invoices enable row level security;
 alter table public.installments enable row level security;
 alter table public.goals enable row level security;
 alter table public.goal_movements enable row level security;
+alter table public.commitments enable row level security;
+alter table public.reserve_boxes enable row level security;
+alter table public.reserve_box_movements enable row level security;
 alter table public.budgets enable row level security;
 alter table public.notifications enable row level security;
 
@@ -711,6 +891,58 @@ for insert to authenticated
 with check ((select auth.uid()) = user_id);
 
 grant select, insert on public.goal_movements to authenticated;
+
+drop policy if exists commitments_select_own on public.commitments;
+create policy commitments_select_own on public.commitments
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists commitments_insert_own on public.commitments;
+create policy commitments_insert_own on public.commitments
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists commitments_update_own on public.commitments;
+create policy commitments_update_own on public.commitments
+for update to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists commitments_delete_own on public.commitments;
+create policy commitments_delete_own on public.commitments
+for delete to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists reserve_boxes_select_own on public.reserve_boxes;
+create policy reserve_boxes_select_own on public.reserve_boxes
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists reserve_boxes_insert_own on public.reserve_boxes;
+create policy reserve_boxes_insert_own on public.reserve_boxes
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists reserve_boxes_update_own on public.reserve_boxes;
+create policy reserve_boxes_update_own on public.reserve_boxes
+for update to authenticated
+using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
+drop policy if exists reserve_boxes_delete_own on public.reserve_boxes;
+create policy reserve_boxes_delete_own on public.reserve_boxes
+for delete to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists reserve_box_movements_select_own on public.reserve_box_movements;
+create policy reserve_box_movements_select_own on public.reserve_box_movements
+for select to authenticated
+using ((select auth.uid()) = user_id);
+
+drop policy if exists reserve_box_movements_insert_own on public.reserve_box_movements;
+create policy reserve_box_movements_insert_own on public.reserve_box_movements
+for insert to authenticated
+with check ((select auth.uid()) = user_id);
 
 drop policy if exists budgets_select_own on public.budgets;
 create policy budgets_select_own on public.budgets
@@ -1009,6 +1241,16 @@ begin
 end;
 $$;
 
+create or replace function public.validate_commitment_owner_refs()
+returns trigger
+language plpgsql
+as $$
+begin
+  perform public.assert_owned_reimbursement_person(new.partner_person_id, new.user_id);
+  return new;
+end;
+$$;
+
 drop trigger if exists cards_validate_owner_refs on public.cards;
 create trigger cards_validate_owner_refs
 before insert or update on public.cards
@@ -1039,6 +1281,11 @@ create trigger budgets_validate_owner_refs
 before insert or update on public.budgets
 for each row execute function public.validate_budget_owner_refs();
 
+drop trigger if exists commitments_validate_owner_refs on public.commitments;
+create trigger commitments_validate_owner_refs
+before insert or update on public.commitments
+for each row execute function public.validate_commitment_owner_refs();
+
 create or replace function public.validate_goal_owner_refs()
 returns trigger
 language plpgsql
@@ -1068,10 +1315,14 @@ alter function public.validate_recurring_transaction_owner_refs() set search_pat
 alter function public.validate_invoice_owner_refs() set search_path = public, pg_temp;
 alter function public.validate_installment_owner_refs() set search_path = public, pg_temp;
 alter function public.validate_budget_owner_refs() set search_path = public, pg_temp;
+alter function public.validate_commitment_owner_refs() set search_path = public, pg_temp;
 alter function public.sync_account_balance_from_transaction() set search_path = public, pg_temp;
+alter function public.apply_reserve_box_movement() set search_path = public, pg_temp;
 
 revoke execute on function public.create_profile_for_new_user() from public, anon, authenticated;
 revoke execute on function public.validate_goal_owner_refs() from public, anon, authenticated;
+revoke execute on function public.validate_commitment_owner_refs() from public, anon, authenticated;
+revoke execute on function public.apply_reserve_box_movement() from public, anon, authenticated;
 
 do $$
 declare
@@ -1079,7 +1330,8 @@ declare
   finance_tables constant text[] := array[
     'profiles', 'accounts', 'cards', 'categories', 'reimbursement_people',
     'transactions', 'recurring_transactions', 'invoices', 'installments',
-    'goals', 'goal_movements', 'budgets', 'notifications'
+    'goals', 'goal_movements', 'commitments', 'reserve_boxes',
+    'reserve_box_movements', 'budgets', 'notifications'
   ];
 begin
   foreach table_name in array finance_tables loop
@@ -1092,12 +1344,13 @@ $$;
 grant select, insert, update, delete on table
   public.accounts, public.cards, public.categories,
   public.reimbursement_people, public.transactions, public.recurring_transactions,
-  public.invoices, public.installments, public.goals, public.budgets,
-  public.notifications
+  public.invoices, public.installments, public.goals, public.commitments, public.reserve_boxes,
+  public.budgets, public.notifications
 to authenticated;
 
 grant select, update on table public.profiles to authenticated;
 grant select, insert on table public.goal_movements to authenticated;
+grant select, insert on table public.reserve_box_movements to authenticated;
 
 create or replace function public.reset_my_finance_data()
 returns void
@@ -1114,6 +1367,8 @@ begin
 
   delete from public.notifications where user_id = current_user_id;
   delete from public.budgets where user_id = current_user_id;
+  delete from public.reserve_boxes where user_id = current_user_id;
+  delete from public.commitments where user_id = current_user_id;
   delete from public.goals where user_id = current_user_id;
   delete from public.recurring_transactions where user_id = current_user_id;
   delete from public.transactions where user_id = current_user_id;
@@ -1151,6 +1406,8 @@ declare
   signed_amount numeric(14,2);
   result_transactions jsonb;
   payment_meta jsonb;
+  encoded_meta text;
+  existing_meta jsonb;
 begin
   if current_user_id is null then raise exception 'Usuário não autenticado.'; end if;
   if p_payment_date is null then raise exception 'Informe a data do pagamento.'; end if;
@@ -1177,7 +1434,8 @@ begin
       insert into public.transactions (
         user_id, description, amount, flow, status, transaction_date,
         category_id, account_id, card_id, from_account_id, to_account_id, notes,
-        is_reimbursable, reimbursement_person_id, reimbursement_status,
+        is_reimbursable, split_mode, personal_amount, reimbursement_amount,
+        reimbursement_person_id, reimbursement_status,
         reimbursement_received_at, reimbursement_received_account_id
       )
       values (
@@ -1185,6 +1443,9 @@ begin
         item->>'flow', 'pending', (item->>'transaction_date')::date,
         nullif(item->>'category_id', '')::uuid, null, p_card_id, null, null,
         nullif(item->>'notes', ''), coalesce((item->>'is_reimbursable')::boolean, false),
+        coalesce(nullif(item->>'split_mode', ''), case when coalesce((item->>'is_reimbursable')::boolean, false) then 'third_party_full' else 'none' end),
+        nullif(item->>'personal_amount', '')::numeric,
+        nullif(item->>'reimbursement_amount', '')::numeric,
         nullif(item->>'reimbursement_person_id', '')::uuid,
         nullif(item->>'reimbursement_status', ''),
         nullif(item->>'reimbursement_received_at', '')::date,
@@ -1205,7 +1466,19 @@ begin
       or transaction_row.amount <> abs(signed_amount) then
       raise exception 'A fatura mudou durante o pagamento. Recarregue os dados e tente novamente.';
     end if;
-    if transaction_row.status = 'paid' then
+    existing_meta := '{}'::jsonb;
+    encoded_meta := substring(coalesce(transaction_row.notes, '') from '\[axisfin-meta:([A-Za-z0-9+/=]+)\]');
+    if encoded_meta is not null then
+      begin
+        existing_meta := convert_from(decode(encoded_meta, 'base64'), 'UTF8')::jsonb;
+      exception when others then
+        existing_meta := '{}'::jsonb;
+      end;
+    end if;
+
+    if transaction_row.status = 'paid'
+      and existing_meta ? 'paidAt'
+      and existing_meta ? 'paidFromAccountId' then
       raise exception 'Esta fatura já possui lançamentos pagos. Recarregue os dados antes de tentar novamente.';
     end if;
 
@@ -1215,7 +1488,7 @@ begin
     calculated_amount := calculated_amount + signed_amount;
   end loop;
 
-  if calculated_amount <= 0 or calculated_amount <> p_expected_amount then
+  if calculated_amount <= 0 or round(calculated_amount, 2) <> round(p_expected_amount, 2) then
     raise exception 'O valor da fatura mudou. Recarregue os dados e tente novamente.';
   end if;
 

@@ -9,15 +9,17 @@ import {
   Eye,
   EyeOff,
   HandCoins,
+  PiggyBank,
   Plus,
   Scale,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, Transaction, UserProfile } from '../../types';
-import { formatCurrency, formatMonthLabel, getAccountSignedAmount, getCurrentMonthKey, getExpenseSignedAmount, getFinancialMonthKey, isCardInvoicePaid, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal } from '../../lib/utils/finance';
+import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, ReserveBox, Transaction, UserProfile } from '../../types';
+import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCurrentMonthKey, getExpenseSignedAmount, isCardInvoicePaid, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
+import { summarizeReserveBoxes } from '../../lib/utils/reserveBoxes';
 import { StatCard } from '../shared/StatCard';
 import { BankLogo } from '../shared/BankLogo';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
@@ -28,9 +30,11 @@ interface DashboardViewProps {
   cards: Card[];
   categories: Category[];
   transactions: Transaction[];
+  reserveBoxes: ReserveBox[];
   activeMonth: string;
   summary: DashboardSummary;
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
+  reimbursementsEnabled: boolean;
   showBalances: boolean;
   notificationCount: number;
   onPreviousMonth: () => void;
@@ -44,6 +48,7 @@ interface DashboardViewProps {
   onOpenNotifications: () => void;
   onViewAccounts: (accountId?: string) => void;
   onViewCards: (cardId?: string) => void;
+  onViewReserves: () => void;
   onViewReimbursements: () => void;
   onViewDashboardTransactions: (filter: DashboardTransactionFilter) => void;
   onPayInvoice: (input: {
@@ -97,9 +102,12 @@ function getInvoiceSummary(card: Card, transactions: Transaction[], closingMonth
   };
 }
 
-function getAccountMonthSummary(account: Account, transactions: Transaction[], month: string) {
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
-  const signedAmounts = monthTransactions.map((transaction) => getAccountSignedAmount(transaction, account.id));
+function getAccountMonthSummary(account: Account, transactions: Transaction[], month: string, cards: Card[]) {
+  const signedAmounts = transactions.flatMap((transaction) =>
+    getAccountMovementEntries(transaction, account.id, cards)
+      .filter((entry) => entry.month === month)
+      .map((entry) => entry.amount),
+  );
   const inflow = signedAmounts.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
   const outflow = Math.abs(signedAmounts.reduce((sum, amount) => amount < 0 ? sum + amount : sum, 0));
 
@@ -116,9 +124,11 @@ export function DashboardView({
   cards,
   categories,
   transactions,
+  reserveBoxes,
   activeMonth,
   summary,
   savingsPreferences,
+  reimbursementsEnabled,
   showBalances,
   notificationCount,
   onPreviousMonth,
@@ -131,6 +141,7 @@ export function DashboardView({
   onOpenNotifications,
   onViewAccounts,
   onViewCards,
+  onViewReserves,
   onViewReimbursements,
   onViewDashboardTransactions,
   onPayInvoice,
@@ -143,15 +154,25 @@ export function DashboardView({
   const accountsScrollerRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0 });
   const invoiceSummaries = cards.map((card) => ({ card, invoice: getInvoiceSummary(card, transactions, activeMonth) }));
-  const upcomingInvoiceTotal = invoiceSummaries.reduce(
+  const activeInvoiceSummaries = invoiceSummaries.filter(({ invoice }) => invoice.transactionCount > 0);
+  const upcomingInvoiceTotal = activeInvoiceSummaries.reduce(
     (sum, { invoice }) => sum + (isCardInvoicePaid(invoice.transactions) ? 0 : invoice.total),
     0,
   );
-  const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1));
+  const previousSummary = summarizeDashboard(accounts, transactions, shiftMonthKey(activeMonth, -1), cards, {
+    includeReimbursements: reimbursementsEnabled,
+  });
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
+  const reserveSummary = summarizeReserveBoxes(reserveBoxes, formatLocalDate(new Date()));
   const previousReimbursementsTotal = previousSummary.reimbursementsPending + previousSummary.reimbursementsReceived;
-  const monthResult = summary.income - summary.expenses;
-  const previousMonthResult = previousSummary.income - previousSummary.expenses;
+  const cashMonthResult = Math.round((summary.accountInflow - summary.accountOutflow) * 100) / 100;
+  const personalCashMonthResult = Math.round((summary.accountInflowPersonal - summary.accountOutflowPersonal) * 100) / 100;
+  const monthResult = summarizeMonthlyResult(transactions, activeMonth, cards, {
+    includeReimbursements: reimbursementsEnabled,
+  }).result;
+  const previousMonthResult = summarizeMonthlyResult(transactions, shiftMonthKey(activeMonth, -1), cards, {
+    includeReimbursements: reimbursementsEnabled,
+  }).result;
   const incomeComparison = formatMonthComparison(summary.income, previousSummary.income);
   const expenseComparison = formatMonthComparison(summary.expenses, previousSummary.expenses);
   const reimbursementComparison = formatMonthComparison(reimbursementsTotal, previousReimbursementsTotal);
@@ -161,6 +182,8 @@ export function DashboardView({
     fixedAmount: savingsPreferences.savingsGoalAmount,
     percentage: savingsPreferences.savingsGoalPercentage,
     includePendingSalary: savingsPreferences.includePendingSalary,
+    cards,
+    includeReimbursements: reimbursementsEnabled,
   });
   const investmentZone = investmentGoal.progress >= 100
     ? { label: 'Meta atingida', color: 'bg-emerald-400', text: 'text-emerald-300' }
@@ -202,23 +225,24 @@ export function DashboardView({
   }
 
   return (
-    <div className="flex flex-1 flex-col pb-3 text-white">
-      <header className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
+    <div className="premium-scroll flex h-full min-h-0 flex-col overflow-y-auto pb-8 text-white">
+      <header className="premium-card-soft mx-4 mb-3 mt-4 flex items-center justify-between gap-3 rounded-2xl px-3 py-2.5 md:mx-8 xl:mx-10">
         <button
           type="button"
           onClick={onOpenProfile}
-          className="group flex min-w-0 items-center gap-3 rounded-2xl pr-2 text-left transition hover:bg-white/[0.03]"
+          className="group flex min-w-0 items-center gap-3 rounded-xl pr-2 text-left transition hover:bg-white/[0.04]"
           aria-label="Abrir perfil"
         >
           <span className="relative shrink-0">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-[#3B82F6] to-[#8B5CF6] font-display text-xs font-bold tracking-wider text-white shadow-[0_0_12px_rgba(59,130,246,0.3)]">
+            <div className="premium-metal flex h-11 w-11 items-center justify-center rounded-2xl font-display text-xs font-bold tracking-wider text-white shadow-[0_0_18px_rgba(139,92,246,0.22)]">
               {getInitials(userName)}
             </div>
-            <span className="absolute bottom-0 right-0 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-[#050608] bg-[#3B82F6]">
-              <span className="block h-1 w-1 rounded-full bg-white" />
+            <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-[#111218] bg-violet-400">
+              <span className="block h-1.5 w-1.5 rounded-full bg-white" />
             </span>
           </span>
           <span className="min-w-0">
+            <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Prisma Axis</span>
             <h1 className="font-display text-base font-semibold leading-tight tracking-tight text-white">
               Olá, {firstName}
             </h1>
@@ -229,7 +253,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={onOpenNotifications}
-            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#0F1116] text-slate-400 backdrop-blur transition hover:border-sky-400/30 hover:text-white"
+            className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/20 text-slate-400 backdrop-blur transition hover:border-white/20 hover:text-white"
             aria-label={notificationCount > 0 ? `Abrir notificações, ${notificationCount} não lidas` : 'Abrir notificações'}
           >
             <Bell size={18} />
@@ -242,8 +266,8 @@ export function DashboardView({
         </div>
       </header>
 
-      <section className="px-4 pb-3">
-        <div className="flex items-center justify-between gap-2 rounded-2xl border border-white/8 bg-[#101319] p-2">
+      <section className="app-page-gutters pb-3">
+        <div className="premium-card-soft flex items-center justify-between gap-2 rounded-2xl p-1.5">
           <button
             type="button"
             onClick={onPreviousMonth}
@@ -258,7 +282,7 @@ export function DashboardView({
             className="min-w-0 flex flex-1 items-center justify-center gap-2 rounded-xl px-2 py-2 text-center transition hover:bg-white/5"
             title="Voltar para o mês atual"
           >
-            <CalendarDays size={16} className={isCurrentMonth ? 'text-sky-300' : 'text-slate-500'} />
+            <CalendarDays size={16} className={isCurrentMonth ? 'text-violet-200' : 'text-slate-500'} />
             <span className="truncate text-sm font-bold capitalize text-white">{formatMonthLabel(activeMonth)}</span>
           </button>
           <button
@@ -272,39 +296,57 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="px-4 text-center">
-        <div className="cosmic-card relative flex flex-col items-center overflow-hidden rounded-2xl px-5 py-4">
-          <div className="absolute -right-12 -top-12 h-28 w-28 rounded-full bg-[#3B82F6]/10 blur-2xl" />
-          <div className="mb-1 flex items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-400">
+      <section className="app-page-gutters text-center">
+        <div className="premium-card relative flex flex-col items-center overflow-hidden rounded-3xl px-4 py-4 md:px-5">
+          <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-violet-500/10 blur-3xl" />
+          <div className="mb-1 flex items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
             <span>Saldo atual</span>
             <button type="button" onClick={onToggleBalances} className="p-1 text-gray-400 transition hover:text-white">
               {showBalances ? <Eye size={16} /> : <EyeOff size={16} />}
             </button>
           </div>
-          <p className="mb-3 font-display text-2xl font-bold tracking-tight text-white">
+          <p className="mb-3 font-display text-3xl font-bold tracking-tight text-white">
             {hiddenMoney(showBalances, summary.currentBalance)}
           </p>
 
-          <div className="mb-3 h-px w-full bg-[#1A1C22]" />
+          <div className="mb-3 h-px w-full bg-white/8" />
 
-          <div className="grid w-full grid-cols-2 text-left">
-            <button type="button" onClick={() => onViewDashboardTransactions('received')} className="border-r border-[#1A1C22] pr-3 text-left transition hover:opacity-80" title="Ver entradas confirmadas">
-              <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Entrou nas contas</p>
+          <div className="grid w-full grid-cols-1 gap-2 text-left sm:grid-cols-2">
+            <button type="button" onClick={() => onViewDashboardTransactions('received')} className="premium-card-soft rounded-2xl p-3 text-left transition hover:border-white/15" title="Ver entradas confirmadas">
+              <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-gray-400">Entrou nas contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-emerald-400">
-                {hiddenMoney(showBalances, summary.received)}
+                {hiddenMoney(showBalances, summary.accountInflow)}
+              </p>
+              <p className="mt-1 truncate text-[10px] text-slate-500">
+                Meu {hiddenMoney(showBalances, summary.accountInflowPersonal)} • Terceiros {hiddenMoney(showBalances, summary.accountInflowThirdParty)}
               </p>
             </button>
-            <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="pl-4 text-left transition hover:opacity-80" title="Ver saídas confirmadas">
-              <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-400">Saiu das contas</p>
+            <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="premium-card-soft rounded-2xl p-3 text-left transition hover:border-white/15" title="Ver saídas confirmadas">
+              <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-gray-400">Saiu das contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-red-400">
-                {hiddenMoney(showBalances, summary.paid)}
+                {hiddenMoney(showBalances, summary.accountOutflow)}
+              </p>
+              <p className="mt-1 truncate text-[10px] text-slate-500">
+                Meu {hiddenMoney(showBalances, summary.accountOutflowPersonal)} • Terceiros {hiddenMoney(showBalances, summary.accountOutflowThirdParty)}
               </p>
             </button>
+          </div>
+
+          <div className="mt-2 w-full rounded-2xl border border-white/8 bg-black/20 px-3 py-2 text-left">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Caixa do mês</p>
+              <p className={`font-mono text-sm font-bold ${cashMonthResult >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {hiddenMoney(showBalances, cashMonthResult)}
+              </p>
+            </div>
+            <p className="mt-1 text-[10px] text-slate-500">
+              Movimento real nas contas. Meu {hiddenMoney(showBalances, personalCashMonthResult)} • inclui terceiros.
+            </p>
           </div>
         </div>
       </section>
 
-      <section className="mt-3 grid grid-cols-2 items-start gap-2.5 px-4">
+      <section className="app-page-gutters mt-3 grid grid-cols-2 items-start gap-2.5 md:grid-cols-4">
         <StatCard
           label="Receitas"
           value={hiddenMoney(showBalances, summary.income)}
@@ -321,19 +363,21 @@ export function DashboardView({
           icon={TrendingDown}
           hint={expenseComparison}
           details={<><span className="block">Quitado {formatCurrency(summary.settledExpenses)}</span><span className="block">Falta quitar {formatCurrency(summary.pendingExpenses)}</span></>}
-          onClick={() => onViewDashboardTransactions('expenses')}
+          onClick={() => onViewDashboardTransactions('pending')}
         />
+        {reimbursementsEnabled ? (
+          <StatCard
+            label="Dos outros"
+            value={hiddenMoney(showBalances, reimbursementsTotal)}
+            tone="expense"
+            icon={HandCoins}
+            hint={reimbursementComparison}
+            details={<><span className="block">Reembolsado {formatCurrency(summary.reimbursementsReceived)}</span><span className="block">Falta receber {formatCurrency(summary.reimbursementsPending)}</span></>}
+            onClick={onViewReimbursements}
+          />
+        ) : null}
         <StatCard
-          label="Dos outros"
-          value={hiddenMoney(showBalances, reimbursementsTotal)}
-          tone="expense"
-          icon={HandCoins}
-          hint={reimbursementComparison}
-          details={<><span className="block">Reembolsado {formatCurrency(summary.reimbursementsReceived)}</span><span className="block">Falta receber {formatCurrency(summary.reimbursementsPending)}</span></>}
-          onClick={onViewReimbursements}
-        />
-        <StatCard
-          label="Resultado do mês"
+          label="Resultado pessoal"
           value={hiddenMoney(showBalances, monthResult)}
           tone={investmentGoal.target <= 0 ? 'info' : investmentGoal.progress >= 100 ? 'income' : investmentGoal.progress >= 50 ? 'neutral' : 'expense'}
           icon={Scale}
@@ -346,9 +390,10 @@ export function DashboardView({
                 <span className="block">Defina sua meta em Configurações</span>
               ) : (
                 <>
+                  <span className="block">Receitas {formatCurrency(summary.income)} - Despesas {formatCurrency(summary.expenses)}</span>
                   <span className="block">Meta {formatCurrency(investmentGoal.target)} • Economizado {formatCurrency(investmentGoal.saved)}</span>
                   <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/10">
-                    <span className={`block h-full rounded-full ${investmentZone.color}`} style={{ width: `${investmentGoal.progress}%` }} />
+                    <span className={`block h-full rounded-full ${investmentZone.color}`} style={{ width: `${Math.min(100, investmentGoal.progress)}%` }} />
                   </span>
                   <span className={`mt-1 block font-bold ${investmentZone.text}`}>
                     {investmentGoal.progress.toFixed(0)}% • {investmentZone.label}
@@ -364,13 +409,42 @@ export function DashboardView({
         />
       </section>
 
-      <section className="mt-4 px-4">
+      <section className="app-page-gutters mt-4">
+        <button
+          type="button"
+          onClick={onViewReserves}
+          className="cosmic-card cosmic-card-hover grid w-full gap-3 rounded-3xl border border-violet-400/20 p-4 text-left sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-200">
+              <PiggyBank size={20} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Caixinhas</p>
+              <h2 className="truncate font-display text-lg font-bold text-white">{hiddenMoney(showBalances, reserveSummary.totalBalance)}</h2>
+              <p className="mt-0.5 truncate text-xs text-slate-500">{reserveSummary.count} ativa{reserveSummary.count === 1 ? '' : 's'} • fora do caixa disponível</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:w-72">
+            <div className="rounded-2xl border border-sky-400/15 bg-sky-500/10 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-sky-200">CDI estimado</p>
+              <p className="mt-1 font-mono text-xs font-bold text-white">{hiddenMoney(showBalances, reserveSummary.estimatedYield)}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/10 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Esperado</p>
+              <p className="mt-1 font-mono text-xs font-bold text-white">{hiddenMoney(showBalances, reserveSummary.expectedBalance)}</p>
+            </div>
+          </div>
+        </button>
+      </section>
+
+      <section className="app-page-gutters mt-4">
         <div className="mb-2.5 flex items-center justify-between">
           <h2 className="font-display text-base font-semibold tracking-tight text-white">Minhas Contas</h2>
           <button
             type="button"
             onClick={onAddAccount}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#3B82F6]/20 bg-[#3B82F6]/15 text-[#3B82F6] transition hover:border-transparent hover:bg-gradient-to-tr hover:from-[#3B82F6] hover:to-[#8B5CF6] hover:text-white"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.045] text-slate-200 transition hover:bg-white hover:text-black"
             title="Adicionar conta"
           >
             <Plus size={16} strokeWidth={2.5} />
@@ -383,22 +457,27 @@ export function DashboardView({
           onPointerMove={handleAccountsPointerMove}
           onPointerUp={handleAccountsPointerEnd}
           onPointerCancel={handleAccountsPointerEnd}
-          className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-3 pt-1 active:cursor-grabbing"
+          className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-3 pt-1 active:cursor-grabbing md:mx-0 md:grid md:w-full md:grid-cols-[repeat(auto-fit,minmax(168px,1fr))] md:overflow-visible md:px-0"
         >
           {accounts.map((account) => {
-            const accountMonth = getAccountMonthSummary(account, transactions, activeMonth);
+            const accountMonth = getAccountMonthSummary(account, transactions, activeMonth, cards);
             return (
               <button
                 type="button"
                 key={account.id}
                 onClick={() => onViewAccounts(account.id)}
-                className="cosmic-card cosmic-card-hover flex w-[150px] shrink-0 snap-start cursor-pointer flex-col justify-between rounded-2xl p-3 text-left"
+                className="cosmic-card cosmic-card-hover relative flex w-[168px] shrink-0 snap-start cursor-pointer flex-col justify-between overflow-hidden rounded-2xl p-3 text-left md:min-h-[132px] md:w-auto md:shrink"
+                style={{
+                  borderColor: `${account.color}44`,
+                  backgroundImage: `linear-gradient(135deg, ${account.color}22, transparent 54%)`,
+                }}
               >
+                <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: account.color }} />
                 <div>
                   <div className="mb-3">
                     <BankLogo account={account} size="sm" />
                   </div>
-                  <p className="mb-0.5 truncate text-xs font-medium text-gray-400">{account.name}</p>
+                  <p className="mb-0.5 truncate text-xs font-semibold text-white">{account.name}</p>
                   <p className="text-[10px] font-semibold text-sky-200">Movimento do mês</p>
                 </div>
                 <div>
@@ -414,7 +493,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={() => onViewAccounts()}
-            className="flex w-[110px] shrink-0 snap-start cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-900/30 p-3 text-center text-gray-400 transition hover:border-white/25 hover:text-white"
+            className="flex w-[110px] shrink-0 snap-start cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-900/30 p-3 text-center text-gray-400 transition hover:border-white/25 hover:text-white md:min-h-[132px] md:w-auto md:shrink"
           >
             <ArrowRight size={18} className="mb-1 text-gray-400" />
             <span className="text-[10px] font-semibold uppercase tracking-wider">Ver contas</span>
@@ -422,46 +501,47 @@ export function DashboardView({
         </div>
       </section>
 
-      <section className="px-5">
+      <section className="app-page-gutters">
         <div className="mb-3.5 flex items-center justify-between">
           <div>
             <button type="button" onClick={() => onViewCards()} className="font-display text-base font-semibold tracking-tight text-white">
-              Próximas Faturas
+              Cartões do mês
             </button>
             <p className="mt-0.5 text-[10px] text-gray-500">
-              {hiddenMoney(showBalances, upcomingInvoiceTotal)} para pagamento
+              {hiddenMoney(showBalances, upcomingInvoiceTotal)} em faturas ativas
             </p>
           </div>
           <button
             type="button"
             onClick={onAddCard}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#8B5CF6]/20 bg-[#8B5CF6]/15 text-[#8B5CF6] transition hover:border-transparent hover:bg-gradient-to-tr hover:from-[#3B82F6] hover:to-[#8B5CF6] hover:text-white"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.045] text-slate-200 transition hover:bg-white hover:text-black"
             title="Adicionar cartão"
           >
             <Plus size={16} strokeWidth={2.5} />
           </button>
         </div>
-        {cards.length === 0 ? (
+        {activeInvoiceSummaries.length === 0 ? (
           <div className="cosmic-card rounded-2xl border-dashed p-5 text-center">
             <CreditCard size={22} className="mx-auto mb-2 text-gray-600" />
             <p className="text-sm font-semibold text-gray-300">Nenhum cartão cadastrado</p>
             <p className="mt-1 text-xs text-gray-500">Seus cartões reais vão aparecer aqui quando forem adicionados.</p>
           </div>
         ) : (
-          <div className="space-y-3">
-          {invoiceSummaries.map(({ card, invoice }) => {
+          <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
+          {activeInvoiceSummaries.map(({ card, invoice }) => {
             const paid = isCardInvoicePaid(invoice.transactions);
             const progress = card.limit > 0 ? Math.min(100, (invoice.total / card.limit) * 100) : 0;
             return (
               <article
                 key={card.id}
-                className="cosmic-card cursor-pointer rounded-2xl p-4"
+                className="cosmic-card cosmic-card-hover relative min-h-[152px] w-full cursor-pointer overflow-hidden rounded-3xl p-4"
                 style={{
-                  borderColor: `${card.color}55`,
-                  backgroundImage: `linear-gradient(135deg, ${card.color}18, transparent 55%)`,
+                  borderColor: `${card.color}66`,
+                  backgroundImage: `radial-gradient(circle at 86% 18%, ${card.color}38, transparent 30%), linear-gradient(135deg, ${card.color}20, transparent 58%)`,
                 }}
                 onClick={() => onViewCards(card.id)}
               >
+                <span className="pointer-events-none absolute -bottom-12 -right-10 h-32 w-32 rounded-full border border-white/10" />
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-white">{card.name}</p>

@@ -125,7 +125,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-lg rounded-t-[28px] border border-white/10 bg-[#0B0E14] p-5 shadow-2xl sm:rounded-[28px]">
+      <form onSubmit={handleSubmit} className="premium-card premium-scroll max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] p-5 shadow-2xl sm:rounded-[28px]">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg font-bold text-white">{card ? 'Editar cartão' : 'Novo cartão'}</h2>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">
@@ -208,8 +208,8 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
                   aria-pressed={network === option.id}
                   className={`h-11 rounded-xl border text-xs font-bold transition ${
                     network === option.id
-                      ? 'border-sky-400 bg-sky-400/15 text-sky-100'
-                      : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20'
+                      ? 'bg-white text-black'
+                      : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-white'
                   }`}
                 >
                   {option.label}
@@ -254,7 +254,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
         <button
           type="submit"
           disabled={isSaving}
-          className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-60"
+          className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200 disabled:opacity-60"
         >
           <Check size={18} />
           {isSaving ? 'Salvando...' : card ? 'Salvar cartão' : 'Criar cartão'}

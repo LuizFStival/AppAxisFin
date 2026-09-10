@@ -1,15 +1,36 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRightLeft, Calculator, CalendarClock, Check, CircleMinus, CirclePlus, Delete, Layers, Plus, Repeat, TrendingDown, UserRound, X } from 'lucide-react';
-import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed, MoneyFlow, ReimbursementPerson, Transaction } from '../../types';
+import { AlertCircle, ArrowLeft, ArrowRightLeft, Calculator, Check, ChevronDown, CirclePlus, ClipboardList, CreditCard, Delete, Plus, UserRound, Wallet, X } from 'lucide-react';
+import { Account, Card, Category, EditSeriesScope, ExpenseEntryMode, ExpenseNeed, ExpenseSplitMode, MoneyFlow, ReimbursementPerson, Transaction } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { DateInput } from '../shared/DateInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
-import { addMonths, formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
+import { formatLocalDate } from '../../lib/utils/date';
 import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
-import { createSeriesId, getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
+import { getVisibleNotes, readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { hasDuplicateName } from '../../lib/utils/validation';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { parseMathExpression } from '../../lib/utils/mathExpression';
+import { parseQuickEntries } from '../../lib/utils/quickEntryParser';
+import {
+  buildMonthlyDates,
+  buildOpenEndedMonthlyDates,
+  expenseNeedOptions,
+  INVOICE_ADJUSTMENT_CATEGORY_NAME,
+  isInvoiceAdjustmentCategory,
+  isReimbursementCategory,
+  normalizeCategoryName,
+  PaymentSourceType,
+  REIMBURSEMENT_CATEGORY_NAME,
+} from './addEntryRules';
+import {
+  AddEntryDraft,
+  buildQuickEntryTransactions,
+} from './addEntryBuilder';
+import { AddEntrySavePlan, buildAddEntrySavePlan } from './addEntrySavePlan';
+import { ExpenseOptions } from './ExpenseOptions';
+import { QuickEntry, type QuickReviewItem } from './QuickEntry';
+import { ReimbursementFields } from './ReimbursementFields';
+import { SourceSelector } from './SourceSelector';
 
 interface AddEntryModalProps {
   isOpen: boolean;
@@ -19,9 +40,11 @@ interface AddEntryModalProps {
   reimbursementPeople: ReimbursementPerson[];
   reimbursementsEnabled: boolean;
   transaction?: Transaction | null;
+  preferredCardId?: string;
   onCreateCategory: (input: Omit<Category, 'id' | 'isSystem'>) => Promise<Category>;
   onCreateReimbursementPerson: (input: Omit<ReimbursementPerson, 'id'>) => Promise<ReimbursementPerson>;
   onCreateRecurring: (transaction: Omit<Transaction, 'id'>, endDate?: string) => Promise<void>;
+  onSkipFixedOccurrence?: (transaction: Transaction) => boolean | Promise<boolean>;
   onClose: () => void;
   onSave: (
     transaction: Omit<Transaction, 'id'> | Array<Omit<Transaction, 'id'>>,
@@ -29,67 +52,21 @@ interface AddEntryModalProps {
   ) => void | Promise<void>;
 }
 
-const expenseModes = [
-  { id: 'variable' as const, label: 'Variável', icon: TrendingDown },
-  { id: 'fixed' as const, label: 'Fixa', icon: Repeat },
-  { id: 'installment' as const, label: 'Parcelada', icon: Layers },
-];
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives?: number;
+  onresult: ((event: { resultIndex?: number; results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }> }) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
 
-const expenseNeedOptions = [
-  { id: 'essential' as const, label: 'Essencial' },
-  { id: 'superfluous' as const, label: 'Supérflua' },
-];
-
-type PaymentSourceType = 'account' | 'card';
-const OPEN_ENDED_FIXED_MONTHS = 12;
-const MAX_FIXED_MONTHS = 120;
-const REIMBURSEMENT_CATEGORY_NAME = 'Reembolsos';
-const INVOICE_ADJUSTMENT_CATEGORY_NAME = 'Ajustes de fatura';
-
-function normalizeCategoryName(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase();
-}
-
-function isReimbursementCategory(category: Category): boolean {
-  const name = normalizeCategoryName(category.name);
-  return category.flow === 'expense' && (name === 'reembolso' || name === 'reembolsos');
-}
-
-function isInvoiceAdjustmentCategory(category: Category): boolean {
-  const name = normalizeCategoryName(category.name);
-  return category.flow === 'expense' && (name === 'ajuste de fatura' || name === 'ajustes de fatura');
-}
-
-function buildMonthlyDates(startDate: string, endDate: string, maxMonths = MAX_FIXED_MONTHS): string[] {
-  if (!startDate || !endDate || endDate < startDate) return [];
-  const dates: string[] = [];
-  let currentDate = startDate;
-
-  while (currentDate <= endDate && dates.length < maxMonths) {
-    dates.push(currentDate);
-    currentDate = addMonths(currentDate, 1);
-  }
-
-  return dates;
-}
-
-function buildOpenEndedMonthlyDates(startDate: string): string[] {
-  return buildMonthlyDates(startDate, addMonths(startDate, OPEN_ENDED_FIXED_MONTHS - 1), OPEN_ENDED_FIXED_MONTHS);
-}
-
-function parseEntryCount(value: string, minimum: number): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) return minimum;
-  return Math.min(60, Math.max(minimum, parsed));
-}
-
-export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, reimbursementsEnabled, transaction, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onClose, onSave }: AddEntryModalProps) {
+export function AddEntryModal({ isOpen, accounts, cards, categories, reimbursementPeople, reimbursementsEnabled, transaction, preferredCardId, onCreateCategory, onCreateReimbursementPerson, onCreateRecurring, onSkipFixedOccurrence, onClose, onSave }: AddEntryModalProps) {
   const canUseReimbursements = reimbursementsEnabled || Boolean(transaction?.isReimbursable);
-  const [entryStep, setEntryStep] = useState<'picker' | 'form'>('picker');
+  const [entryStep, setEntryStep] = useState<'picker' | 'form' | 'quick'>('picker');
   const [flow, setFlow] = useState<MoneyFlow>('expense');
   const [expenseMode, setExpenseMode] = useState<ExpenseEntryMode>('variable');
   const [expenseNeed, setExpenseNeed] = useState<ExpenseNeed | ''>('');
@@ -99,12 +76,17 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   const [status, setStatus] = useState<'paid' | 'pending'>('paid');
   const [categoryId, setCategoryId] = useState('');
   const [sourceType, setSourceType] = useState<PaymentSourceType>('account');
+  const [lockedSourceType, setLockedSourceType] = useState<PaymentSourceType | null>(null);
   const [accountId, setAccountId] = useState('');
   const [cardId, setCardId] = useState('');
   const [fromAccountId, setFromAccountId] = useState('');
   const [toAccountId, setToAccountId] = useState('');
   const [notes, setNotes] = useState('');
   const [isReimbursable, setIsReimbursable] = useState(false);
+  const [splitMode, setSplitMode] = useState<ExpenseSplitMode>('none');
+  const [splitType, setSplitType] = useState<'percent' | 'fixed'>('percent');
+  const [splitPercent, setSplitPercent] = useState('50');
+  const [splitFixedAmount, setSplitFixedAmount] = useState(formatCurrencyInput(0));
   const [isInvoiceCredit, setIsInvoiceCredit] = useState(false);
   const [reimbursementPersonId, setReimbursementPersonId] = useState('');
   const [reimbursementStatus, setReimbursementStatus] = useState<'pending' | 'received'>('pending');
@@ -120,12 +102,24 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   const [categoryError, setCategoryError] = useState('');
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isQuickOptionsOpen, setIsQuickOptionsOpen] = useState(false);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [calculatorExpression, setCalculatorExpression] = useState('');
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [isPreparingReimbursementCategory, setIsPreparingReimbursementCategory] = useState(false);
+  const [quickText, setQuickText] = useState('');
+  const [quickSourceType, setQuickSourceType] = useState<PaymentSourceType>('card');
+  const [quickAccountId, setQuickAccountId] = useState('');
+  const [quickCardId, setQuickCardId] = useState('');
+  const [quickCategoryId, setQuickCategoryId] = useState('');
+  const [quickError, setQuickError] = useState('');
+  const [isListeningQuickEntry, setIsListeningQuickEntry] = useState(false);
+  const [quickDraftEdits, setQuickDraftEdits] = useState<Record<string, { date?: string; description?: string; amount?: string; categoryId?: string }>>({});
+  const [quickDeletedDraftIds, setQuickDeletedDraftIds] = useState<string[]>([]);
   const initializedFormKeyRef = useRef<string | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const quickRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   const transactionMeta = useMemo(() => readTransactionMeta(transaction?.notes), [transaction]);
   const isGroupedTransaction = Boolean(transactionMeta.seriesId);
@@ -133,6 +127,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     transaction?.recurringTransactionId
     || transactionMeta.recurringTransactionId,
   );
+  const canEditForwardEntries = Boolean(transaction && (isGroupedTransaction || isRecurringOccurrence));
   const reimbursementCategory = useMemo(() => categories.find(isReimbursementCategory), [categories]);
   const invoiceAdjustmentCategory = useMemo(() => categories.find(isInvoiceAdjustmentCategory), [categories]);
 
@@ -146,22 +141,30 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     if (initializedFormKeyRef.current === formKey) return;
     initializedFormKeyRef.current = formKey;
 
+    const initialSplitMode = transaction?.splitMode ?? (transaction?.isReimbursable ? 'third_party_full' : 'none');
+    const initialSourceType = transaction?.cardId || preferredCardId ? 'card' : 'account';
+    const initialCardId = transaction?.cardId ?? preferredCardId ?? '';
     setFlow(transaction?.flow ?? 'expense');
     setEntryStep(transaction ? 'form' : 'picker');
     setExpenseMode(transactionMeta.entryMode ?? 'variable');
-    setExpenseNeed(transaction?.isReimbursable ? '' : transactionMeta.expenseNeed ?? '');
+    setExpenseNeed(initialSplitMode === 'third_party_full' ? '' : transactionMeta.expenseNeed ?? '');
     setAmount(transaction ? formatCurrencyInput(transaction.amount) : DEFAULT_CURRENCY_INPUT);
     setDescription(transaction?.description.replace(/\s\(\d+\/\d+\)$/, '') ?? '');
     setDate(transaction?.date ?? new Date().toISOString().slice(0, 10));
     setStatus(transaction?.status ?? 'paid');
     setCategoryId(transaction?.categoryId ?? '');
-    setSourceType(transaction?.cardId ? 'card' : 'account');
+    setSourceType(initialSourceType);
+    setLockedSourceType(null);
     setAccountId(transaction?.accountId ?? accounts[0]?.id ?? '');
-    setCardId(transaction?.cardId ?? '');
+    setCardId(initialCardId);
     setFromAccountId(transaction?.fromAccountId ?? accounts[0]?.id ?? '');
     setToAccountId(transaction?.toAccountId ?? accounts[1]?.id ?? accounts[0]?.id ?? '');
     setNotes(getVisibleNotes(transaction?.notes));
-    setIsReimbursable(Boolean(transaction?.isReimbursable));
+    setSplitMode(initialSplitMode);
+    setIsReimbursable(initialSplitMode !== 'none');
+    setSplitType(transaction?.reimbursementAmount && transaction.amount !== transaction.reimbursementAmount ? 'fixed' : 'percent');
+    setSplitPercent('50');
+    setSplitFixedAmount(formatCurrencyInput(transaction?.reimbursementAmount ?? 0));
     setIsInvoiceCredit(transactionMeta.invoiceAdjustment === 'credit');
     setReimbursementPersonId(transaction?.reimbursementPersonId ?? reimbursementPeople[0]?.id ?? '');
     setReimbursementStatus(transaction?.reimbursementStatus ?? 'pending');
@@ -171,25 +174,48 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setHasFixedEndDate(Boolean(transactionMeta.generatedUntil));
     setFixedEndDate(transactionMeta.generatedUntil ?? '');
     setInstallmentCount(String(transactionMeta.totalInstallments ?? 2));
-    setEditScope('single');
+    setEditScope(transaction && isRecurringOccurrence ? 'forward' : 'single');
     setNewCategoryName('');
     setCategoryError('');
     setFormError('');
     setIsSaving(false);
+    setIsAdvancedOpen(false);
+    setIsQuickOptionsOpen(false);
     setIsCalculatorOpen(false);
     setCalculatorExpression('');
-  }, [accounts, isOpen, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.generatedUntil, transactionMeta.invoiceAdjustment, transactionMeta.totalInstallments]);
+    setQuickText('');
+    setQuickSourceType(cards.length > 0 ? 'card' : 'account');
+    setQuickAccountId(accounts[0]?.id ?? '');
+    setQuickCardId(preferredCardId ?? cards[0]?.id ?? '');
+    setQuickCategoryId(categories.find((category) => category.flow === 'expense')?.id ?? '');
+    setQuickError('');
+    setIsListeningQuickEntry(false);
+    setQuickDraftEdits({});
+    setQuickDeletedDraftIds([]);
+    quickRecognitionRef.current?.stop();
+    quickRecognitionRef.current = null;
+  }, [accounts, cards, categories, isOpen, isRecurringOccurrence, preferredCardId, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.generatedUntil, transactionMeta.invoiceAdjustment, transactionMeta.totalInstallments]);
 
   const selectedCard = sourceType === 'card' ? cards.find((card) => card.id === cardId) : undefined;
   const invoiceInfo = selectedCard && flow === 'expense' ? getCardInvoiceInfo(selectedCard, date) : null;
-  const isCreditExpense = flow === 'expense' && sourceType === 'card' && Boolean(cardId);
   const isEditingClosedInvoice = Boolean(transaction && invoiceInfo && invoiceInfo.status !== 'aberta');
+  const todayValue = formatLocalDate(new Date());
 
   useEffect(() => {
     if (!isOpen || flow !== 'expense' || expenseMode !== 'installment') return;
+    if (lockedSourceType === 'account') {
+      setExpenseMode('variable');
+      return;
+    }
     setSourceType('card');
     if (!cardId && cards[0]) setCardId(cards[0].id);
-  }, [cardId, cards, expenseMode, flow, isOpen]);
+  }, [cardId, cards, expenseMode, flow, isOpen, lockedSourceType]);
+
+  useEffect(() => {
+    if (!isOpen || flow !== 'expense' || lockedSourceType || !preferredCardId || transaction?.cardId) return;
+    setSourceType('card');
+    setCardId(preferredCardId);
+  }, [flow, isOpen, lockedSourceType, preferredCardId, transaction?.cardId]);
 
   useEffect(() => {
     if (!isOpen || flow === 'transfer') return;
@@ -200,9 +226,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   }, [categories, flow, isOpen]);
 
   useEffect(() => {
-    if (!isOpen || flow !== 'expense' || !isReimbursable || !reimbursementCategory) return;
+    if (!isOpen || flow !== 'expense' || splitMode !== 'third_party_full' || !reimbursementCategory) return;
     setCategoryId(reimbursementCategory.id);
-  }, [flow, isOpen, isReimbursable, reimbursementCategory]);
+  }, [flow, isOpen, reimbursementCategory, splitMode]);
 
   useEffect(() => {
     if (!isOpen || flow !== 'expense' || !isInvoiceCredit || !invoiceAdjustmentCategory) return;
@@ -211,12 +237,22 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
   if (!isOpen) return null;
 
-  function selectNewEntryFlow(nextFlow: MoneyFlow) {
+  function selectNewEntryFlow(nextFlow: MoneyFlow, nextSourceType?: PaymentSourceType) {
     setFlow(nextFlow);
     setStatus(nextFlow === 'income' ? 'pending' : 'paid');
     setIsInvoiceCredit(false);
     setIsReimbursable(false);
+    setSplitMode('none');
     setExpenseNeed('');
+    setLockedSourceType(nextFlow === 'expense' && nextSourceType ? nextSourceType : null);
+    if (nextFlow === 'expense' && nextSourceType) {
+      setSourceType(nextSourceType);
+      if (nextSourceType === 'card') {
+        setCardId((current) => current || preferredCardId || cards[0]?.id || '');
+      } else {
+        setAccountId((current) => current || accounts[0]?.id || '');
+      }
+    }
     setEntryStep('form');
   }
 
@@ -248,11 +284,213 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   const fixedDates = expenseMode === 'fixed'
     ? hasFixedEndDate ? buildMonthlyDates(date, fixedEndDate) : buildOpenEndedMonthlyDates(date)
     : [];
-  const cannotSubmit = isInstallmentExpense && cards.length === 0;
+  const cannotSubmit = flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && cards.length === 0;
+  const parsedAmount = parseCurrencyInput(amount);
+  const parsedSplitPercent = Math.min(100, Math.max(0, Number.parseFloat(splitPercent.replace(',', '.')) || 0));
+  const parsedSplitFixedAmount = parseCurrencyInput(splitFixedAmount);
+  const reimbursementAmount = flow === 'expense' && splitMode === 'third_party_full'
+    ? parsedAmount
+    : flow === 'expense' && splitMode === 'shared'
+      ? Math.round((splitType === 'fixed' ? parsedSplitFixedAmount : parsedAmount * parsedSplitPercent / 100) * 100) / 100
+      : 0;
+  const personalAmount = Math.round(Math.max(0, parsedAmount - reimbursementAmount) * 100) / 100;
+  const hasPersonalExpenseShare = flow === 'expense' && !isInvoiceCredit && splitMode !== 'third_party_full';
+  const shouldCreateSharedEntries = flow === 'expense'
+    && splitMode === 'shared'
+    && !isInvoiceCredit
+    && personalAmount > 0
+    && reimbursementAmount > 0;
+  const hasAdvancedContext = expenseMode !== 'variable'
+    || isInvoiceCredit
+    || splitMode !== 'none'
+    || hasPersonalExpenseShare
+    || Boolean(transaction && isGroupedTransaction)
+    || hasFixedEndDate
+    || Boolean(isReimbursable)
+    || Boolean(newCategoryName.trim());
+  const entryDraft: AddEntryDraft = {
+    flow,
+    amount: parsedAmount,
+    status,
+    notes,
+    categoryId,
+    sourceType,
+    accountId,
+    cardId,
+    splitMode,
+    expenseNeed,
+    isInvoiceCredit,
+    hasPersonalExpenseShare,
+    personalAmount,
+    reimbursementAmount,
+    reimbursementPersonId,
+    reimbursementStatus,
+    reimbursementReceivedAccountId,
+    reimbursementPeople,
+  };
+  const quickDrafts = useMemo(() => parseQuickEntries(quickText), [quickText]);
+  const quickReviewDrafts = quickDrafts.filter((draft) => !quickDeletedDraftIds.includes(draft.id));
 
-  function formatDescriptionForMeta(descriptionValue: string, meta: ReturnType<typeof readTransactionMeta>): string {
-    if (meta.entryMode !== 'installment' || !meta.installmentNumber || !meta.totalInstallments) return descriptionValue;
-    return `${descriptionValue.replace(/\s\(\d+\/\d+\)$/, '')} (${meta.installmentNumber}/${meta.totalInstallments})`;
+  function findQuickCategoryId(categoryHint?: string) {
+    const expenseCategories = categories.filter((category) => category.flow === 'expense');
+    if (!categoryHint) return quickCategoryId || expenseCategories[0]?.id || '';
+    const normalizedHint = normalizeCategoryName(categoryHint);
+    return expenseCategories.find((category) => {
+      const normalizedName = normalizeCategoryName(category.name);
+      return normalizedName === normalizedHint || normalizedName.includes(normalizedHint) || normalizedHint.includes(normalizedName);
+    })?.id ?? quickCategoryId ?? expenseCategories[0]?.id ?? '';
+  }
+
+  function getQuickDraftReview(draft: (typeof quickDrafts)[number]): QuickReviewItem {
+    const edit = quickDraftEdits[draft.id] ?? {};
+    const amountInput = edit.amount ?? (draft.amount > 0 ? formatCurrencyInput(draft.amount) : DEFAULT_CURRENCY_INPUT);
+    const amountValue = parseCurrencyInput(amountInput);
+    const dateValue = edit.date ?? draft.date ?? todayValue;
+    const descriptionValue = edit.description ?? draft.description;
+    const categoryValue = edit.categoryId ?? findQuickCategoryId(draft.categoryHint);
+    const error = !descriptionValue.trim()
+      ? 'Título não encontrado'
+      : amountValue <= 0
+        ? 'Valor não encontrado'
+        : !dateValue
+          ? 'Data não encontrada'
+          : !categoryValue
+            ? 'Categoria não selecionada'
+            : '';
+
+    return {
+      id: draft.id,
+      raw: draft.raw,
+      date: dateValue,
+      description: descriptionValue,
+      amountInput,
+      amount: amountValue,
+      categoryId: categoryValue,
+      error,
+    };
+  }
+
+  const quickReviewItems = quickReviewDrafts.map(getQuickDraftReview);
+  const quickReadyItems = quickReviewItems.filter((item) => !item.error);
+
+  async function executeSavePlan(plan: AddEntrySavePlan) {
+    if (plan.kind === 'save') {
+      await onSave(plan.transaction, plan.scope);
+      return;
+    }
+
+    if (plan.kind === 'createRecurring') {
+      await onCreateRecurring(plan.transaction, plan.endDate);
+      return;
+    }
+
+    await Promise.all(plan.transactions.map((item) => onCreateRecurring(item, plan.endDate)));
+  }
+
+  function updateQuickDraft(id: string, patch: { date?: string; description?: string; amount?: string; categoryId?: string }) {
+    setQuickDraftEdits((current) => ({
+      ...current,
+      [id]: {
+        ...current[id],
+        ...patch,
+      },
+    }));
+  }
+
+  function removeQuickDraft(id: string) {
+    setQuickDeletedDraftIds((current) => Array.from(new Set([...current, id])));
+  }
+
+  function startQuickVoiceInput() {
+    if (isListeningQuickEntry) return;
+    const SpeechRecognitionCtor = (window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setQuickError('Seu navegador não liberou ditado por voz aqui. Você ainda pode colar ou digitar os gastos.');
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'pt-BR';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      const startIndex = event.resultIndex ?? 0;
+      const transcript = Array.from(event.results)
+        .slice(startIndex)
+        .map((result) => result[0].transcript)
+        .join('\n');
+      setQuickText((current) => [current.trim(), transcript.trim()].filter(Boolean).join('\n'));
+    };
+    recognition.onerror = (event) => {
+      const errorMessages: Record<string, string> = {
+        'not-allowed': 'O navegador bloqueou o microfone. Libere a permissão do microfone e tente novamente.',
+        'service-not-allowed': 'O serviço de voz não está disponível neste navegador. Cole o texto ou use o ditado do teclado.',
+        'audio-capture': 'Não encontrei um microfone ativo. Verifique o microfone do computador/celular.',
+        'no-speech': 'Não ouvi nenhuma fala. Toque em “Ditado por voz” e fale uma despesa por vez.',
+        network: 'O serviço de voz falhou por conexão. Você pode colar ou digitar os gastos.',
+      };
+      setQuickError(errorMessages[event.error ?? ''] ?? `Não consegui capturar a voz (${event.error ?? 'erro desconhecido'}). Cole o texto ou tente novamente.`);
+    };
+    recognition.onend = () => {
+      setIsListeningQuickEntry(false);
+      quickRecognitionRef.current = null;
+    };
+    setQuickError('');
+    setIsListeningQuickEntry(true);
+    quickRecognitionRef.current = recognition;
+    try {
+      recognition.start();
+    } catch {
+      setIsListeningQuickEntry(false);
+      quickRecognitionRef.current = null;
+      setQuickError('O ditado já estava aberto ou o navegador recusou a captura. Tente novamente em alguns segundos.');
+    }
+  }
+
+  function stopQuickVoiceInput() {
+    quickRecognitionRef.current?.stop();
+    quickRecognitionRef.current = null;
+    setIsListeningQuickEntry(false);
+  }
+
+  async function handleQuickSave() {
+    setQuickError('');
+    if (quickReadyItems.length === 0) {
+      setQuickError('Cole ou dite pelo menos um gasto com título e valor.');
+      return;
+    }
+    if (quickSourceType === 'card' && !quickCardId) {
+      setQuickError('Selecione o cartão usado nos lançamentos.');
+      return;
+    }
+    if (quickSourceType === 'account' && !quickAccountId) {
+      setQuickError('Selecione a conta usada nos lançamentos.');
+      return;
+    }
+    if (quickReviewItems.some((item) => !item.categoryId)) {
+      setQuickError('Selecione uma categoria padrão para os itens sem categoria reconhecida.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await onSave(buildQuickEntryTransactions({
+        sourceType: quickSourceType,
+        accountId: quickAccountId,
+        cardId: quickCardId,
+        items: quickReadyItems,
+      }));
+      onClose();
+    } catch (error) {
+      setQuickError(getUserFriendlyError(error, 'Não foi possível salvar os lançamentos rápidos.'));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function handleCreateCategory() {
@@ -335,21 +573,23 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     }
   }
 
-  async function handleReimbursableChange(checked: boolean) {
-    setIsReimbursable(checked);
+  async function handleSplitModeChange(nextMode: ExpenseSplitMode) {
+    setSplitMode(nextMode);
+    setIsReimbursable(nextMode !== 'none');
 
-    if (!checked) {
+    if (nextMode === 'none') {
       if (reimbursementCategory && categoryId === reimbursementCategory.id) setCategoryId('');
       return;
     }
 
-    setExpenseNeed('');
+    if (nextMode === 'shared' && reimbursementCategory && categoryId === reimbursementCategory.id) setCategoryId('');
+    if (nextMode === 'third_party_full') setExpenseNeed('');
     setIsInvoiceCredit(false);
     if (!reimbursementPersonId && reimbursementPeople[0]) {
       setReimbursementPersonId(reimbursementPeople[0].id);
     }
 
-    await ensureReimbursementCategory();
+    if (nextMode === 'third_party_full') await ensureReimbursementCategory();
   }
 
   async function handleInvoiceCreditChange(checked: boolean) {
@@ -364,6 +604,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setExpenseMode('variable');
     setExpenseNeed('');
     setIsReimbursable(false);
+    setSplitMode('none');
     setSourceType('card');
     if (!cardId && cards[0]) setCardId(cards[0].id);
     await ensureInvoiceAdjustmentCategory();
@@ -386,6 +627,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     try {
       const saved = await onCreateReimbursementPerson({ name });
       setIsReimbursable(true);
+      setSplitMode((current) => current === 'none' ? 'shared' : current);
       setReimbursementPersonId(saved.id);
       setNewPersonName('');
       await ensureReimbursementCategory();
@@ -396,38 +638,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     }
   }
 
-  function buildTransaction(dateValue: string, descriptionValue = description.trim(), meta = transactionMeta): Omit<Transaction, 'id'> {
-    const nextMeta = {
-      ...meta,
-      expenseNeed: flow === 'expense' && !isReimbursable && !isInvoiceCredit ? expenseNeed || undefined : undefined,
-      invoiceAdjustment: flow === 'expense' && isInvoiceCredit ? 'credit' as const : undefined,
-    };
-    const shouldUseCard = flow === 'expense' && (sourceType === 'card' || isInvoiceCredit);
-    const shouldMarkReimbursement = flow === 'expense' && isReimbursable && !isInvoiceCredit;
-    return {
-      description: formatDescriptionForMeta(descriptionValue, meta),
-      amount: parseCurrencyInput(amount),
-      flow,
-      status: shouldUseCard ? 'pending' : status,
-      date: dateValue,
-      notes: writeTransactionNotes(notes, nextMeta),
-      categoryId,
-      accountId: shouldUseCard ? undefined : accountId,
-      cardId: shouldUseCard ? cardId || undefined : undefined,
-      isReimbursable: shouldMarkReimbursement,
-      reimbursementPersonId: shouldMarkReimbursement ? reimbursementPersonId : undefined,
-      reimbursementStatus: shouldMarkReimbursement ? reimbursementStatus : undefined,
-      reimbursementReceivedAt: shouldMarkReimbursement && reimbursementStatus === 'received' ? dateValue : undefined,
-      reimbursementReceivedAccountId: shouldMarkReimbursement && reimbursementStatus === 'received'
-        ? reimbursementReceivedAccountId || undefined
-        : undefined,
-    };
-  }
-
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setFormError('');
-    const parsedAmount = parseCurrencyInput(amount);
     const reportMissingField = (message: string) => {
       setFormError(message);
       window.requestAnimationFrame(() => {
@@ -450,7 +663,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       reportMissingField('Crie ou mantenha a categoria Ajustes de fatura para salvar descontos da fatura.');
       return;
     }
-    if (flow === 'expense' && isReimbursable && !reimbursementCategory && !categoryId) {
+    if (flow === 'expense' && splitMode === 'third_party_full' && !reimbursementCategory && !categoryId) {
       reportMissingField('Crie ou mantenha a categoria Reembolsos para salvar despesas de terceiros.');
       return;
     }
@@ -458,8 +671,12 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
       reportMissingField('Selecione uma categoria para salvar o lançamento.');
       return;
     }
-    if (flow === 'expense' && !isReimbursable && !isInvoiceCredit && !expenseNeed) {
+    if (hasPersonalExpenseShare && !expenseNeed) {
       reportMissingField('Selecione se a despesa é essencial ou supérflua.');
+      return;
+    }
+    if (flow === 'expense' && splitMode === 'shared' && (reimbursementAmount <= 0 || reimbursementAmount >= parsedAmount)) {
+      reportMissingField('Informe uma divisao maior que zero e menor que o valor total.');
       return;
     }
     if (flow === 'expense' && isReimbursable && !isInvoiceCredit && !reimbursementPersonId) {
@@ -497,61 +714,29 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
     setIsSaving(true);
     try {
-    if (flow === 'transfer') {
-      await onSave({
-        description: description.trim(),
-        amount: parsedAmount,
+      await executeSavePlan(buildAddEntrySavePlan({
         flow,
-        status,
+        transaction,
+        transactionMeta,
+        expenseMode,
+        editScope,
+        shouldCreateSharedEntries,
+        hasPersonalExpenseShare,
+        expenseNeed,
+        isInvoiceCredit,
+        hasFixedEndDate,
+        fixedEndDate,
+        installmentCount,
         date,
-        notes: notes.trim() || undefined,
+        description,
+        notes,
+        amount: parsedAmount,
+        status,
         fromAccountId,
         toAccountId,
-      });
+        entryDraft,
+      }));
       onClose();
-      return;
-    }
-
-    if (transaction) {
-      const meta = transactionMeta.seriesId
-        ? { ...transactionMeta, expenseNeed: isReimbursable || isInvoiceCredit ? undefined : expenseNeed || undefined, invoiceAdjustment: isInvoiceCredit ? 'credit' as const : undefined }
-        : { ...transactionMeta, entryMode: expenseMode, expenseNeed: isReimbursable || isInvoiceCredit ? undefined : expenseNeed || undefined, invoiceAdjustment: isInvoiceCredit ? 'credit' as const : undefined };
-      await onSave(buildTransaction(date, description.trim(), meta), editScope);
-      onClose();
-      return;
-    }
-
-    if (flow === 'expense' && expenseMode === 'fixed' && !isInvoiceCredit) {
-      await onCreateRecurring(buildTransaction(date, description.trim(), {
-        entryMode: 'fixed',
-        expenseNeed: isReimbursable ? undefined : expenseNeed || undefined,
-        generatedFrom: date,
-        generatedUntil: hasFixedEndDate ? fixedEndDate : undefined,
-      }), hasFixedEndDate ? fixedEndDate : undefined);
-      onClose();
-      return;
-    }
-
-    if (flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit) {
-      const seriesId = createSeriesId();
-      const total = parseEntryCount(installmentCount, 2);
-      const transactions = Array.from({ length: total }, (_, index) =>
-        buildTransaction(addMonths(date, index), description.trim(), {
-          entryMode: 'installment',
-          expenseNeed: isReimbursable ? undefined : expenseNeed || undefined,
-          seriesId,
-          installmentNumber: index + 1,
-          totalInstallments: total,
-          generatedFrom: date,
-        }),
-      );
-      await onSave(transactions);
-      onClose();
-      return;
-    }
-
-    await onSave(buildTransaction(date, description.trim(), { entryMode: 'variable', expenseNeed: isReimbursable ? undefined : expenseNeed || undefined }));
-    onClose();
     } catch (error) {
       setFormError(getUserFriendlyError(error, 'Não foi possível salvar o lançamento. Tente novamente.'));
     } finally {
@@ -559,32 +744,91 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     }
   }
 
+  if (!transaction && entryStep === 'quick') {
+    return (
+      <QuickEntry
+        accounts={accounts}
+        cards={cards}
+        categories={categories}
+        quickSourceType={quickSourceType}
+        quickCardId={quickCardId}
+        quickAccountId={quickAccountId}
+        quickCategoryId={quickCategoryId}
+        quickText={quickText}
+        quickError={quickError}
+        quickReviewItems={quickReviewItems}
+        quickReadyItems={quickReadyItems}
+        isListeningQuickEntry={isListeningQuickEntry}
+        isSaving={isSaving}
+        onBack={() => setEntryStep('picker')}
+        onClose={onClose}
+        onSourceTypeChange={setQuickSourceType}
+        onCardChange={setQuickCardId}
+        onAccountChange={setQuickAccountId}
+        onCategoryChange={setQuickCategoryId}
+        onTextChange={setQuickText}
+        onClear={() => {
+          setQuickText('');
+          setQuickDraftEdits({});
+          setQuickDeletedDraftIds([]);
+        }}
+        onToggleVoice={isListeningQuickEntry ? stopQuickVoiceInput : startQuickVoiceInput}
+        onUpdateDraft={updateQuickDraft}
+        onRemoveDraft={removeQuickDraft}
+        onSave={handleQuickSave}
+      />
+    );
+  }
+
   if (!transaction && entryStep === 'picker') {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
-        <div className="max-h-[100dvh] w-full max-w-[430px] overflow-y-auto rounded-none border border-white/10 bg-[#151A22] px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl md:max-h-[860px] md:rounded-[34px]">
-          <div className="mx-auto mb-5 h-1.5 w-14 rounded-full bg-slate-600" />
+        <div className="premium-card max-h-[100dvh] w-full max-w-[620px] overflow-y-auto rounded-none px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl md:max-h-[calc(100dvh-2rem)] md:rounded-[30px]">
+          <div className="mx-auto mb-5 h-1.5 w-14 rounded-full bg-white/20" />
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-display text-2xl font-bold text-white">O que você quer adicionar?</h2>
               <p className="mt-1 text-xs font-medium text-slate-400">Escolha o tipo de lançamento</p>
             </div>
-            <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-400">
+            <button type="button" onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-400 transition hover:bg-white/10 hover:text-white">
               <X size={19} />
             </button>
           </div>
 
-          <div className="mt-6 grid gap-3">
-            <button type="button" onClick={() => selectNewEntryFlow('income')} className="flex min-h-14 items-center justify-between rounded-2xl border border-emerald-400 px-5 py-3 text-left text-white transition hover:bg-emerald-400/10">
-              <span className="text-base font-bold">Receita</span>
+          <div className="mt-6 grid gap-3 md:grid-cols-2">
+            <button type="button" onClick={() => setEntryStep('quick')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white md:col-span-2" style={{ borderColor: '#F8FAFC66', backgroundImage: 'linear-gradient(135deg, rgba(248,250,252,0.16), transparent 58%)' }}>
+              <span>
+                <span className="block text-base font-bold">Lançamento rápido</span>
+                <span className="mt-1 block text-xs font-medium text-slate-300/70">Colar ou ditar gastos da semana</span>
+              </span>
+              <ClipboardList size={24} className="text-white" />
+            </button>
+            <button type="button" onClick={() => selectNewEntryFlow('expense', 'card')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white" style={{ borderColor: '#8B5CF666', backgroundImage: 'linear-gradient(135deg, rgba(139,92,246,0.18), transparent 58%)' }}>
+              <span>
+                <span className="block text-base font-bold">Despesa cartão</span>
+                <span className="mt-1 block text-xs font-medium text-violet-100/70">Compra na fatura</span>
+              </span>
+              <CreditCard size={24} className="text-violet-300" />
+            </button>
+            <button type="button" onClick={() => selectNewEntryFlow('expense', 'account')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white" style={{ borderColor: '#38BDF866', backgroundImage: 'linear-gradient(135deg, rgba(56,189,248,0.16), transparent 58%)' }}>
+              <span>
+                <span className="block text-base font-bold">Despesa conta</span>
+                <span className="mt-1 block text-xs font-medium text-sky-100/70">Débito ou Pix</span>
+              </span>
+              <Wallet size={24} className="text-sky-300" />
+            </button>
+            <button type="button" onClick={() => selectNewEntryFlow('income')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white" style={{ borderColor: '#34D39966', backgroundImage: 'linear-gradient(135deg, rgba(52,211,153,0.14), transparent 58%)' }}>
+              <span>
+                <span className="block text-base font-bold">Receita</span>
+                <span className="mt-1 block text-xs font-medium text-emerald-100/70">Entrada em conta</span>
+              </span>
               <CirclePlus size={24} className="text-emerald-400" />
             </button>
-            <button type="button" onClick={() => selectNewEntryFlow('expense')} className="flex min-h-14 items-center justify-between rounded-2xl border border-rose-400 px-5 py-3 text-left text-white transition hover:bg-rose-400/10">
-              <span className="text-base font-bold">Despesa</span>
-              <CircleMinus size={24} className="text-rose-400" />
-            </button>
-            <button type="button" onClick={() => selectNewEntryFlow('transfer')} className="flex min-h-14 items-center justify-between rounded-2xl border border-slate-400 px-5 py-3 text-left text-white transition hover:bg-white/5">
-              <span className="text-base font-bold">Transferência</span>
+            <button type="button" onClick={() => selectNewEntryFlow('transfer')} className="cosmic-card cosmic-card-hover flex min-h-20 items-center justify-between rounded-2xl px-5 py-4 text-left text-white">
+              <span>
+                <span className="block text-base font-bold">Transferência</span>
+                <span className="mt-1 block text-xs font-medium text-slate-300/70">Entre contas</span>
+              </span>
               <ArrowRightLeft size={24} className="text-slate-300" />
             </button>
           </div>
@@ -594,44 +838,37 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   }
 
   const calculatorResult = parseMathExpression(calculatorExpression);
-  const todayValue = formatLocalDate(new Date());
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayValue = formatLocalDate(yesterday);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/70 p-0 backdrop-blur-sm md:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/75 p-0 backdrop-blur-sm md:p-6">
       <form
         ref={formRef}
         onSubmit={handleSubmit}
-        className={`h-[100dvh] max-h-[100dvh] w-full max-w-[430px] overflow-y-auto rounded-none shadow-2xl md:h-[860px] md:max-h-[calc(100dvh-3rem)] md:rounded-[34px] ${
-          flow === 'income' ? 'bg-[#07975f]' : flow === 'expense' ? 'bg-[#6b2424]' : 'bg-[#3b4b62]'
-        }`}
+        className="premium-card flex h-[100dvh] max-h-[100dvh] w-full max-w-[840px] flex-col overflow-hidden rounded-none shadow-2xl md:h-auto md:max-h-[calc(100dvh-2rem)] md:rounded-[34px]"
       >
-        <div className="flex items-center justify-between px-4 pb-5 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6 md:pt-5">
+        <div className="flex items-center justify-between gap-3 px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6 md:pt-5">
           <button
             type="button"
             onClick={() => transaction ? onClose() : setEntryStep('picker')}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-black/10"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/5 text-white transition hover:bg-white/10"
             title={transaction ? 'Fechar' : 'Voltar'}
           >
             <ArrowLeft size={26} />
           </button>
-          <h2 className="rounded-full bg-[#111820] px-6 py-3 font-display text-base font-bold text-white shadow-lg">
-            {transaction ? 'Editar lançamento' : flow === 'income' ? 'Receita' : flow === 'expense' ? 'Despesa' : 'Transferência'}
+          <h2 className="min-w-0 rounded-full border border-white/10 bg-black/25 px-4 py-2.5 text-center font-display text-sm font-bold text-white shadow-lg md:px-6 md:text-base">
+            {transaction ? 'Editar lançamento' : flow === 'income' ? 'Receita' : flow === 'expense' ? lockedSourceType === 'card' ? 'Despesa cartão' : lockedSourceType === 'account' ? 'Despesa conta' : 'Despesa' : 'Transferência'}
           </h2>
-          <button type="submit" disabled={cannotSubmit || isSaving} className="min-w-16 px-1 py-2 text-sm font-bold text-white disabled:opacity-50">
+          <button type="submit" disabled={cannotSubmit || isSaving} className="min-w-16 rounded-full px-1 py-2 text-sm font-bold text-white transition hover:bg-white/5 disabled:opacity-50">
             {isSaving ? 'Salvando' : 'Aplicar'}
           </button>
         </div>
 
-        <div className="px-6 pb-8 pt-2">
-          <p className="text-base font-semibold text-white">Valor</p>
+        <div className="px-5 pb-5 pt-1 md:px-6">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Valor</p>
           <div className="mt-1 flex items-center gap-3">
             <CurrencyInput
               value={amount}
               onChange={setAmount}
-              className="h-16 border-0 bg-transparent px-0 text-4xl font-sans font-medium text-white focus:border-transparent"
+              className="h-14 border-0 bg-transparent px-0 text-4xl font-sans font-medium text-white focus:border-transparent"
             />
             <button
               type="button"
@@ -640,7 +877,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 setCalculatorExpression(currentAmount > 0 ? String(currentAmount).replace('.', ',') : '');
                 setIsCalculatorOpen(true);
               }}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-white transition hover:bg-black/10"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/5 text-white transition hover:bg-white/10"
               title="Abrir calculadora"
               aria-label="Abrir calculadora"
             >
@@ -649,411 +886,226 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
           </div>
         </div>
 
-        <div className="flex min-h-[calc(100%-12rem)] flex-col rounded-t-[32px] bg-[#0B1017] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:px-5">
-        {flow === 'expense' && !isInvoiceCredit && canUseReimbursements ? (
-          <div className="order-1 grid grid-cols-3 gap-2 rounded-2xl bg-white/5 p-1">
-            <p className="col-span-3 px-2 pb-1 pt-2 text-sm font-semibold text-slate-200">Tipo de lançamento</p>
-            {expenseModes.map((option) => {
-              const Icon = option.icon;
-              const selected = expenseMode === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => {
-                    setExpenseMode(option.id);
-                    if (option.id === 'installment' && cards[0] && !cardId) setCardId(cards[0].id);
-                  }}
-                  disabled={Boolean(transaction) && (!isRecurringOccurrence || option.id === 'installment')}
-                  className={`flex h-11 items-center justify-center gap-1 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                    selected ? 'bg-violet-500 text-white' : 'text-slate-400'
-                  }`}
-                >
-                  <Icon size={14} />
-                  <span>{option.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-
-        {flow === 'expense' ? (
-          <div className="order-4 mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3">
-            <label className="flex items-center justify-between gap-3 text-xs font-semibold text-emerald-100">
-              <span>Desconto/estorno na fatura</span>
-              <input
-                type="checkbox"
-                checked={isInvoiceCredit}
-                onChange={(event) => {
-                  void handleInvoiceCreditChange(event.target.checked);
-                }}
-                className="h-4 w-4 accent-emerald-400"
-              />
-            </label>
-            {isInvoiceCredit ? (
-              <p className="mt-2 text-[11px] font-medium text-emerald-100/80">Use para devoluções e créditos do cartão. O valor reduz a fatura e não vira receita.</p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {flow === 'expense' && !isReimbursable && !isInvoiceCredit ? (
-          <div className="order-3 mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
-            {expenseNeedOptions.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => setExpenseNeed(option.id)}
-                className={`h-11 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {flow === 'expense' && !isInvoiceCredit ? (
-          <div className="order-5 mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-3">
-            <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300">
-              <span className="flex items-center gap-2">
-                <UserRound size={15} className="text-amber-200" />
-                Despesa de terceiro / reembolso
-              </span>
-              <input
-                type="checkbox"
-                checked={isReimbursable}
-                onChange={(event) => {
-                  void handleReimbursableChange(event.target.checked);
-                }}
-                className="h-4 w-4 accent-amber-400"
-              />
-            </label>
-            {isReimbursable ? (
-              <div className="mt-3 grid gap-3">
-                <div className="grid gap-3">
-                  <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                    Quem deve
-                    <select value={reimbursementPersonId} onChange={(event) => setReimbursementPersonId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300">
-                      <option value="">Selecione</option>
-                      {reimbursementPeople.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                    Status
-                    <select
-                      value={reimbursementStatus}
-                      onChange={(event) => {
-                        const nextStatus = event.target.value as 'pending' | 'received';
-                        setReimbursementStatus(nextStatus);
-                        if (nextStatus === 'received' && !reimbursementReceivedAccountId) {
-                          setReimbursementReceivedAccountId(accountId || accounts[0]?.id || '');
-                        }
-                      }}
-                      className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-amber-300"
-                    >
-                      <option value="pending">A receber</option>
-                      <option value="received">Recebido</option>
-                    </select>
-                  </label>
-                </div>
-                {reimbursementStatus === 'received' ? (
-                  <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                    Conta onde o dinheiro entrou
-                    <select
-                      value={reimbursementReceivedAccountId}
-                      onChange={(event) => setReimbursementReceivedAccountId(event.target.value)}
-                      className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-emerald-300"
-                    >
-                      <option value="">Selecione</option>
-                      {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                    </select>
-                  </label>
-                ) : null}
-                <div className="flex gap-2">
-                  <input
-                    value={newPersonName}
-                    onChange={(event) => setNewPersonName(event.target.value)}
-                    placeholder="Nova pessoa"
-                    className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm text-white outline-none focus:border-amber-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCreatePerson}
-                    disabled={isCreatingPerson}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-400 text-slate-950 disabled:opacity-60"
-                    title="Cadastrar pessoa"
-                  >
-                    <Plus size={17} />
-                  </button>
-                </div>
-                {personError ? (
-                  <p className="flex items-center gap-2 text-xs text-rose-200">
-                    <AlertCircle size={14} />
-                    {personError}
-                  </p>
-                ) : null}
-                <p className="text-[11px] font-medium text-slate-500">Esse valor continua entrando na fatura, mas sai dos seus gastos pessoais.</p>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {transaction && isGroupedTransaction ? (
-          <div className="order-6 mt-4 grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2">
-            <button type="button" onClick={() => setEditScope('single')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'single' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
-              Apenas esta
-            </button>
-            <button type="button" onClick={() => setEditScope('forward')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'forward' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
-              Esta e próximas
-            </button>
-          </div>
-        ) : null}
-
-        <div className="order-2 mt-5 grid gap-5">
+        <div className="premium-scroll flex-1 overflow-y-auto rounded-t-[30px] border-t border-white/10 bg-[#080A0F]/88 px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 md:max-h-[calc(100dvh-15rem)] md:px-5">
           {formError ? (
-            <p className="flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <p className="mb-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               <AlertCircle size={16} />
               {formError}
             </p>
           ) : null}
 
-          <label className="grid gap-2 text-sm font-semibold text-slate-200">
-            Título
-            <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-14 rounded-[22px] border border-white/15 bg-white/[0.035] px-4 text-base text-white outline-none transition focus:border-sky-400" />
-          </label>
-
-          <label className="grid gap-2 text-sm font-semibold text-slate-200">
-            Descrição
-            <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Adicione uma descrição" className="min-h-14 resize-none rounded-[22px] border border-white/15 bg-white/[0.035] px-4 py-4 text-base text-white outline-none transition focus:border-sky-400" />
-          </label>
-
           <div className="grid gap-3">
             <label className="grid gap-2 text-sm font-semibold text-slate-200">
-              Data
-              <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDate(todayValue)}
-                  className={`h-12 rounded-full border px-4 text-sm font-bold ${
-                    date === todayValue
-                      ? 'border-emerald-400 text-emerald-300'
-                      : 'border-white/15 text-slate-400'
-                  }`}
-                >
-                  Hoje
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDate(yesterdayValue)}
-                  className={`h-12 rounded-full border px-4 text-sm font-medium ${
-                    date === yesterdayValue
-                      ? 'border-emerald-400 text-emerald-300'
-                      : 'border-white/15 text-slate-400'
-                  }`}
-                >
-                  Ontem
-                </button>
-                <DateInput value={date} onChange={setDate} />
-              </div>
+              Título
+              <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-base text-white outline-none transition focus:border-violet-300" />
             </label>
-            {flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) ? (
-              <div className="rounded-[22px] border border-violet-400/15 bg-violet-500/10 px-4 py-3">
-                <p className="text-xs font-semibold text-violet-100">Estado controlado pela fatura</p>
-                <p className="mt-1 text-[11px] text-violet-200/60">A compra será quitada quando a fatura for paga.</p>
-              </div>
-            ) : (
-              <label className="grid gap-2 text-sm font-semibold text-slate-200">
-                Estado
-                <select value={status} onChange={(event) => setStatus(event.target.value as 'paid' | 'pending')} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
-                  <option value="paid">Confirmado</option>
-                  <option value="pending">Pendente</option>
-                </select>
-              </label>
-            )}
-          </div>
 
-          {flow === 'transfer' ? (
-            <div className="grid gap-5">
-              <label className="grid gap-2 text-sm font-semibold text-slate-200">
-                Conta origem
-                <select value={fromAccountId} onChange={(event) => setFromAccountId(event.target.value)} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                </select>
-              </label>
-              <label className="grid gap-2 text-sm font-semibold text-slate-200">
-                Conta destino
-                <select value={toAccountId} onChange={(event) => setToAccountId(event.target.value)} className="h-14 rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
-                  {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                </select>
-              </label>
-            </div>
-          ) : (
-            <div className="grid gap-5">
-              {flow === 'expense' && isInvoiceCredit ? (
-                <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
-                  Categoria
-                  <div className="flex h-14 min-w-0 items-center rounded-[22px] border border-emerald-400/20 bg-emerald-500/10 px-4 text-sm font-bold text-emerald-100">
-                    {isCreatingCategory ? 'Preparando Ajustes...' : invoiceAdjustmentCategory?.name ?? INVOICE_ADJUSTMENT_CATEGORY_NAME}
-                  </div>
+            <div className="grid gap-3 md:grid-cols-12">
+              <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-5">
+                Data
+                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDate(todayValue)}
+                    className={`h-11 rounded-full border px-4 text-sm font-bold ${
+                      date === todayValue ? 'border-emerald-400 text-emerald-300' : 'border-white/15 text-slate-400'
+                    }`}
+                  >
+                    Hoje
+                  </button>
+                  <DateInput value={date} onChange={setDate} />
                 </div>
-              ) : flow === 'expense' && isReimbursable ? (
-                <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
-                  Categoria
-                  <div className="flex h-14 min-w-0 items-center rounded-[22px] border border-amber-400/20 bg-amber-500/10 px-4 text-sm font-bold text-amber-100">
-                    {isPreparingReimbursementCategory ? 'Preparando Reembolsos...' : reimbursementCategory?.name ?? REIMBURSEMENT_CATEGORY_NAME}
-                  </div>
-                </div>
-              ) : (
-                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
-                  Categoria
-                  <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-14 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
-                    <option value="">Selecione</option>
-                    {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                  </select>
-                </label>
-              )}
+              </label>
+
               {flow === 'expense' ? (
-                <div className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
-                  Origem
-                  <div className="grid min-w-0 grid-cols-2 gap-2 rounded-2xl bg-white/5 p-1">
-                    <button
-                      type="button"
-                      onClick={() => setSourceType('account')}
-                      disabled={isInstallmentExpense || isInvoiceCredit}
-                      className={`h-11 rounded-xl text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${sourceType === 'account' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
-                    >
-                      Conta
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSourceType('card')}
-                      className={`h-11 rounded-xl text-xs font-bold transition ${sourceType === 'card' ? 'bg-violet-500 text-white' : 'text-slate-400'}`}
-                    >
-                      Cartão
-                    </button>
+                <ExpenseOptions
+                  cards={cards}
+                  cardId={cardId}
+                  lockedSourceType={lockedSourceType}
+                  expenseMode={expenseMode}
+                  installmentCount={installmentCount}
+                  transaction={transaction}
+                  isGroupedTransaction={isGroupedTransaction}
+                  isRecurringOccurrence={isRecurringOccurrence}
+                  isInvoiceCredit={isInvoiceCredit}
+                  canEditForwardEntries={canEditForwardEntries}
+                  editScope={editScope}
+                  onExpenseModeChange={setExpenseMode}
+                  onCardChange={setCardId}
+                  onInstallmentCountChange={setInstallmentCount}
+                  onEditScopeChange={setEditScope}
+                  onSkipFixedOccurrence={onSkipFixedOccurrence}
+                  onClose={onClose}
+                />
+              ) : null}
+
+              {flow === 'expense' ? (
+                <ReimbursementFields
+                  accounts={accounts}
+                  reimbursementPeople={reimbursementPeople}
+                  accountId={accountId}
+                  lockedSourceType={lockedSourceType}
+                  canUseReimbursements={canUseReimbursements}
+                  isInvoiceCredit={isInvoiceCredit}
+                  isQuickOptionsOpen={isQuickOptionsOpen}
+                  splitMode={splitMode}
+                  splitType={splitType}
+                  splitPercent={splitPercent}
+                  splitFixedAmount={splitFixedAmount}
+                  personalAmount={personalAmount}
+                  reimbursementAmount={reimbursementAmount}
+                  isReimbursable={isReimbursable}
+                  reimbursementPersonId={reimbursementPersonId}
+                  reimbursementStatus={reimbursementStatus}
+                  reimbursementReceivedAccountId={reimbursementReceivedAccountId}
+                  newPersonName={newPersonName}
+                  isCreatingPerson={isCreatingPerson}
+                  personError={personError}
+                  onInvoiceCreditChange={handleInvoiceCreditChange}
+                  onQuickOptionsOpenChange={setIsQuickOptionsOpen}
+                  onSplitModeChange={handleSplitModeChange}
+                  onSplitTypeChange={setSplitType}
+                  onSplitPercentChange={setSplitPercent}
+                  onSplitFixedAmountChange={setSplitFixedAmount}
+                  onReimbursementPersonChange={setReimbursementPersonId}
+                  onReimbursementStatusChange={setReimbursementStatus}
+                  onReimbursementReceivedAccountChange={setReimbursementReceivedAccountId}
+                  onNewPersonNameChange={setNewPersonName}
+                  onCreatePerson={handleCreatePerson}
+                />
+              ) : null}
+
+              {hasPersonalExpenseShare ? (
+                <div className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+                  Natureza
+                  <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1.5">
+                    {expenseNeedOptions.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setExpenseNeed(option.id)}
+                        className={`h-10 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
-                  {sourceType === 'account' ? (
-                    <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-14 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
-                      {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                    </select>
-                  ) : (
-                    <select value={cardId} onChange={(event) => setCardId(event.target.value)} className="h-14 min-w-0 w-full rounded-[22px] border border-white/15 bg-[#111820] px-4 text-white outline-none focus:border-sky-400">
-                      <option value="">Selecione</option>
-                      {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
-                    </select>
-                  )}
                 </div>
-              ) : (
-                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200">
-                  Conta
-                  <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
-                    {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-                  </select>
-                </label>
-              )}
-            </div>
-          )}
-
-          {flow !== 'transfer' && !(flow === 'expense' && (isReimbursable || isInvoiceCredit)) ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="flex gap-2">
-                <input
-                  value={newCategoryName}
-                  onChange={(event) => setNewCategoryName(event.target.value)}
-                  placeholder={flow === 'income' ? 'Nova categoria de receita' : 'Nova categoria de despesa'}
-                  className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm text-white outline-none focus:border-sky-400"
-                />
-                <button
-                  type="button"
-                  onClick={handleCreateCategory}
-                  disabled={isCreatingCategory}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white disabled:opacity-60"
-                  title="Criar categoria"
-                >
-                  <Plus size={17} />
-                </button>
-              </div>
-              {categoryError ? (
-                <p className="mt-2 flex items-center gap-2 text-xs text-rose-200">
-                  <AlertCircle size={14} />
-                  {categoryError}
-                </p>
               ) : null}
-            </div>
-          ) : null}
 
-          {flow === 'expense' && expenseMode === 'fixed' && !isInvoiceCredit && !transaction ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300">
-                <span>Definir data final</span>
-                <input
-                  type="checkbox"
-                  checked={hasFixedEndDate}
-                  onChange={(event) => {
-                    setHasFixedEndDate(event.target.checked);
-                    if (!event.target.checked) setFixedEndDate('');
-                  }}
-                  className="h-4 w-4 accent-sky-500"
-                />
+              <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+                Categoria
+                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
+                  <option value="">Selecione</option>
+                  {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
               </label>
-              {hasFixedEndDate ? (
-                <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-400">
-                  Repetir até
-                  <DateInput value={fixedEndDate} onChange={setFixedEndDate} min={date} />
-                </label>
-              ) : null}
-              <span className="text-[11px] font-medium text-slate-500">
-                {hasFixedEndDate && fixedEndDate
-                  ? `${fixedDates.length} ocorrência${fixedDates.length === 1 ? '' : 's'} ser${fixedDates.length === 1 ? 'á' : 'ão'} projetada${fixedDates.length === 1 ? '' : 's'} pela regra.`
-                  : 'A regra será salva no banco e projetada nos próximos 12 meses.'}
-              </span>
-            </div>
-          ) : null}
 
-          {flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit && !transaction ? (
-            <label className="grid gap-1 text-xs font-semibold text-slate-400">
-              Número de parcelas
-              <input
-                type="number"
-                min={2}
-                max={60}
-                value={installmentCount}
-                onChange={(event) => setInstallmentCount(event.target.value)}
-                className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400"
+              <SourceSelector
+                accounts={accounts}
+                cards={cards}
+                flow={flow}
+                lockedSourceType={lockedSourceType}
+                sourceType={sourceType}
+                accountId={accountId}
+                cardId={cardId}
+                status={status}
+                isInstallmentExpense={isInstallmentExpense}
+                isInvoiceCredit={isInvoiceCredit}
+                invoiceInfo={invoiceInfo}
+                isEditingClosedInvoice={isEditingClosedInvoice}
+                onSourceTypeChange={setSourceType}
+                onAccountChange={setAccountId}
+                onCardChange={setCardId}
+                onStatusChange={setStatus}
               />
-              <span className="text-[11px] font-medium text-slate-500">
-                {`${parseEntryCount(installmentCount, 2)} parcelas serão criadas.`}
-              </span>
-            </label>
-          ) : null}
-
-          {invoiceInfo ? (
-            <div className={`rounded-2xl border p-4 text-xs ${isEditingClosedInvoice ? 'border-amber-400/25 bg-amber-400/10 text-amber-100' : 'border-sky-400/20 bg-sky-400/10 text-sky-100'}`}>
-              <div className="flex items-center gap-2 font-bold text-white">
-                <CalendarClock size={16} />
-                <span>{invoiceInfo.label}</span>
-                <span className="ml-auto capitalize">{invoiceInfo.status}</span>
-              </div>
-              <p className="mt-2 text-slate-300">Consumo de {formatDatePtBr(invoiceInfo.startDate)} a {formatDatePtBr(invoiceInfo.endDate)}. Vencimento em {formatDatePtBr(invoiceInfo.dueDate)}.</p>
-              {isEditingClosedInvoice ? <p className="mt-2 font-semibold">Esta fatura já fechou ou venceu. Edite com cuidado para não alterar meses passados por engano.</p> : null}
             </div>
-          ) : null}
 
-          {isCreditExpense && expenseMode === 'installment' && !isInvoiceCredit && !transaction ? (
-            <p className="text-xs text-slate-500">Cada parcela entrará em uma fatura mensal a partir da data de compra.</p>
-          ) : null}
+            <button
+              type="button"
+              onClick={() => setIsAdvancedOpen((current) => !current)}
+              className="flex h-10 items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-semibold text-slate-300 transition hover:border-white/20 hover:text-white"
+            >
+              <span>Avançado</span>
+              <ChevronDown size={16} className={`transition ${isAdvancedOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-          {flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit && cards.length === 0 ? (
-            <p className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-100">
-              Cadastre um cartão antes de criar uma despesa parcelada.
-            </p>
-          ) : null}
+            {isAdvancedOpen ? (
+              <div className="grid gap-4 pt-1">
+                <label className="grid gap-2 text-sm font-semibold text-slate-200">
+                  Descrição
+                  <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Adicione uma descrição" className="min-h-20 resize-none rounded-[22px] border border-white/15 bg-white/[0.035] px-4 py-4 text-base text-white outline-none transition focus:border-sky-400" />
+                </label>
 
-        </div>
+                {flow !== 'transfer' && !(flow === 'expense' && (splitMode === 'third_party_full' || isInvoiceCredit)) ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex gap-2">
+                      <input
+                        value={newCategoryName}
+                        onChange={(event) => setNewCategoryName(event.target.value)}
+                        placeholder={flow === 'income' ? 'Nova categoria de receita' : 'Nova categoria de despesa'}
+                        className="h-11 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#0B0E14] px-3 text-sm text-white outline-none focus:border-sky-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCreateCategory}
+                        disabled={isCreatingCategory}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white disabled:opacity-60"
+                        title="Criar categoria"
+                      >
+                        <Plus size={17} />
+                      </button>
+                    </div>
+                    {categoryError ? (
+                      <p className="mt-2 flex items-center gap-2 text-xs text-rose-200">
+                        <AlertCircle size={14} />
+                        {categoryError}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
 
-        <button type="submit" disabled={cannotSubmit || isSaving} className="order-10 mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-50">
-          <Check size={18} />
-          {isSaving ? 'Salvando...' : 'Salvar lançamento'}
-        </button>
+                {flow === 'expense' && expenseMode === 'fixed' && !isInvoiceCredit && !transaction ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <label className="flex items-center justify-between gap-3 text-xs font-semibold text-slate-300">
+                      <span>Definir data final</span>
+                      <input
+                        type="checkbox"
+                        checked={hasFixedEndDate}
+                        onChange={(event) => {
+                          setHasFixedEndDate(event.target.checked);
+                          if (!event.target.checked) setFixedEndDate('');
+                        }}
+                        className="h-4 w-4 accent-sky-500"
+                      />
+                    </label>
+                    {hasFixedEndDate ? (
+                      <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-400">
+                        Repetir até
+                        <DateInput value={fixedEndDate} onChange={setFixedEndDate} min={date} />
+                      </label>
+                    ) : null}
+                    <span className="text-[11px] font-medium text-slate-500">
+                      {hasFixedEndDate && fixedEndDate
+                        ? `${fixedDates.length} ocorrência${fixedDates.length === 1 ? '' : 's'} será${fixedDates.length === 1 ? '' : 'm'} projetada${fixedDates.length === 1 ? '' : 's'} pela regra.`
+                        : 'A regra será salva no banco e projetada nos próximos 12 meses.'}
+                    </span>
+                  </div>
+                ) : null}
+
+                {flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && cards.length === 0 ? (
+                  <p className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-xs font-semibold text-rose-100">
+                    Cadastre um cartão antes de criar uma despesa no cartão.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <button type="submit" disabled={cannotSubmit || isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-50">
+              <Check size={18} />
+              {isSaving ? 'Salvando...' : 'Salvar lançamento'}
+            </button>
+          </div>
         </div>
       </form>
 
@@ -1108,3 +1160,4 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     </div>
   );
 }
+

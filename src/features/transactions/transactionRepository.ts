@@ -5,7 +5,7 @@ import {
   mapTransaction,
 } from '../finance/financeStore';
 import { Account, Card, Transaction } from '../../types';
-import { getExpenseSignedAmount } from '../../lib/utils/finance';
+import { getExpenseSignedAmount, roundMoney } from '../../lib/utils/finance';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { getCardInvoiceClosingMonth } from '../../lib/utils/cardInvoices';
 
@@ -24,6 +24,9 @@ function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'
     to_account_id: transaction.toAccountId ?? null,
     notes: transaction.notes ?? null,
     is_reimbursable: transaction.isReimbursable ?? false,
+    split_mode: transaction.splitMode ?? (transaction.isReimbursable ? 'third_party_full' : 'none'),
+    personal_amount: transaction.personalAmount ?? null,
+    reimbursement_amount: transaction.reimbursementAmount ?? null,
     reimbursement_person_id: transaction.isReimbursable ? transaction.reimbursementPersonId ?? null : null,
     reimbursement_status: transaction.isReimbursable ? transaction.reimbursementStatus ?? 'pending' : null,
     reimbursement_received_at: transaction.isReimbursable ? transaction.reimbursementReceivedAt ?? null : null,
@@ -31,7 +34,7 @@ function toTransactionInsert(userId: string, transaction: Omit<Transaction, 'id'
   };
 }
 
-const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at';
+const transactionSelect = 'id, description, amount, flow, status, transaction_date, category_id, account_id, card_id, from_account_id, to_account_id, notes, is_reimbursable, split_mode, personal_amount, reimbursement_amount, reimbursement_person_id, reimbursement_status, reimbursement_received_at, reimbursement_received_account_id, created_at';
 
 export const transactionRepository = {
   async payCardInvoice(input: {
@@ -47,14 +50,17 @@ export const transactionRepository = {
       id: transaction.isProjected ? null : transaction.id,
       is_projected: Boolean(transaction.isProjected),
       description: transaction.description,
-      amount: transaction.amount,
-      signed_amount: getExpenseSignedAmount(transaction),
+      amount: roundMoney(transaction.amount),
+      signed_amount: roundMoney(getExpenseSignedAmount(transaction)),
       flow: transaction.flow,
       transaction_date: transaction.date,
       invoice_period: getCardInvoiceClosingMonth(input.card, transaction.date),
       category_id: transaction.categoryId ?? null,
       notes: transaction.notes ?? null,
       is_reimbursable: transaction.isReimbursable ?? false,
+      split_mode: transaction.splitMode ?? (transaction.isReimbursable ? 'third_party_full' : 'none'),
+      personal_amount: transaction.personalAmount ?? null,
+      reimbursement_amount: transaction.reimbursementAmount ?? null,
       reimbursement_person_id: transaction.reimbursementPersonId ?? null,
       reimbursement_status: transaction.isReimbursable ? transaction.reimbursementStatus ?? 'pending' : null,
       reimbursement_received_at: transaction.reimbursementReceivedAt ?? null,
@@ -70,7 +76,7 @@ export const transactionRepository = {
       p_account_id: input.accountId,
       p_card_id: input.card.id,
       p_payment_date: input.paymentDate,
-      p_expected_amount: input.amount,
+      p_expected_amount: roundMoney(input.amount),
       p_items: items,
     });
 

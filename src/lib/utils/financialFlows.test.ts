@@ -4,7 +4,7 @@ import { expensesByCategory, getAccountSignedAmount, getExpenseSignedAmount, sum
 import { writeTransactionNotes } from './transactionMeta';
 
 const accounts: Account[] = [
-  { id: 'main', name: 'Conta', type: 'checking', balance: 900, color: '#fff', institution: 'Banco' },
+  { id: 'main', name: 'Conta', type: 'checking', balance: 900, lastBalanceUpdate: '2026-06-01', color: '#fff', institution: 'Banco', isActive: true },
 ];
 const categories: Category[] = [
   { id: 'food', name: 'Alimentação', flow: 'expense', color: '#f00', icon: 'Utensils' },
@@ -14,6 +14,7 @@ const transactions: Transaction[] = [
   { id: 'personal', description: 'Mercado', amount: 300, flow: 'expense', status: 'paid', date: '2026-06-02', accountId: 'main', categoryId: 'food' },
   { id: 'third-pending', description: 'Terceiro', amount: 200, flow: 'expense', status: 'paid', date: '2026-06-03', categoryId: 'food', isReimbursable: true, reimbursementStatus: 'pending' },
   { id: 'third-received', description: 'Terceiro recebido', amount: 100, flow: 'expense', status: 'paid', date: '2026-06-04', categoryId: 'food', isReimbursable: true, reimbursementStatus: 'received' },
+  { id: 'shared-rent', description: 'Aluguel dividido', amount: 2400, flow: 'expense', status: 'paid', date: '2026-06-04', accountId: 'main', categoryId: 'food', isReimbursable: true, splitMode: 'shared', personalAmount: 1200, reimbursementAmount: 1200, reimbursementStatus: 'pending' },
   { id: 'credit', description: 'Estorno', amount: 50, flow: 'expense', status: 'paid', date: '2026-06-05', categoryId: 'food', cardId: 'card', notes: writeTransactionNotes(undefined, { invoiceAdjustment: 'credit' }) },
   { id: 'invoice-payment', description: 'Pagamento fatura', amount: 500, flow: 'expense', status: 'paid', date: '2026-06-05', accountId: 'main', notes: writeTransactionNotes(undefined, { invoicePaymentCardId: 'card', invoicePaymentPeriod: '2026-06' }) },
   { id: 'transfer', description: 'Transferência', amount: 80, flow: 'transfer', status: 'paid', date: '2026-06-06', fromAccountId: 'main', toAccountId: 'reserve' },
@@ -21,26 +22,32 @@ const transactions: Transaction[] = [
 
 assert.deepEqual(summarizeDashboard(accounts, transactions, '2026-06'), {
   currentBalance: 900,
+  accountInflow: 1100,
+  accountInflowPersonal: 1000,
+  accountInflowThirdParty: 100,
+  accountOutflow: 3500,
+  accountOutflowPersonal: 2000,
+  accountOutflowThirdParty: 1500,
   income: 1000,
-  expenses: 250,
-  settledExpenses: 250,
+  expenses: 1450,
+  settledExpenses: 1450,
   received: 1000,
-  paid: 800,
+  paid: 2000,
   pendingIncome: 0,
   pendingExpenses: 0,
-  reimbursementsPending: 200,
+  reimbursementsPending: 1400,
   reimbursementsReceived: 100,
 });
 assert.deepEqual(expensesByCategory(transactions, categories, '2026-06'), [
-  { name: 'Alimentação', value: 250, color: '#f00' },
+  { name: 'Alimentação', value: 1450, color: '#f00' },
 ]);
-assert.equal(getExpenseSignedAmount(transactions[4]), -50);
-assert.equal(getAccountSignedAmount(transactions[6], 'main'), -80);
-assert.equal(getAccountSignedAmount(transactions[6], 'reserve'), 80);
+assert.equal(getExpenseSignedAmount(transactions[5]), -50);
+assert.equal(getAccountSignedAmount(transactions[7], 'main'), -80);
+assert.equal(getAccountSignedAmount(transactions[7], 'reserve'), 80);
 
 const investmentAccounts: Account[] = [
   ...accounts,
-  { id: 'broker', name: 'Corretora', type: 'investment', balance: 200, color: '#fff', institution: 'Corretora' },
+  { id: 'broker', name: 'Corretora', type: 'investment', balance: 200, lastBalanceUpdate: '2026-06-01', color: '#fff', institution: 'Corretora', isActive: true },
 ];
 const investmentTransactions: Transaction[] = [
   { id: 'salary', description: 'Salário', amount: 3000, flow: 'income', status: 'paid', date: '2026-06-05', accountId: 'main' },
@@ -52,7 +59,7 @@ assert.deepEqual(summarizeMonthlyInvestmentGoal(investmentAccounts, categories, 
   target: 600,
   saved: 3000,
   remaining: 0,
-  progress: 100,
+  progress: 500,
 });
 
 const pendingSalaryTransactions: Transaction[] = [
@@ -82,3 +89,4 @@ assert.equal(summarizeMonthlyInvestmentGoal(
 ).target, 850);
 
 console.log('financial flow tests passed');
+

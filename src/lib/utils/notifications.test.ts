@@ -13,6 +13,7 @@ const card: Card = {
   closingDay: 26,
   color: '#000',
   network: 'mastercard',
+  isActive: true,
 };
 
 const transactions: Transaction[] = [

@@ -1,9 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Pencil, Search, UserRound, X } from 'lucide-react';
 import { Account, Card, ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency } from '../../lib/utils/finance';
+import { formatCurrency, getTransactionReimbursementAmount, getTransactionReimbursementReceivedAmount } from '../../lib/utils/finance';
+import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { formatLocalDate } from '../../lib/utils/date';
 import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
+import { CurrencyInput } from '../shared/CurrencyInput';
 import { MonthNavigator } from '../shared/MonthNavigator';
 
 interface ReimbursementsViewProps {
@@ -12,10 +14,12 @@ interface ReimbursementsViewProps {
   cards: Card[];
   transactions: Transaction[];
   activeMonth: string;
+  initialPersonId?: string | null;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   onCurrentMonth: () => void;
-  onMarkReceived: (transaction: Transaction, accountId: string) => void | Promise<void>;
+  onMarkReceived: (transaction: Transaction, accountId: string, receivedAmount?: number) => void | Promise<void>;
+  onCarryReimbursement: (transaction: Transaction) => void | Promise<void>;
   onEditTransaction: (transaction: Transaction) => void;
 }
 
@@ -41,10 +45,12 @@ export function ReimbursementsView({
   cards,
   transactions,
   activeMonth,
+  initialPersonId,
   onPreviousMonth,
   onNextMonth,
   onCurrentMonth,
   onMarkReceived,
+  onCarryReimbursement,
   onEditTransaction,
 }: ReimbursementsViewProps) {
   const [search, setSearch] = useState('');
@@ -52,12 +58,20 @@ export function ReimbursementsView({
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [receivingTransaction, setReceivingTransaction] = useState<Transaction | null>(null);
   const [receivingAccountId, setReceivingAccountId] = useState('');
+  const [receivingAmount, setReceivingAmount] = useState(DEFAULT_CURRENCY_INPUT);
   const peopleScrollerRef = useRef<HTMLDivElement | null>(null);
   const peopleDragRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0, didMove: false });
   const today = formatLocalDate(new Date());
 
+  useEffect(() => {
+    if (initialPersonId === undefined) return;
+    setMode('month');
+    setSelectedPersonId(initialPersonId);
+  }, [activeMonth, initialPersonId]);
+
   function handlePeoplePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (event.pointerType !== 'mouse') return;
+    if ((event.target as HTMLElement).closest('[data-reimbursement-person-filter]')) return;
     const scroller = peopleScrollerRef.current;
     if (!scroller) return;
 
@@ -132,9 +146,10 @@ export function ReimbursementsView({
         count: 0,
       };
       if (transaction.reimbursementStatus === 'received') {
-        current.received += transaction.amount;
+        current.received += getTransactionReimbursementAmount(transaction);
       } else {
-        current.pending += transaction.amount;
+        current.pending += getTransactionReimbursementAmount(transaction);
+        current.received += getTransactionReimbursementReceivedAmount(transaction);
       }
       current.count += 1;
       totals.set(key, current);
@@ -156,11 +171,10 @@ export function ReimbursementsView({
 
   const pendingTotal = reimbursementTransactions
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
+    .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
   const receivedTotal = reimbursementTransactions
-    .filter((transaction) => transaction.reimbursementStatus === 'received')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const overdueTotal = overduePending.reduce((sum, transaction) => sum + transaction.amount, 0);
+    .reduce((sum, transaction) => sum + getTransactionReimbursementReceivedAmount(transaction), 0);
+  const overdueTotal = overduePending.reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
   const emptyMessage = mode === 'month'
     ? 'Nenhum reembolso neste mês'
     : mode === 'pending'
@@ -168,13 +182,13 @@ export function ReimbursementsView({
       : 'Nenhum reembolso registrado';
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 pt-4 text-white md:px-8 md:pt-6">
+    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-4 text-white md:pt-6">
       <header className="shrink-0">
         <p className="text-xs text-slate-400">Controle de terceiros</p>
         <h1 className="font-display text-xl font-bold leading-tight text-white">Reembolsos</h1>
       </header>
 
-      <div className="mt-3 grid shrink-0 grid-cols-3 gap-1 rounded-2xl bg-white/5 p-1">
+      <div className="premium-card-soft mt-3 grid shrink-0 grid-cols-3 gap-1 rounded-2xl p-1">
         {modeOptions.map((item) => (
           <button
             key={item.id}
@@ -183,7 +197,7 @@ export function ReimbursementsView({
               setMode(item.id);
               setSelectedPersonId(null);
             }}
-            className={`h-10 rounded-xl text-sm font-bold transition ${mode === item.id ? 'bg-amber-400 text-slate-950' : 'text-slate-400'}`}
+            className={`h-10 rounded-xl text-sm font-bold transition ${mode === item.id ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
           >
             {item.label}
           </button>
@@ -201,7 +215,7 @@ export function ReimbursementsView({
             setMode('pending');
             setSelectedPersonId(null);
           }}
-          className="mt-3 flex shrink-0 items-center gap-2 rounded-2xl border border-rose-400/25 bg-rose-500/10 px-3 py-2.5 text-left"
+          className="cosmic-card cosmic-card-hover mt-3 flex shrink-0 items-center gap-2 rounded-2xl border border-rose-400/25 px-3 py-2.5 text-left"
         >
           <AlertTriangle size={16} className="shrink-0 text-rose-200" />
           <span className="min-w-0">
@@ -214,11 +228,11 @@ export function ReimbursementsView({
       ) : null}
 
       <section className="mt-3 grid shrink-0 grid-cols-2 gap-2">
-        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-3">
+        <div className="premium-card rounded-2xl border-amber-400/20 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-100">A receber</p>
           <p className="mt-0.5 font-display text-lg font-bold text-white">{formatCurrency(pendingTotal)}</p>
         </div>
-        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-3">
+        <div className="premium-card rounded-2xl border-emerald-400/20 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-100">Recebido</p>
           <p className="mt-0.5 font-display text-lg font-bold text-white">{formatCurrency(receivedTotal)}</p>
         </div>
@@ -232,24 +246,21 @@ export function ReimbursementsView({
             onPointerMove={handlePeoplePointerMove}
             onPointerUp={handlePeoplePointerEnd}
             onPointerCancel={handlePeoplePointerEnd}
-            className="horizontal-scroll no-scrollbar -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-1.5 overflow-x-auto px-4 pb-1.5 active:cursor-grabbing sm:gap-2 sm:pb-2"
+            className="horizontal-scroll premium-scroll -mx-4 flex cursor-grab touch-pan-x select-none snap-x snap-mandatory gap-1.5 overflow-x-auto px-4 pb-1.5 active:cursor-grabbing sm:gap-2 sm:pb-2"
           >
             {personSummaries.map((person) => (
               <button
                 key={person.id}
+                data-reimbursement-person-filter
                 type="button"
                 onClick={() => {
-                  if (peopleDragRef.current.didMove) {
-                    peopleDragRef.current.didMove = false;
-                    return;
-                  }
                   setSelectedPersonId((current) => current === person.id ? null : person.id);
                 }}
                 aria-pressed={selectedPersonId === person.id}
                 className={`grid h-11 w-[116px] shrink-0 snap-start grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 rounded-xl border px-2.5 py-1.5 text-left transition sm:block sm:h-auto sm:w-[112px] sm:rounded-2xl sm:p-3 ${
                   selectedPersonId === person.id
                     ? 'border-amber-300/60 bg-amber-400/15 ring-1 ring-amber-300/20'
-                    : 'border-white/8 bg-[#101319] hover:border-amber-300/30'
+                    : 'cosmic-card cosmic-card-hover border-white/8'
                 }`}
               >
                 <div className="hidden h-7 w-7 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200 sm:mb-2 sm:flex">
@@ -265,7 +276,7 @@ export function ReimbursementsView({
       ) : null}
 
       {selectedPersonId ? (
-        <div className="mt-3 flex shrink-0 items-center justify-between rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2">
+        <div className="premium-card-soft mt-3 flex shrink-0 items-center justify-between rounded-xl border-amber-400/20 px-3 py-2">
           <p className="truncate text-xs font-bold text-amber-100">
             Despesas de {selectedPersonId === 'unknown' ? 'Pessoa removida' : getPersonName(people, selectedPersonId)}
           </p>
@@ -281,24 +292,25 @@ export function ReimbursementsView({
         </div>
       ) : null}
 
-      <label className="mt-3 flex h-10 shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-[#101319] px-3 text-slate-400">
+      <label className="premium-card-soft mt-3 flex h-10 shrink-0 items-center gap-2 rounded-2xl px-3 text-slate-400">
         <Search size={15} />
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar pessoa ou lançamento" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
       </label>
 
-      <section className="no-scrollbar mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
+      <section className="premium-scroll mt-3 min-h-[240px] flex-1 space-y-2 overflow-y-auto pb-4">
         {reimbursementTransactions.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
+          <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
             <UserRound size={24} className="mx-auto text-slate-500" />
             <p className="mt-3 text-sm font-bold text-white">{emptyMessage}</p>
             <p className="mt-1 text-xs text-slate-500">Marque uma despesa como reembolso no lançamento.</p>
           </div>
         ) : reimbursementTransactions.map((transaction) => {
           const received = transaction.reimbursementStatus === 'received';
+          const partiallyReceived = !received && getTransactionReimbursementReceivedAmount(transaction) > 0;
           const isOverdue = isReimbursementOverdue(transaction, cards, today);
           const dueDate = getReimbursementDueDate(transaction, cards);
           return (
-            <article key={transaction.id} className={`rounded-2xl border px-3 py-2.5 ${isOverdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-white/8 bg-[#101319]'}`}>
+            <article key={transaction.id} className={`cosmic-card cosmic-card-hover rounded-2xl border px-3 py-2.5 ${isOverdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-white/8'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5">
@@ -315,8 +327,13 @@ export function ReimbursementsView({
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${received ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' : 'border-amber-400/20 bg-amber-500/15 text-amber-100'}`}>
                       {received ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
-                      {received ? 'Recebido' : 'A receber'}
+                      {received ? 'Recebido' : partiallyReceived ? 'Parcial' : 'A receber'}
                     </span>
+                    {partiallyReceived ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-100">
+                        Recebido {formatCurrency(getTransactionReimbursementReceivedAmount(transaction))}
+                      </span>
+                    ) : null}
                     {isOverdue ? (
                       <span className="inline-flex items-center gap-1 rounded-full border border-rose-400/20 bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-100">
                         <AlertTriangle size={12} />
@@ -326,7 +343,7 @@ export function ReimbursementsView({
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="font-mono text-sm font-bold text-white">{formatCurrency(transaction.amount)}</p>
+                  <p className="font-mono text-sm font-bold text-white">{formatCurrency(getTransactionReimbursementAmount(transaction))}</p>
                   <div className="mt-1.5 flex justify-end gap-1">
                     {!received ? (
                       <button
@@ -334,11 +351,22 @@ export function ReimbursementsView({
                         onClick={() => {
                           setReceivingTransaction(transaction);
                           setReceivingAccountId(transaction.accountId ?? accounts[0]?.id ?? '');
+                          setReceivingAmount(formatCurrencyInput(getTransactionReimbursementAmount(transaction)));
                         }}
                         className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-200"
                         title="Marcar recebido"
                       >
                         <CheckCircle2 size={14} />
+                      </button>
+                    ) : null}
+                    {!received ? (
+                      <button
+                        type="button"
+                        onClick={() => void onCarryReimbursement(transaction)}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-200"
+                        title="Levar pendência para o próximo mês"
+                      >
+                        <ArrowRight size={14} />
                       </button>
                     ) : null}
                     <button type="button" onClick={() => onEditTransaction(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-slate-300" title="Editar lançamento">
@@ -354,22 +382,42 @@ export function ReimbursementsView({
 
       {receivingTransaction ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="w-full rounded-t-[28px] border border-white/10 bg-[#101319] p-5 sm:max-w-sm sm:rounded-[28px]">
+          <div className="premium-card w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]">
             <h2 className="font-display text-lg font-bold text-white">Registrar reembolso</h2>
             <p className="mt-1 text-xs text-slate-500">
-              {receivingTransaction.description} · {formatCurrency(receivingTransaction.amount)}
+              {receivingTransaction.description} · pendente {formatCurrency(getTransactionReimbursementAmount(receivingTransaction))}
             </p>
+            <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
+              Valor recebido
+              <CurrencyInput value={receivingAmount} onChange={setReceivingAmount} />
+            </label>
             <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
               Conta onde o dinheiro entrou
               <select
                 value={receivingAccountId}
                 onChange={(event) => setReceivingAccountId(event.target.value)}
-                className="h-12 rounded-2xl border border-white/10 bg-[#0B0E14] px-3 text-white outline-none focus:border-emerald-300"
+                className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300"
               >
                 <option value="">Selecione uma conta</option>
                 {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
               </select>
             </label>
+            {(() => {
+              const pendingAmount = getTransactionReimbursementAmount(receivingTransaction);
+              const parsedReceivedAmount = parseCurrencyInput(receivingAmount);
+              const remainingAmount = Math.max(0, pendingAmount - Math.min(pendingAmount, parsedReceivedAmount));
+              return (
+                <div className="mt-3 rounded-2xl border border-white/8 bg-white/[0.035] p-3 text-xs leading-relaxed text-slate-300">
+                  {parsedReceivedAmount <= 0 ? (
+                    <span>Informe um valor recebido maior que zero.</span>
+                  ) : remainingAmount > 0 ? (
+                    <span>Recebimento parcial. Ainda ficará pendente <strong className="font-mono text-amber-100">{formatCurrency(remainingAmount)}</strong>.</span>
+                  ) : (
+                    <span>Recebimento total. Este reembolso será marcado como recebido.</span>
+                  )}
+                </div>
+              );
+            })()}
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -380,12 +428,12 @@ export function ReimbursementsView({
               </button>
               <button
                 type="button"
-                disabled={!receivingAccountId}
+                disabled={!receivingAccountId || parseCurrencyInput(receivingAmount) <= 0}
                 onClick={async () => {
-                  await onMarkReceived(receivingTransaction, receivingAccountId);
+                  await onMarkReceived(receivingTransaction, receivingAccountId, parseCurrencyInput(receivingAmount));
                   setReceivingTransaction(null);
                 }}
-                className="h-11 rounded-xl bg-emerald-500 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-11 rounded-xl bg-white text-sm font-bold text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Confirmar
               </button>

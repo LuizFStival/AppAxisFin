@@ -25,19 +25,19 @@ export function NotificationsView({ error, notifications, onMarkAllRead, onMarkR
   }
 
   return (
-    <div className="no-scrollbar h-full overflow-y-auto px-4 pb-8 pt-7">
+    <div className="premium-scroll app-page-gutters h-full overflow-y-auto pb-8 pt-7">
       <header className="flex items-end justify-between gap-3">
         <div><p className="text-sm text-slate-400">Central</p><h1 className="font-display text-2xl font-bold text-white">Notificações</h1></div>
         {unreadCount > 0 ? (
-          <button type="button" onClick={() => void onMarkAllRead()} className="flex items-center gap-1.5 rounded-xl bg-white/5 px-3 py-2 text-xs font-bold text-sky-200">
+          <button type="button" onClick={() => void onMarkAllRead()} className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white hover:text-black">
             <CheckCheck size={15} /> Marcar lidas
           </button>
         ) : null}
       </header>
 
       <div className="mt-5 grid grid-cols-2 gap-2">
-        <div className="rounded-2xl border border-white/8 bg-[#101319] p-3"><p className="text-[10px] uppercase tracking-widest text-slate-500">Não lidas</p><p className="mt-1 font-display text-xl font-bold text-white">{unreadCount}</p></div>
-        <div className="rounded-2xl border border-white/8 bg-[#101319] p-3"><p className="text-[10px] uppercase tracking-widest text-slate-500">Alertas ativos</p><p className="mt-1 font-display text-xl font-bold text-white">{notifications.length}</p></div>
+        <div className="premium-card rounded-2xl p-3"><p className="text-[10px] uppercase tracking-widest text-slate-500">Não lidas</p><p className="mt-1 font-display text-xl font-bold text-white">{unreadCount}</p></div>
+        <div className="premium-card rounded-2xl p-3"><p className="text-[10px] uppercase tracking-widest text-slate-500">Alertas ativos</p><p className="mt-1 font-display text-xl font-bold text-white">{notifications.length}</p></div>
       </div>
 
       {error ? <p role="alert" className="mt-4 rounded-2xl bg-rose-500/10 p-3 text-xs text-rose-200">{error}</p> : null}
@@ -47,7 +47,7 @@ export function NotificationsView({ error, notifications, onMarkAllRead, onMarkR
           const Icon = actionIcons[notification.actionView];
           const urgent = notification.type === 'danger';
           return (
-            <button key={notification.id} type="button" onClick={() => void openNotification(notification)} className={`flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left ${notification.readAt ? 'border-white/8 bg-[#101319] opacity-70' : urgent ? 'border-rose-400/20 bg-rose-500/[0.08]' : 'border-amber-400/20 bg-amber-500/[0.07]'}`}>
+            <button key={notification.id} type="button" onClick={() => void openNotification(notification)} className={`cosmic-card cosmic-card-hover flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left ${notification.readAt ? 'border-white/8 opacity-70' : urgent ? 'border-rose-400/20 bg-rose-500/[0.08]' : 'border-amber-400/20 bg-amber-500/[0.07]'}`}>
               <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${urgent ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>{urgent ? <AlertTriangle size={19} /> : <Icon size={19} />}</span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2"><span className="truncate text-sm font-bold text-white">{notification.title}</span>{!notification.readAt ? <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" /> : null}</span>
@@ -70,3 +70,4 @@ export function NotificationsView({ error, notifications, onMarkAllRead, onMarkR
     </div>
   );
 }
+

@@ -16,6 +16,8 @@ import {
   BarChart3,
   Briefcase,
   Car,
+  ChevronDown,
+  ChevronUp,
   Compass,
   CreditCard,
   Download,
@@ -34,18 +36,25 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Account, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
+import { Account, Card, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
 import {
   expensesByCategory,
   formatCurrency,
-  formatMonthLabel,
-  getExpenseSignedAmount,
   getFinancialMonthKey,
+  formatMonthLabel,
+  getPersonalExpenseSignedAmount,
+  getTransactionCompetenceMonth,
+  getTransactionReimbursementAmount,
+  getTransactionReimbursementReceivedAmount,
   isInvoicePayment,
   isThirdPartyExpense,
   shiftMonthKey,
   summarizeMonthlyInvestmentGoal,
+  summarizeMonthlyResult,
+  roundMoney,
 } from '../../lib/utils/finance';
+import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
+import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { BudgetSection } from './BudgetSection';
 
@@ -54,6 +63,7 @@ interface ReportsViewProps {
   transactions: Transaction[];
   categories: Category[];
   accounts: Account[];
+  cards: Card[];
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
   reportWidgets: ReportWidgetId[];
   reimbursementsEnabled: boolean;
@@ -88,6 +98,12 @@ const CATEGORY_ICONS: Record<string, LucideIcon> = {
   MoreHorizontal,
 };
 
+const EXPENSE_BREAKDOWN_COLORS: Record<string, string> = {
+  installment: '#A78BFA',
+  fixed: '#F59E0B',
+  variable: '#38BDF8',
+};
+
 function getChange(current: number, previous: number) {
   if (previous === 0) return current === 0 ? 0 : null;
   return ((current - previous) / Math.abs(previous)) * 100;
@@ -112,6 +128,7 @@ export function ReportsView({
   transactions,
   categories,
   accounts,
+  cards,
   savingsPreferences,
   reportWidgets,
   reimbursementsEnabled,
@@ -120,24 +137,27 @@ export function ReportsView({
   onCurrentMonth,
 }: ReportsViewProps) {
   const [reportScope, setReportScope] = useState<'general' | 'personal'>('general');
+  const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
+  const [showOutflowBreakdown, setShowOutflowBreakdown] = useState(false);
   const effectiveReportScope = reimbursementsEnabled ? reportScope : 'personal';
   const previousMonth = shiftMonthKey(month, -1);
   const report = useMemo(() => {
     const summarize = (period: string) => {
-      const periodTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === period);
+      const periodTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period);
       return periodTransactions.reduce((totals, transaction) => {
         if (transaction.flow === 'income') totals.income += transaction.amount;
         if (transaction.flow === 'expense' && !isInvoicePayment(transaction)) {
-          const amount = getExpenseSignedAmount(transaction);
           if (isThirdPartyExpense(transaction)) {
+            const amount = getTransactionReimbursementAmount(transaction);
+            const receivedAmount = getTransactionReimbursementReceivedAmount(transaction);
             totals.thirdParty += amount;
-            if (transaction.reimbursementStatus === 'received') totals.reimbursementsReceived += amount;
-            else totals.reimbursementsPending += amount;
-          } else {
-            totals.expenses += amount;
-            if (transaction.cardId) totals.cardExpenses += amount;
-            else totals.accountExpenses += amount;
+            totals.reimbursementsReceived += receivedAmount;
+            if (transaction.reimbursementStatus !== 'received') totals.reimbursementsPending += amount;
           }
+          const personalAmount = getPersonalExpenseSignedAmount(transaction);
+          totals.expenses += personalAmount;
+          if (transaction.cardId) totals.cardExpenses += personalAmount;
+          else totals.accountExpenses += personalAmount;
         }
         return totals;
       }, {
@@ -152,15 +172,26 @@ export function ReportsView({
     };
 
     return { current: summarize(month), previous: summarize(previousMonth) };
-  }, [month, previousMonth, transactions]);
+  }, [cards, month, previousMonth, transactions]);
 
-  const totalInflows = report.current.income + report.current.thirdParty;
-  const totalOutflows = report.current.expenses + report.current.thirdParty;
+  const currentMonthlyResult = summarizeMonthlyResult(transactions, month, cards, {
+    includeReimbursements: reimbursementsEnabled,
+  });
+  const previousMonthlyResult = summarizeMonthlyResult(transactions, previousMonth, cards, {
+    includeReimbursements: reimbursementsEnabled,
+  });
+  const totalInflows = currentMonthlyResult.totalInflows;
+  const totalOutflows = currentMonthlyResult.totalOutflows;
+  const reimbursementExpected = currentMonthlyResult.reimbursementsExpected;
+  const reimbursementReceived = Math.min(reimbursementExpected, report.current.reimbursementsReceived);
+  const reimbursementPending = Math.max(0, reimbursementExpected - reimbursementReceived);
   const visibleInflows = effectiveReportScope === 'general' ? totalInflows : report.current.income;
   const visibleOutflows = effectiveReportScope === 'general' ? totalOutflows : report.current.expenses;
   const balance = visibleInflows - visibleOutflows;
-  const previousBalance = report.previous.income - report.previous.expenses;
-  const categoryData = expensesByCategory(transactions, categories, month).map((item, index) => {
+  const previousBalance = effectiveReportScope === 'general'
+    ? previousMonthlyResult.result
+    : report.previous.income - report.previous.expenses;
+  const categoryData = expensesByCategory(transactions, categories, month, cards).map((item, index) => {
     const category = categories.find((candidate) => candidate.name === item.name);
     return {
       ...item,
@@ -168,22 +199,59 @@ export function ReportsView({
       Icon: CATEGORY_ICONS[category?.icon ?? ''] ?? Tags,
     };
   });
-  const monthTransactions = transactions.filter((transaction) => getFinancialMonthKey(transaction) === month);
+  const monthTransactions = useMemo(
+    () => transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month),
+    [cards, month, transactions],
+  );
+  const expenseBreakdown = useMemo(() => {
+    const personalBreakdown = summarizeExpenseBreakdown(
+      monthTransactions.filter((transaction) =>
+        transaction.flow === 'expense'
+        && !isInvoicePayment(transaction)
+      ),
+      getPersonalExpenseSignedAmount,
+    );
+
+    if (effectiveReportScope === 'personal' || !reimbursementsEnabled) return personalBreakdown;
+
+    const thirdPartyBreakdown = summarizeExpenseBreakdown(
+      transactions
+        .filter(isThirdPartyExpense)
+        .filter((transaction) => cards.length > 0
+          ? getReimbursementMonthKey(transaction, cards) === month
+          : getFinancialMonthKey(transaction) === month),
+      getTransactionReimbursementAmount,
+    );
+
+    return personalBreakdown.map((item) => {
+      const thirdPartyItem = thirdPartyBreakdown.find((candidate) => candidate.key === item.key);
+      return {
+        ...item,
+        total: roundMoney(item.total + (thirdPartyItem?.total ?? 0)),
+        count: item.count + (thirdPartyItem?.count ?? 0),
+      };
+    });
+  }, [cards, effectiveReportScope, month, monthTransactions, reimbursementsEnabled, transactions]);
+  const expenseBreakdownTotal = expenseBreakdown.reduce((sum, item) => sum + Math.max(0, item.total), 0);
   const monthlyEvolution = useMemo(() => {
     return Array.from({ length: 6 }, (_, index) => shiftMonthKey(month, index - 5)).map((period) => {
-      const totals = transactions
-        .filter((transaction) => getFinancialMonthKey(transaction) === period)
-        .reduce((current, transaction) => {
-          if (transaction.flow === 'income') current.income += transaction.amount;
-          if (
-            transaction.flow === 'expense'
-            && !isThirdPartyExpense(transaction)
-            && !isInvoicePayment(transaction)
-          ) {
-            current.expenses += getExpenseSignedAmount(transaction);
-          }
-          return current;
-        }, { income: 0, expenses: 0 });
+      const result = summarizeMonthlyResult(transactions, period, cards, {
+        includeReimbursements: reimbursementsEnabled,
+      });
+      const totals = effectiveReportScope === 'general'
+        ? { income: result.totalInflows, expenses: result.totalOutflows }
+        : transactions
+          .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period)
+          .reduce((current, transaction) => {
+            if (transaction.flow === 'income') current.income += transaction.amount;
+            if (
+              transaction.flow === 'expense'
+              && !isInvoicePayment(transaction)
+            ) {
+              current.expenses += getPersonalExpenseSignedAmount(transaction);
+            }
+            return current;
+          }, { income: 0, expenses: 0 });
 
       return {
         month: formatMonthLabel(period).slice(0, 3),
@@ -192,12 +260,14 @@ export function ReportsView({
         Resultado: totals.income - totals.expenses,
       };
     });
-  }, [month, transactions]);
+  }, [cards, effectiveReportScope, month, reimbursementsEnabled, transactions]);
   const savingsGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, month, {
     mode: savingsPreferences.savingsGoalMode,
     fixedAmount: savingsPreferences.savingsGoalAmount,
     percentage: savingsPreferences.savingsGoalPercentage,
     includePendingSalary: savingsPreferences.includePendingSalary,
+    cards,
+    includeReimbursements: reimbursementsEnabled,
   });
   const savingsZone = savingsGoal.progress >= 100
     ? { label: 'Meta atingida', bar: 'bg-emerald-400', text: 'text-emerald-300' }
@@ -206,8 +276,8 @@ export function ReportsView({
       : savingsGoal.progress >= 50
         ? { label: 'Zona de atenção', bar: 'bg-amber-400', text: 'text-amber-300' }
         : { label: 'Zona de perigo', bar: 'bg-rose-400', text: 'text-rose-300' };
-  const savingsRate = report.current.income > 0
-    ? Math.max(0, (report.current.income - report.current.expenses) / report.current.income * 100)
+  const savingsRate = visibleInflows > 0
+    ? Math.max(0, balance / visibleInflows * 100)
     : 0;
   const averageExpenses = monthlyEvolution.reduce((sum, item) => sum + item.Despesas, 0) / monthlyEvolution.length;
 
@@ -216,7 +286,10 @@ export function ReportsView({
       ['Indicador', 'Valor'],
       ['Receitas', report.current.income],
       ['Despesas pessoais', report.current.expenses],
-      ['Resultado', report.current.income - report.current.expenses],
+      ['Despesas parceladas', expenseBreakdown.find((item) => item.key === 'installment')?.total ?? 0],
+      ['Despesas fixas', expenseBreakdown.find((item) => item.key === 'fixed')?.total ?? 0],
+      ['Despesas variáveis', expenseBreakdown.find((item) => item.key === 'variable')?.total ?? 0],
+      ['Resultado', balance],
       ['Meta mensal para investir', savingsGoal.target],
       ['Economizado', savingsGoal.saved],
       ['Taxa de economia (%)', savingsRate.toFixed(2)],
@@ -233,11 +306,11 @@ export function ReportsView({
   const dailyData = useMemo(() => {
     const totals = new Map<number, { income: number; expenses: number }>();
     monthTransactions.forEach((transaction) => {
-      if (transaction.flow === 'transfer' || isThirdPartyExpense(transaction) || isInvoicePayment(transaction)) return;
+      if (transaction.flow === 'transfer' || isInvoicePayment(transaction)) return;
       const day = Number(transaction.date.slice(8, 10));
       const current = totals.get(day) ?? { income: 0, expenses: 0 };
       if (transaction.flow === 'income') current.income += transaction.amount;
-      if (transaction.flow === 'expense') current.expenses += getExpenseSignedAmount(transaction);
+      if (transaction.flow === 'expense') current.expenses += getPersonalExpenseSignedAmount(transaction);
       totals.set(day, current);
     });
     return Array.from(totals.entries())
@@ -248,15 +321,18 @@ export function ReportsView({
   const hasDailyData = dailyData.some((item) => item.income !== 0 || item.expenses !== 0);
   const largestCategory = categoryData[0];
   const categoryTotal = categoryData.reduce((sum, item) => sum + item.value, 0);
+  const scopeHint = effectiveReportScope === 'general'
+    ? 'Geral: meu + terceiros'
+    : 'Apenas meus valores';
 
   return (
-    <div className="no-scrollbar h-full w-full min-w-0 overflow-x-hidden overflow-y-auto px-4 pb-8 pt-7">
+    <div className="premium-scroll app-page-gutters h-full w-full min-w-0 overflow-x-hidden overflow-y-auto pb-8 pt-7">
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">Relatório</p>
           <h1 className="font-display text-2xl font-bold text-white">Detalhado</h1>
         </div>
-        <button type="button" onClick={downloadReport} className="flex h-10 items-center gap-2 rounded-xl border border-sky-400/20 bg-sky-500/15 px-3 text-xs font-bold text-sky-200">
+        <button type="button" onClick={downloadReport} className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 text-xs font-bold text-slate-200 transition hover:bg-white hover:text-black">
           <Download size={16} /> Baixar
         </button>
       </header>
@@ -269,13 +345,13 @@ export function ReportsView({
         className="mt-4"
       />
 
-      {reimbursementsEnabled ? <div className="mt-3 grid grid-cols-2 rounded-2xl border border-white/8 bg-[#101319] p-1" role="tablist" aria-label="Escopo do relatório">
+      {reimbursementsEnabled ? <div className="premium-card-soft mt-3 grid grid-cols-2 rounded-2xl p-1" role="tablist" aria-label="Escopo do relatório">
         <button
           type="button"
           role="tab"
           aria-selected={reportScope === 'general'}
           onClick={() => setReportScope('general')}
-          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'general' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'general' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
         >
           Geral
         </button>
@@ -284,31 +360,59 @@ export function ReportsView({
           role="tab"
           aria-selected={reportScope === 'personal'}
           onClick={() => setReportScope('personal')}
-          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'personal' ? 'bg-sky-500 text-white' : 'text-slate-400'}`}
+          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'personal' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
         >
           Apenas meu
         </button>
       </div> : null}
+      <p className="mt-2 text-xs font-semibold text-slate-500">{scopeHint}</p>
 
       {reportWidgets.length > 0 ? <section className="mt-5 grid min-w-0 grid-cols-2 gap-3">
         {reportWidgets.map((widget) => {
-          const item = widget === 'income'
-            ? ['Receitas', formatCurrency(report.current.income), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
+          const incomeLabel = effectiveReportScope === 'general' ? 'Total de entradas' : 'Receitas';
+          const expenseLabel = effectiveReportScope === 'general' ? 'Total de saídas' : 'Despesas pessoais';
+          const breakdown = widget === 'income'
+            ? effectiveReportScope === 'general'
+              ? [
+                ['Meu', report.current.income, 'text-emerald-200'],
+                ['Terceiros', reimbursementExpected, 'text-amber-200'],
+              ]
+              : [['Meu', report.current.income, 'text-emerald-200']]
             : widget === 'expenses'
-              ? ['Despesas pessoais', formatCurrency(report.current.expenses), 'border-rose-400/15 bg-rose-500/[0.07] text-rose-300']
+              ? effectiveReportScope === 'general'
+                ? [
+                  ['Meu', report.current.expenses, 'text-rose-200'],
+                  ['Terceiros', currentMonthlyResult.thirdPartyExpenses, 'text-amber-200'],
+                ]
+                : [['Meu', report.current.expenses, 'text-rose-200']]
+              : null;
+          const item = widget === 'income'
+            ? [incomeLabel, formatCurrency(visibleInflows), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
+            : widget === 'expenses'
+              ? [expenseLabel, formatCurrency(visibleOutflows), 'border-rose-400/15 bg-rose-500/[0.07] text-rose-300']
               : widget === 'savings_rate'
                 ? ['Taxa de economia', `${savingsRate.toFixed(1).replace('.', ',')}%`, 'border-sky-400/15 bg-sky-500/[0.07] text-sky-300']
                 : ['Média de gastos (6 meses)', formatCurrency(averageExpenses), 'border-amber-400/15 bg-amber-500/[0.07] text-amber-300'];
           return (
-            <article key={widget} className={`min-w-0 overflow-hidden rounded-[22px] border p-3 ${item[2]}`}>
+            <article key={widget} className={`premium-card min-w-0 overflow-hidden rounded-[22px] border p-3 ${item[2]}`}>
               <p className="text-xs font-semibold text-slate-400">{item[0]}</p>
               <p className="mt-2 font-display text-lg font-bold">{item[1]}</p>
+              {breakdown ? (
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-2">
+                  {breakdown.map(([label, value, tone]) => (
+                    <div key={label}>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
+                      <p className={`mt-1 truncate font-mono text-xs font-bold ${tone}`}>{formatCurrency(Number(value))}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </article>
           );
         })}
       </section> : null}
 
-      <section className="mt-3 overflow-hidden rounded-[22px] border border-white/8 bg-[#101319]">
+      <section className="premium-card mt-3 overflow-hidden rounded-[22px]">
         <div className="grid grid-cols-2">
           <div className="p-4">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">Total de entradas</p>
@@ -336,7 +440,38 @@ export function ReportsView({
         </div>
       </section>
 
-      <section className="mt-3 rounded-[22px] border border-white/8 bg-[#101319] p-4">
+      <section className="premium-card mt-3 rounded-[22px] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-rose-300">Composição das despesas</p>
+            <h2 className="font-display text-lg font-bold text-white">Fixo, parcelado e variável</h2>
+          </div>
+          <TrendingDown size={20} className="shrink-0 text-rose-300" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {expenseBreakdown.map((item) => {
+            const percentage = expenseBreakdownTotal > 0 ? (Math.max(0, item.total) / expenseBreakdownTotal) * 100 : 0;
+            return (
+              <div key={item.key} className="min-w-0">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-slate-100">{item.label}</span>
+                    <span className="block text-[10px] text-slate-500">
+                      {item.count} {item.count === 1 ? 'lançamento' : 'lançamentos'} · {percentage.toFixed(1).replace('.', ',')}%
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-mono text-sm font-bold text-white">{formatCurrency(item.total)}</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8">
+                  <div className="h-full rounded-full" style={{ width: `${percentage}%`, backgroundColor: EXPENSE_BREAKDOWN_COLORS[item.key] }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="premium-card mt-3 rounded-[22px] p-4">
         <div className="flex items-start justify-between gap-3">
           <span className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
@@ -353,7 +488,7 @@ export function ReportsView({
           </span>
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
-          <div className={`h-full rounded-full ${savingsZone.bar}`} style={{ width: `${savingsGoal.progress}%` }} />
+          <div className={`h-full rounded-full ${savingsZone.bar}`} style={{ width: `${Math.min(100, savingsGoal.progress)}%` }} />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 text-[10px]">
           <span className="text-slate-500">Economizado <strong className="text-slate-300">{formatCurrency(savingsGoal.saved)}</strong></span>
@@ -363,74 +498,116 @@ export function ReportsView({
         </div>
       </section>
 
-      <div className="mt-6 grid gap-5">
+      <div className="hidden">
         <section>
           <div className="flex items-end justify-between gap-3">
-            <h2 className="font-display text-lg font-bold text-white">Entradas</h2>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white">Entradas</h2>
+              <p className="mt-1 text-xs text-slate-500">{scopeHint}</p>
+            </div>
             <div className="text-right">
               <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Total</p>
               <p className="font-mono text-sm font-bold text-emerald-300">{formatCurrency(visibleInflows)}</p>
             </div>
           </div>
           <div className="mt-3 grid gap-2">
-            <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            <button
+              type="button"
+              onClick={() => setShowIncomeBreakdown((current) => !current)}
+              className="flex items-center justify-between rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-4 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-emerald-100">Total de entradas</span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {effectiveReportScope === 'general' ? 'Receitas + reembolsos de terceiros' : 'Somente receitas pessoais'}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-sm font-bold text-white">{formatCurrency(visibleInflows)}</span>
+                {showIncomeBreakdown ? <ChevronUp size={16} className="text-emerald-300" /> : <ChevronDown size={16} className="text-emerald-300" />}
+              </span>
+            </button>
+            {showIncomeBreakdown ? <>
+            <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"><Wallet size={18} /></span>
                 Receitas
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.income)}</span>
             </article>
-            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="cosmic-card rounded-2xl border border-white/8 p-4">
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
                   Reembolsos
                 </span>
-                <span className="font-mono font-bold text-white">{formatCurrency(report.current.thirdParty)}</span>
+                <span className="font-mono font-bold text-white">{formatCurrency(reimbursementExpected)}</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-3 text-xs">
-                <div><p className="text-slate-500">Concluídos</p><p className="mt-1 font-mono font-bold text-emerald-300">{formatCurrency(report.current.reimbursementsReceived)}</p></div>
-                <div><p className="text-slate-500">Pendentes</p><p className="mt-1 font-mono font-bold text-amber-300">{formatCurrency(report.current.reimbursementsPending)}</p></div>
+                <div><p className="text-slate-500">Concluídos</p><p className="mt-1 font-mono font-bold text-emerald-300">{formatCurrency(reimbursementReceived)}</p></div>
+                <div><p className="text-slate-500">Pendentes</p><p className="mt-1 font-mono font-bold text-amber-300">{formatCurrency(reimbursementPending)}</p></div>
               </div>
             </article> : null}
+            </> : null}
           </div>
         </section>
 
         <section>
           <div className="flex items-end justify-between gap-3">
-            <h2 className="font-display text-lg font-bold text-white">Saídas</h2>
+            <div>
+              <h2 className="font-display text-lg font-bold text-white">Saídas</h2>
+              <p className="mt-1 text-xs text-slate-500">{scopeHint}</p>
+            </div>
             <div className="text-right">
               <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Total</p>
               <p className="font-mono text-sm font-bold text-rose-300">{formatCurrency(visibleOutflows)}</p>
             </div>
           </div>
           <div className="mt-3 grid gap-2">
-            {effectiveReportScope === 'general' || !reimbursementsEnabled ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            <button
+              type="button"
+              onClick={() => setShowOutflowBreakdown((current) => !current)}
+              className="flex items-center justify-between rounded-2xl border border-rose-400/15 bg-rose-500/[0.07] p-4 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-rose-100">Total de saídas</span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {effectiveReportScope === 'general' ? 'Meus gastos + valores de terceiros' : 'Somente meus gastos'}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-sm font-bold text-white">{formatCurrency(visibleOutflows)}</span>
+                {showOutflowBreakdown ? <ChevronUp size={16} className="text-rose-300" /> : <ChevronDown size={16} className="text-rose-300" />}
+              </span>
+            </button>
+            {showOutflowBreakdown ? <>
+            {effectiveReportScope === 'general' || !reimbursementsEnabled ? <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300"><Landmark size={18} /></span>
                 Gastos em contas
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.accountExpenses)}</span>
             </article> : null}
-            <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300"><CreditCard size={18} /></span>
                 Gastos no cartão
               </span>
               <span className="font-mono font-bold text-white">{formatCurrency(report.current.cardExpenses)}</span>
             </article>
-            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="flex items-center justify-between rounded-2xl border border-white/8 bg-[#101319] p-4">
+            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
               <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
                 Valores de terceiros
               </span>
-              <span className="font-mono font-bold text-white">{formatCurrency(report.current.thirdParty)}</span>
+              <span className="font-mono font-bold text-white">{formatCurrency(currentMonthlyResult.thirdPartyExpenses)}</span>
             </article> : null}
+            </> : null}
           </div>
         </section>
       </div>
 
-      <section className="mt-6 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+      <section className="premium-card mt-6 rounded-[24px] p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-300">Últimos 6 meses</p>
@@ -471,7 +648,7 @@ export function ReportsView({
         </div>
       </section>
 
-      <section className="mt-6 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+      <section className="premium-card mt-6 rounded-[24px] p-5">
         <div className="flex items-center gap-2">
           <BarChart3 size={18} className="text-sky-300" />
           <h2 className="font-display text-lg font-bold text-white">Receitas vs. despesas</h2>
@@ -508,7 +685,7 @@ export function ReportsView({
 
       <BudgetSection month={month} transactions={transactions} categories={categories} />
 
-      <section className="mt-5 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+      <section className="premium-card mt-5 rounded-[24px] p-5">
         <div>
           <p className="text-xs text-slate-500">Maior gasto</p>
           <h2 className="font-display text-lg font-bold text-white">{largestCategory?.name ?? 'Gastos por categoria'}</h2>

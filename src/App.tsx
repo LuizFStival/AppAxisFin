@@ -11,9 +11,11 @@ import {
   DashboardView,
   GoalsView,
   ModalLoadingFallback,
+  MonthCenterView,
   NotificationsView,
   ProfileView,
   ReimbursementsView,
+  ReserveBoxesView,
   ReportsView,
   TransactionsView,
   ViewLoadingFallback,
@@ -25,13 +27,15 @@ import { useInvoiceOrdering } from './features/cards/useInvoiceOrdering';
 import { categoryRepository } from './features/categories/categoryRepository';
 import { clearFinanceSnapshot, loadFinanceSnapshot } from './features/finance/financeStore';
 import { reimbursementRepository } from './features/reimbursements/reimbursementRepository';
+import { reserveBoxRepository } from './features/reserve-boxes/reserveBoxRepository';
 import { profileRepository } from './features/profile/profileRepository';
 import { useNotifications } from './features/notifications/useNotifications';
 import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
-import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, Transaction } from './types';
-import { getCurrentMonthKey, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
-import { addMonths } from './lib/utils/date';
+import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, ReserveBoxMovementType, Transaction } from './types';
+import { getCurrentMonthKey, getTransactionReimbursementBaseAmount, getTransactionReimbursementReceivedAmount, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
+import { getCardInvoiceClosingMonth } from './lib/utils/cardInvoices';
+import { addMonths, formatLocalDate } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
 import { getUserFriendlyError } from './lib/utils/userFriendlyError';
 
@@ -41,6 +45,8 @@ const emptyFinanceSnapshot: FinanceSnapshot = {
   categories: [],
   reimbursementPeople: [],
   recurringTransactions: [],
+  reserveBoxes: [],
+  reserveBoxMovements: [],
   transactions: [],
 };
 
@@ -66,6 +72,12 @@ function withoutRecurringOccurrenceMeta(transaction: Omit<Transaction, 'id'>): O
   };
 }
 
+function isSameRecurringOccurrence(transaction: Transaction, recurringTransactionId: string, recurringOccurrenceDate: string) {
+  const meta = readTransactionMeta(transaction.notes);
+  return (transaction.recurringTransactionId ?? meta.recurringTransactionId) === recurringTransactionId
+    && (transaction.recurringOccurrenceDate ?? meta.recurringOccurrenceDate) === recurringOccurrenceDate;
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('home');
   const [snapshot, setSnapshot] = useState<FinanceSnapshot>(emptyFinanceSnapshot);
@@ -80,6 +92,7 @@ export default function App() {
   const [newCategoryFlow, setNewCategoryFlow] = useState<Category['flow']>('expense');
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [selectedCardId, setSelectedCardId] = useState('');
+  const [selectedReimbursementPersonId, setSelectedReimbursementPersonId] = useState<string | null>(null);
   const [dashboardTransactionFilter, setDashboardTransactionFilter] = useState<DashboardTransactionFilter | null>(null);
   const [showBalances, setShowBalances] = useState(true);
   const [activeMonth, setActiveMonth] = useState(getCurrentMonthKey);
@@ -123,12 +136,14 @@ export default function App() {
     setSnapshot((current) => ({ ...current, accounts }));
   }
 
-  async function runAppAction(action: () => Promise<void>, fallback: string) {
+  async function runAppAction<T>(action: () => Promise<T>, fallback: string): Promise<T | undefined> {
     try {
-      await action();
+      const result = await action();
       setAppError('');
+      return result;
     } catch (error) {
       setAppError(getUserFriendlyError(error, fallback));
+      return undefined;
     }
   }
 
@@ -136,12 +151,41 @@ export default function App() {
     currentView,
     runAction: runAppAction,
     setSnapshot,
+    recurringTransactions: snapshot.recurringTransactions,
     transactions: snapshot.transactions,
   });
+  const activeAccounts = useMemo(() => snapshot.accounts.filter((account) => account.isActive), [snapshot.accounts]);
+  const activeCards = useMemo(() => snapshot.cards.filter((card) => card.isActive), [snapshot.cards]);
+  const accountOptionsForCardModal = useMemo(() => {
+    const linkedAccount = editingCard?.accountId
+      ? snapshot.accounts.find((account) => account.id === editingCard.accountId)
+      : undefined;
+    const options = linkedAccount && !linkedAccount.isActive ? [linkedAccount, ...activeAccounts] : activeAccounts;
+    return Array.from(new Map(options.map((account) => [account.id, account])).values());
+  }, [activeAccounts, editingCard, snapshot.accounts]);
+  const accountsForEntryModal = useMemo(() => {
+    const relatedAccountIds = [
+      editingTransaction?.accountId,
+      editingTransaction?.fromAccountId,
+      editingTransaction?.toAccountId,
+      editingTransaction?.reimbursementReceivedAccountId,
+    ].filter(Boolean) as string[];
+    const relatedAccounts = snapshot.accounts.filter((account) => relatedAccountIds.includes(account.id));
+    return Array.from(new Map([...activeAccounts, ...relatedAccounts].map((account) => [account.id, account])).values());
+  }, [activeAccounts, editingTransaction, snapshot.accounts]);
+  const cardsForEntryModal = useMemo(() => {
+    const relatedCard = editingTransaction?.cardId
+      ? snapshot.cards.find((card) => card.id === editingTransaction.cardId)
+      : undefined;
+    const options = relatedCard && !relatedCard.isActive ? [...activeCards, relatedCard] : activeCards;
+    return Array.from(new Map(options.map((card) => [card.id, card])).values());
+  }, [activeCards, editingTransaction, snapshot.cards]);
 
   const summary = useMemo(
-    () => summarizeDashboard(snapshot.accounts, snapshot.transactions, activeMonth),
-    [activeMonth, snapshot.accounts, snapshot.transactions],
+    () => summarizeDashboard(activeAccounts, snapshot.transactions, activeMonth, snapshot.cards, {
+      includeReimbursements: user.reimbursementsEnabled,
+    }),
+    [activeAccounts, activeMonth, snapshot.cards, snapshot.transactions, user.reimbursementsEnabled],
   );
 
   async function handleSaveAccount(input: {
@@ -165,6 +209,14 @@ export default function App() {
     setSnapshot((current) => ({
       ...current,
       accounts: [...current.accounts, saved],
+    }));
+  }
+
+  async function handleUpdateAccountBalance(account: FinanceSnapshot['accounts'][number], balance: number, date: string = formatLocalDate(new Date())) {
+    const saved = await accountRepository.updateBalance(account.id, balance, date);
+    setSnapshot((current) => ({
+      ...current,
+      accounts: current.accounts.map((item) => item.id === saved.id ? saved : item),
     }));
   }
 
@@ -194,9 +246,101 @@ export default function App() {
     }));
   }
 
+  async function handleCreateReserveBox(input: {
+    name: string;
+    institution: string;
+    cdiPercent: number;
+    initialBalance: number;
+    createdOn: string;
+    goal?: string;
+    color: string;
+    icon: string;
+  }) {
+    const saved = await reserveBoxRepository.create(input);
+    setSnapshot((current) => ({
+      ...current,
+      reserveBoxes: [...current.reserveBoxes, saved],
+    }));
+  }
+
+  async function handleAddReserveBoxMovement(input: {
+    reserveBoxId: string;
+    type: ReserveBoxMovementType;
+    amount: number;
+    date: string;
+    description?: string;
+    createAccountIncome?: boolean;
+    accountId?: string;
+  }) {
+    const result = await reserveBoxRepository.addMovement(input);
+
+    if (input.type === 'withdrawal' && input.createAccountIncome && input.accountId) {
+      const boxName = snapshot.reserveBoxes.find((box) => box.id === input.reserveBoxId)?.name ?? 'caixinha';
+      await transactionRepository.create({
+        description: `Resgate ${boxName}`,
+        amount: input.amount,
+        flow: 'income',
+        status: 'paid',
+        date: input.date,
+        accountId: input.accountId,
+        notes: input.description ? `Resgate de caixinha: ${input.description}` : 'Resgate de caixinha',
+      });
+    }
+
+    const loaded = await loadFinanceSnapshot();
+    setSnapshot({
+      ...loaded,
+      reserveBoxes: loaded.reserveBoxes.map((box) => box.id === result.box.id ? result.box : box),
+      reserveBoxMovements: loaded.reserveBoxMovements.some((movement) => movement.id === result.movement.id)
+        ? loaded.reserveBoxMovements
+        : [result.movement, ...loaded.reserveBoxMovements],
+    });
+  }
+
+  function assignInvoiceSortOrderToNewTransactions(transactions: Array<Omit<Transaction, 'id'>>): Array<Omit<Transaction, 'id'>> {
+    const nextOrderByInvoice = new Map<string, number>();
+
+    return transactions.map((transaction) => {
+      if (!transaction.cardId) return transaction;
+
+      const card = snapshot.cards.find((item) => item.id === transaction.cardId);
+      if (!card) return transaction;
+
+      const meta = readTransactionMeta(transaction.notes);
+      if (typeof meta.invoiceSortOrder === 'number' && Number.isFinite(meta.invoiceSortOrder)) return transaction;
+
+      const invoiceMonth = getCardInvoiceClosingMonth(card, transaction.date);
+      const invoiceKey = `${transaction.cardId}:${invoiceMonth}`;
+      let nextOrder = nextOrderByInvoice.get(invoiceKey);
+
+      if (nextOrder === undefined) {
+        const existingOrders = snapshot.transactions
+          .filter((item) => item.cardId === transaction.cardId)
+          .filter((item) => getCardInvoiceClosingMonth(card, item.date) === invoiceMonth)
+          .map((item) => readTransactionMeta(item.notes).invoiceSortOrder)
+          .filter((order): order is number => typeof order === 'number' && Number.isFinite(order));
+
+        if (existingOrders.length === 0) return transaction;
+        nextOrder = Math.max(...existingOrders) + 1000;
+      } else {
+        nextOrder += 1000;
+      }
+
+      nextOrderByInvoice.set(invoiceKey, nextOrder);
+
+      return {
+        ...transaction,
+        notes: writeTransactionNotes(getVisibleNotes(transaction.notes), {
+          ...meta,
+          invoiceSortOrder: nextOrder,
+        }),
+      };
+    });
+  }
+
   async function handleSaveTransaction(transaction: Omit<Transaction, 'id'> | Array<Omit<Transaction, 'id'>>, scope: 'single' | 'forward' = 'single') {
     if (Array.isArray(transaction)) {
-      const saved = await transactionRepository.createMany(transaction);
+      const saved = await transactionRepository.createMany(assignInvoiceSortOrderToNewTransactions(transaction));
       setSnapshot((current) => ({
         ...current,
         transactions: [...saved, ...current.transactions].sort((left, right) => right.date.localeCompare(left.date)),
@@ -213,6 +357,41 @@ export default function App() {
         ? snapshot.recurringTransactions.find((rule) => rule.id === recurringTransactionId)
         : undefined;
       const nextMeta = readTransactionMeta(transaction.notes);
+
+      if (recurringRule && recurringOccurrenceDate && scope === 'forward' && nextMeta.entryMode === 'fixed') {
+        const baseTransaction = withoutRecurringOccurrenceMeta(transaction);
+        const endDate = recurringRule.endDate && recurringRule.endDate >= transaction.date
+          ? recurringRule.endDate
+          : undefined;
+        const nextRecurringTransaction = {
+          ...baseTransaction,
+          notes: writeTransactionNotes(getVisibleNotes(baseTransaction.notes), {
+            ...readTransactionMeta(baseTransaction.notes),
+            entryMode: 'fixed' as const,
+            generatedFrom: transaction.date,
+            generatedUntil: endDate,
+          }),
+        };
+        const forwardMaterializedIds = snapshot.transactions
+          .filter((item) => !item.isProjected)
+          .filter((item) => {
+            const itemMeta = readTransactionMeta(item.notes);
+            const itemRecurringId = item.recurringTransactionId ?? itemMeta.recurringTransactionId;
+            const itemOccurrenceDate = item.recurringOccurrenceDate ?? itemMeta.recurringOccurrenceDate;
+            return itemRecurringId === recurringRule.id
+              && Boolean(itemOccurrenceDate)
+              && itemOccurrenceDate! >= recurringOccurrenceDate;
+          })
+          .map((item) => item.id);
+
+        await recurringRepository.stopFrom(recurringRule, recurringOccurrenceDate);
+        if (forwardMaterializedIds.length > 0) await transactionRepository.removeMany(forwardMaterializedIds);
+        await recurringRepository.createFromTransaction(nextRecurringTransaction, endDate);
+        await loadSnapshot();
+        await refreshAccounts();
+        setEditingTransaction(null);
+        return;
+      }
 
       if (recurringRule && recurringOccurrenceDate && nextMeta.entryMode === 'variable') {
         const variableTransaction = withoutRecurringOccurrenceMeta(transaction);
@@ -290,7 +469,8 @@ export default function App() {
       return;
     }
 
-    const saved = await transactionRepository.create(transaction);
+    const [transactionWithSortOrder] = assignInvoiceSortOrderToNewTransactions([transaction]);
+    const saved = await transactionRepository.create(transactionWithSortOrder);
     setSnapshot((current) => ({
       ...current,
       transactions: [saved, ...current.transactions],
@@ -372,14 +552,67 @@ export default function App() {
     await refreshAccounts();
   }
 
-  async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string) {
+  async function handleMarkAccountExpensePaid(transaction: Transaction, input: { accountId: string; paymentDate: string }) {
+    if (!input.accountId) throw new Error('Selecione de qual conta o saldo vai sair.');
+    if (!input.paymentDate) throw new Error('Selecione a data do pagamento.');
+
+    const nextTransaction: Transaction = {
+      ...transaction,
+      status: 'paid',
+      accountId: input.accountId,
+      date: input.paymentDate,
+    };
+
+    if (transaction.isProjected) {
+      const { id: _id, isProjected: _isProjected, ...transactionInput } = nextTransaction;
+      const saved = await transactionRepository.create(transactionInput);
+      setSnapshot((current) => ({
+        ...current,
+        transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
+      }));
+      await refreshAccounts();
+      return;
+    }
+
+    const { id: _id, isProjected: _isProjected, ...transactionInput } = nextTransaction;
+    const saved = await transactionRepository.update(transaction.id, transactionInput);
+    setSnapshot((current) => ({
+      ...current,
+      transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
+    }));
+    await refreshAccounts();
+  }
+
+  async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string, receivedAmount?: number) {
+    const currentMeta = readTransactionMeta(transaction.notes);
+    const originalReimbursementAmount = getTransactionReimbursementBaseAmount(transaction);
+    const alreadyReceivedAmount = getTransactionReimbursementReceivedAmount(transaction);
+    const currentPendingAmount = Math.max(0, originalReimbursementAmount - alreadyReceivedAmount);
+    const normalizedReceivedAmount = Math.max(0, Math.min(currentPendingAmount, receivedAmount ?? currentPendingAmount));
+    const nextReceivedTotal = Math.min(originalReimbursementAmount, alreadyReceivedAmount + normalizedReceivedAmount);
+    const remainingReimbursementAmount = Math.max(0, originalReimbursementAmount - nextReceivedTotal);
+    const nextReimbursementStatus = remainingReimbursementAmount > 0 ? 'pending' as const : 'received' as const;
+    const nextReceivedAt = new Date().toISOString().slice(0, 10);
+    const nextMeta = {
+      ...currentMeta,
+      reimbursementOriginalAmount: originalReimbursementAmount,
+      reimbursementPayments: [
+        ...(currentMeta.reimbursementPayments ?? []),
+        { amount: normalizedReceivedAmount, accountId, date: nextReceivedAt },
+      ],
+      reimbursementCarryMonth: remainingReimbursementAmount > 0 ? currentMeta.reimbursementCarryMonth : undefined,
+    };
+    const nextNotes = writeTransactionNotes(getVisibleNotes(transaction.notes), nextMeta);
+
     if (transaction.isProjected) {
       const { id: _id, isProjected: _isProjected, ...input } = transaction;
       const saved = await transactionRepository.create({
         ...input,
+        notes: nextNotes,
         isReimbursable: true,
-        reimbursementStatus: 'received',
-        reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
+        reimbursementAmount: nextReimbursementStatus === 'received' ? originalReimbursementAmount : remainingReimbursementAmount,
+        reimbursementStatus: nextReimbursementStatus,
+        reimbursementReceivedAt: nextReceivedAt,
         reimbursementReceivedAccountId: accountId,
       });
       setSnapshot((current) => ({
@@ -392,9 +625,11 @@ export default function App() {
 
     const saved = await transactionRepository.update(transaction.id, {
       ...transaction,
+      notes: nextNotes,
       isReimbursable: true,
-      reimbursementStatus: 'received',
-      reimbursementReceivedAt: new Date().toISOString().slice(0, 10),
+      reimbursementAmount: nextReimbursementStatus === 'received' ? originalReimbursementAmount : remainingReimbursementAmount,
+      reimbursementStatus: nextReimbursementStatus,
+      reimbursementReceivedAt: nextReceivedAt,
       reimbursementReceivedAccountId: accountId,
     });
     setSnapshot((current) => ({
@@ -402,6 +637,68 @@ export default function App() {
       transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
     }));
     await refreshAccounts();
+  }
+
+  async function handleCarryReimbursement(transaction: Transaction, targetMonth = shiftMonthKey(activeMonth, 1)) {
+    const meta = readTransactionMeta(transaction.notes);
+    const nextNotes = writeTransactionNotes(getVisibleNotes(transaction.notes), {
+      ...meta,
+      reimbursementCarryMonth: targetMonth,
+    });
+
+    if (transaction.isProjected) {
+      const { id: _id, isProjected: _isProjected, ...input } = transaction;
+      const saved = await transactionRepository.create({ ...input, notes: nextNotes });
+      setSnapshot((current) => ({
+        ...current,
+        transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
+      }));
+      await refreshAccounts();
+      return;
+    }
+
+    const saved = await transactionRepository.update(transaction.id, { ...transaction, notes: nextNotes });
+    setSnapshot((current) => ({
+      ...current,
+      transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
+    }));
+  }
+
+  async function handleSkipFixedOccurrence(transaction: Transaction): Promise<boolean> {
+    const meta = readTransactionMeta(transaction.notes);
+    const recurringTransactionId = transaction.recurringTransactionId ?? meta.recurringTransactionId;
+    const recurringOccurrenceDate = transaction.recurringOccurrenceDate ?? meta.recurringOccurrenceDate;
+    const recurringRule = recurringTransactionId
+      ? snapshot.recurringTransactions.find((rule) => rule.id === recurringTransactionId)
+      : undefined;
+
+    if (!recurringRule || !recurringOccurrenceDate) {
+      throw new Error('Não foi possível localizar a regra desta despesa fixa.');
+    }
+
+    const confirmed = window.confirm(`Marcar "${transaction.description}" como não usada neste mês? Apenas esta ocorrência será removida.`);
+    if (!confirmed) return false;
+
+    const recurringRuleMeta = readTransactionMeta(recurringRule.notes);
+    const recurringRuleNotes = writeTransactionNotes(getVisibleNotes(recurringRule.notes), {
+      ...recurringRuleMeta,
+      recurringExcludedDates: Array.from(new Set([
+        ...(recurringRuleMeta.recurringExcludedDates ?? []),
+        recurringOccurrenceDate,
+      ])).sort(),
+    });
+
+    await recurringRepository.excludeOccurrence(recurringRule, recurringOccurrenceDate);
+    if (!transaction.isProjected) await transactionRepository.remove(transaction.id);
+    setSnapshot((current) => ({
+      ...current,
+      recurringTransactions: current.recurringTransactions.map((rule) => (
+        rule.id === recurringRule.id ? { ...rule, notes: recurringRuleNotes } : rule
+      )),
+      transactions: current.transactions.filter((item) => !isSameRecurringOccurrence(item, recurringTransactionId, recurringOccurrenceDate)),
+    }));
+    await refreshAccounts();
+    return true;
   }
 
   async function handlePayCardInvoice(input: {
@@ -513,6 +810,24 @@ export default function App() {
         if (!transaction.isProjected) {
           await transactionRepository.remove(transaction.id);
         }
+        setSnapshot((current) => ({
+          ...current,
+          transactions: current.transactions.filter((item) => item.id !== transaction.id),
+          recurringTransactions: current.recurringTransactions.map((rule) => (
+            rule.id === recurringRule.id
+              ? {
+                ...rule,
+                notes: writeTransactionNotes(getVisibleNotes(rule.notes), {
+                  ...readTransactionMeta(rule.notes),
+                  recurringExcludedDates: Array.from(new Set([
+                    ...(readTransactionMeta(rule.notes).recurringExcludedDates ?? []),
+                    recurringOccurrenceDate,
+                  ])).sort(),
+                }),
+              }
+              : rule
+          )),
+        }));
         await loadSnapshot();
         await refreshAccounts();
         return;
@@ -601,6 +916,22 @@ export default function App() {
     }
   }
 
+  async function handleSetAccountActive(account: FinanceSnapshot['accounts'][number], isActive: boolean) {
+    const confirmed = window.confirm(`${isActive ? 'Desarquivar' : 'Arquivar'} a conta "${account.name}"? ${isActive ? 'Ela voltará para listas e lançamentos.' : 'Ela sairá das listas principais, mas o histórico será mantido.'}`);
+    if (!confirmed) return;
+
+    try {
+      const saved = await accountRepository.setActive(account.id, isActive);
+      setSnapshot((current) => ({
+        ...current,
+        accounts: current.accounts.map((item) => item.id === saved.id ? saved : item),
+      }));
+      if (!isActive && selectedAccountId === account.id) setSelectedAccountId('');
+    } catch (error) {
+      alert(getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} a conta. Tente novamente.`));
+    }
+  }
+
   async function handleDeleteCard(card: FinanceSnapshot['cards'][number]) {
     const linkedTransactions = snapshot.transactions.filter((transaction) => transaction.cardId === card.id).length;
     const confirmed = window.confirm(`Excluir o cartão "${card.name}"? Esta ação apaga o cartão e ${linkedTransactions} lançamento(s) das faturas vinculadas. Não pode ser desfeita.`);
@@ -615,6 +946,22 @@ export default function App() {
       }));
     } catch (error) {
       alert(getUserFriendlyError(error, 'Não foi possível excluir o cartão. Tente novamente.'));
+    }
+  }
+
+  async function handleSetCardActive(card: FinanceSnapshot['cards'][number], isActive: boolean) {
+    const confirmed = window.confirm(`${isActive ? 'Desarquivar' : 'Arquivar'} o cartão "${card.name}"? ${isActive ? 'Ele voltará para listas e lançamentos.' : 'Ele sairá das listas principais, mas as faturas antigas serão mantidas.'}`);
+    if (!confirmed) return;
+
+    try {
+      const saved = await cardRepository.setActive(card.id, isActive);
+      setSnapshot((current) => ({
+        ...current,
+        cards: current.cards.map((item) => item.id === saved.id ? saved : item),
+      }));
+      if (!isActive && selectedCardId === card.id) setSelectedCardId('');
+    } catch (error) {
+      alert(getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} o cartão. Tente novamente.`));
     }
   }
 
@@ -674,6 +1021,7 @@ export default function App() {
         setDashboardTransactionFilter(null);
         if (view === 'accounts') setSelectedAccountId('');
         if (view === 'cards') setSelectedCardId('');
+        setSelectedReimbursementPersonId(null);
       }}
       onAdd={() => {
         setEditingTransaction(null);
@@ -697,13 +1045,15 @@ export default function App() {
         {currentView === 'home' ? (
           <DashboardView
           userName={user.name}
-          accounts={snapshot.accounts}
+          accounts={activeAccounts}
           cards={snapshot.cards}
           categories={snapshot.categories}
           transactions={snapshot.transactions}
+          reserveBoxes={snapshot.reserveBoxes}
           activeMonth={activeMonth}
           summary={summary}
           savingsPreferences={user}
+          reimbursementsEnabled={user.reimbursementsEnabled}
           showBalances={showBalances}
           notificationCount={unreadCount}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
@@ -732,7 +1082,11 @@ export default function App() {
             setSelectedCardId(cardId ?? '');
             setCurrentView('cards');
           }}
-          onViewReimbursements={() => setCurrentView('reimbursements')}
+          onViewReserves={() => setCurrentView('reserves')}
+          onViewReimbursements={() => {
+            setSelectedReimbursementPersonId(null);
+            setCurrentView('reimbursements');
+          }}
           onViewDashboardTransactions={(filter) => {
             setDashboardTransactionFilter(filter);
             setCurrentView('transactions');
@@ -746,6 +1100,51 @@ export default function App() {
           onDeleteCard={handleDeleteCard}
           />
         ) : null}
+
+      {currentView === 'month-center' ? (
+        <MonthCenterView
+          accounts={snapshot.accounts}
+          cards={snapshot.cards}
+          categories={snapshot.categories}
+          people={snapshot.reimbursementPeople}
+          transactions={snapshot.transactions}
+          activeMonth={activeMonth}
+          summary={summary}
+          reimbursementsEnabled={user.reimbursementsEnabled}
+          onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
+          onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
+          onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
+          onOpenCards={(cardId) => {
+            setSelectedCardId(cardId ?? '');
+            setCurrentView('cards');
+          }}
+          onOpenTransactions={() => {
+            setDashboardTransactionFilter('pending');
+            setCurrentView('transactions');
+          }}
+          onOpenReimbursements={(personId) => {
+            setSelectedReimbursementPersonId(personId ?? null);
+            setCurrentView('reimbursements');
+          }}
+          onPayInvoice={handlePayCardInvoice}
+          onMarkAccountExpensePaid={(transaction, input) => runAppAction(
+            () => handleMarkAccountExpensePaid(transaction, input),
+            'Não foi possível registrar o pagamento. Tente novamente.',
+          )}
+          onMarkReimbursementReceived={(transaction, accountId, receivedAmount) => runAppAction(
+            () => handleMarkReimbursementReceived(transaction, accountId, receivedAmount),
+            'Não foi possível atualizar o reembolso. Tente novamente.',
+          )}
+          onCarryReimbursement={(transaction) => runAppAction(
+            () => handleCarryReimbursement(transaction),
+            'Não foi possível levar o reembolso para o próximo mês. Tente novamente.',
+          )}
+          onSkipFixedOccurrence={(transaction) => runAppAction(
+            () => handleSkipFixedOccurrence(transaction),
+            'Não foi possível marcar a despesa como não usada neste mês. Tente novamente.',
+          )}
+        />
+      ) : null}
 
       {currentView === 'accounts' ? (
         <AccountsView
@@ -764,12 +1163,17 @@ export default function App() {
             setEditingAccount(account);
             setIsAddAccountOpen(true);
           }}
-          onDeleteAccount={handleDeleteAccount}
+          onUpdateAccountBalance={handleUpdateAccountBalance}
+          onArchiveAccount={(account) => void handleSetAccountActive(account, false)}
+          onRestoreAccount={(account) => void handleSetAccountActive(account, true)}
           onOpenInvoice={(cardId, period) => {
             setSelectedCardId(cardId);
             setActiveMonth(period);
             setCurrentView('cards');
           }}
+          onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
+          onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
+          onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
         />
       ) : null}
 
@@ -802,6 +1206,19 @@ export default function App() {
             setIsAddCardOpen(true);
           }}
           onDeleteCard={handleDeleteCard}
+          onArchiveCard={(card) => void handleSetCardActive(card, false)}
+          onRestoreCard={(card) => void handleSetCardActive(card, true)}
+        />
+      ) : null}
+
+      {currentView === 'reserves' ? (
+        <ReserveBoxesView
+          boxes={snapshot.reserveBoxes}
+          movements={snapshot.reserveBoxMovements}
+          accounts={activeAccounts}
+          showBalances={showBalances}
+          onCreateBox={handleCreateReserveBox}
+          onAddMovement={handleAddReserveBoxMovement}
         />
       ) : null}
 
@@ -827,6 +1244,10 @@ export default function App() {
             () => handleDeleteTransaction(transaction),
             'Não foi possível excluir o lançamento. Tente novamente.',
           )}
+          onOpenReimbursements={(personId) => {
+            setSelectedReimbursementPersonId(personId);
+            setCurrentView('reimbursements');
+          }}
         />
       ) : null}
 
@@ -837,12 +1258,17 @@ export default function App() {
           cards={snapshot.cards}
           transactions={snapshot.transactions}
           activeMonth={activeMonth}
+          initialPersonId={selectedReimbursementPersonId}
           onPreviousMonth={() => setActiveMonth((month) => shiftMonthKey(month, -1))}
           onNextMonth={() => setActiveMonth((month) => shiftMonthKey(month, 1))}
           onCurrentMonth={() => setActiveMonth(getCurrentMonthKey())}
-          onMarkReceived={(transaction, accountId) => runAppAction(
-            () => handleMarkReimbursementReceived(transaction, accountId),
+          onMarkReceived={(transaction, accountId, receivedAmount) => runAppAction(
+            () => handleMarkReimbursementReceived(transaction, accountId, receivedAmount),
             'Não foi possível atualizar o reembolso. Tente novamente.',
+          )}
+          onCarryReimbursement={(transaction) => runAppAction(
+            () => handleCarryReimbursement(transaction),
+            'Não foi possível levar o reembolso para o próximo mês. Tente novamente.',
           )}
           onEditTransaction={(transaction) => {
             setEditingTransaction(transaction);
@@ -855,6 +1281,7 @@ export default function App() {
         <ReportsView
           month={activeMonth}
           accounts={snapshot.accounts}
+          cards={snapshot.cards}
           transactions={snapshot.transactions}
           categories={snapshot.categories}
           savingsPreferences={user}
@@ -877,7 +1304,7 @@ export default function App() {
       ) : null}
 
       {currentView === 'goals' ? (
-        <GoalsView categories={snapshot.categories} />
+        <GoalsView categories={snapshot.categories} reimbursementPeople={snapshot.reimbursementPeople} />
       ) : null}
 
         {currentView === 'profile' ? (
@@ -903,7 +1330,8 @@ export default function App() {
             setEditingAccount(account);
             setIsAddAccountOpen(true);
           }}
-          onDeleteAccount={handleDeleteAccount}
+          onArchiveAccount={(account) => void handleSetAccountActive(account, false)}
+          onRestoreAccount={(account) => void handleSetAccountActive(account, true)}
           onAddCard={() => {
             setEditingCard(null);
             setIsAddCardOpen(true);
@@ -912,7 +1340,8 @@ export default function App() {
             setEditingCard(card);
             setIsAddCardOpen(true);
           }}
-          onDeleteCard={handleDeleteCard}
+          onArchiveCard={(card) => void handleSetCardActive(card, false)}
+          onRestoreCard={(card) => void handleSetCardActive(card, true)}
           onAddCategory={(flow) => {
             setEditingCategory(null);
             setNewCategoryFlow(flow);
@@ -933,15 +1362,26 @@ export default function App() {
         {isAddOpen ? (
           <AddEntryModal
             isOpen
-            accounts={snapshot.accounts}
-            cards={snapshot.cards}
+            accounts={accountsForEntryModal}
+            cards={cardsForEntryModal}
             categories={snapshot.categories}
             reimbursementPeople={snapshot.reimbursementPeople}
             reimbursementsEnabled={user.reimbursementsEnabled}
             transaction={editingTransaction}
+            preferredCardId={currentView === 'cards' ? (selectedCardId || activeCards[0]?.id) : undefined}
             onCreateCategory={handleCreateCategoryFromEntry}
             onCreateReimbursementPerson={handleCreateReimbursementPerson}
             onCreateRecurring={handleCreateRecurring}
+            onSkipFixedOccurrence={async (transaction) => {
+              try {
+                const didSkip = await handleSkipFixedOccurrence(transaction);
+                setAppError('');
+                return didSkip;
+              } catch (error) {
+                setAppError(getUserFriendlyError(error, 'Não foi possível marcar a despesa como não usada neste mês. Tente novamente.'));
+                return false;
+              }
+            }}
             onClose={() => {
               setIsAddOpen(false);
               setEditingTransaction(null);
@@ -953,7 +1393,7 @@ export default function App() {
         {isAddAccountOpen ? (
           <AddAccountModal
             isOpen
-            accounts={snapshot.accounts}
+            accounts={activeAccounts}
             account={editingAccount}
             onClose={() => {
               setIsAddAccountOpen(false);
@@ -966,8 +1406,8 @@ export default function App() {
         {isAddCardOpen ? (
           <AddCardModal
             isOpen
-            accounts={snapshot.accounts}
-            cards={snapshot.cards}
+            accounts={accountOptionsForCardModal}
+            cards={activeCards}
             card={editingCard}
             onClose={() => {
               setIsAddCardOpen(false);

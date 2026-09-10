@@ -98,14 +98,14 @@ export function BudgetSection({ categories, month, transactions }: BudgetSection
   const totalUsed = rows.reduce((sum, row) => sum + row.used, 0);
 
   return (
-    <section className="mt-6 rounded-[24px] border border-white/8 bg-[#101319] p-5">
+    <section className="premium-card mt-6 rounded-[24px] p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <span className="flex items-center gap-2 text-sky-300"><Target size={18} /><span className="text-[10px] font-bold uppercase tracking-widest">Planejamento</span></span>
           <h2 className="mt-1 font-display text-lg font-bold text-white">Orçamentos do mês</h2>
           <p className="mt-1 text-xs text-slate-500">Somente gastos pessoais; valores de terceiros ficam fora.</p>
         </div>
-        <button type="button" onClick={openEditor} className="flex shrink-0 items-center gap-1.5 rounded-xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs font-bold text-sky-200">
+        <button type="button" onClick={openEditor} className="flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white hover:text-black">
           <Pencil size={14} /> Ajustar
         </button>
       </div>
@@ -115,15 +115,15 @@ export function BudgetSection({ categories, month, transactions }: BudgetSection
       {!isLoading && rows.length > 0 ? (
         <>
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <div className="rounded-2xl bg-white/[0.035] p-3"><p className="text-[10px] uppercase text-slate-500">Planejado</p><p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(totalLimit)}</p></div>
-            <div className="rounded-2xl bg-white/[0.035] p-3"><p className="text-[10px] uppercase text-slate-500">Consumido</p><p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(totalUsed)}</p></div>
+            <div className="premium-card-soft rounded-2xl p-3"><p className="text-[10px] uppercase text-slate-500">Planejado</p><p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(totalLimit)}</p></div>
+            <div className="premium-card-soft rounded-2xl p-3"><p className="text-[10px] uppercase text-slate-500">Consumido</p><p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(totalUsed)}</p></div>
           </div>
           <div className="mt-3 space-y-3">
             {rows.map(({ budget, category, used, previous, percent, available }) => {
               const alert = getAlert(percent);
               const change = previous > 0 ? ((used - previous) / previous) * 100 : null;
               return (
-                <article key={budget.id} className="rounded-2xl border border-white/8 bg-white/[0.025] p-3.5">
+                <article key={budget.id} className="cosmic-card cosmic-card-hover rounded-2xl border border-white/8 p-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-white">{category?.name}</p>
@@ -145,7 +145,7 @@ export function BudgetSection({ categories, month, transactions }: BudgetSection
           </div>
         </>
       ) : !isLoading ? (
-        <button type="button" onClick={openEditor} className="mt-4 flex w-full flex-col items-center rounded-2xl border border-dashed border-white/10 px-4 py-6 text-center">
+        <button type="button" onClick={openEditor} className="premium-card-soft mt-4 flex w-full flex-col items-center rounded-2xl border-dashed px-4 py-6 text-center">
           <ShieldCheck size={28} className="text-sky-300" />
           <span className="mt-2 text-sm font-bold text-white">Definir limites por categoria</span>
           <span className="mt-1 text-xs text-slate-500">Acompanhe 70%, 90% e 100% do orçamento.</span>
@@ -154,20 +154,20 @@ export function BudgetSection({ categories, month, transactions }: BudgetSection
 
       {isEditing ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm md:items-center md:p-6">
-          <div className="max-h-[85dvh] w-full max-w-[430px] overflow-y-auto rounded-t-[28px] border border-white/10 bg-[#101319] p-5 md:rounded-[28px]">
+          <div className="premium-card premium-scroll max-h-[85dvh] w-full max-w-[430px] overflow-y-auto rounded-t-[28px] p-5 md:rounded-[28px]">
             <div className="flex items-center justify-between">
               <div><p className="text-xs text-sky-300">Orçamento mensal</p><h3 className="font-display text-xl font-bold text-white">Limites por categoria</h3></div>
               <button type="button" onClick={() => setIsEditing(false)} aria-label="Fechar" className="rounded-xl bg-white/5 p-2 text-slate-400"><X size={20} /></button>
             </div>
             <div className="mt-5 space-y-3">
               {expenseCategories.map((category) => (
-                <label key={category.id} className="block rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+                <label key={category.id} className="premium-card-soft block rounded-2xl p-3">
                   <span className="text-sm font-bold text-white">{category.name}</span>
                   <CurrencyInput value={limitInputs[category.id] ?? DEFAULT_CURRENCY_INPUT} onChange={(value) => setLimitInputs((current) => ({ ...current, [category.id]: value }))} className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#080A0E] px-3 font-mono text-white outline-none focus:border-sky-400" />
                 </label>
               ))}
             </div>
-            <button type="button" disabled={isSaving} onClick={() => void saveBudgets()} className="mt-5 h-12 w-full rounded-2xl bg-sky-500 text-sm font-bold text-white disabled:opacity-50">
+            <button type="button" disabled={isSaving} onClick={() => void saveBudgets()} className="mt-5 h-12 w-full rounded-2xl bg-white text-sm font-bold text-black transition hover:bg-slate-200 disabled:opacity-50">
               {isSaving ? 'Salvando...' : 'Salvar orçamentos'}
             </button>
           </div>

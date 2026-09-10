@@ -4,6 +4,35 @@ Versão: 1.2
 Status: documento vivo do produto  
 Stack atual: Vite, React, TypeScript, Supabase, PostgreSQL, Vercel  
 
+## Status de atualização - 2026-07-10
+
+- Fase 1 de divisao de despesa adicionada ao cadastro de lancamentos: `none` (so minha), `shared` (conta dividida) e `third_party_full` (100% de terceiro).
+- Em `shared`, o lancamento continua unico e `amount` representa o total que saiu da conta/fatura; `personal_amount` entra nos gastos pessoais e `reimbursement_amount` entra automaticamente em Reembolsos.
+- Em `third_party_full`, `personal_amount = 0` e `reimbursement_amount = amount`, preservando o comportamento historico de despesa de terceiro.
+- Reembolso recebido movimenta caixa somente pelo `reimbursement_amount`; a saida da conta/fatura continua usando o `amount` total.
+- Fase 2 implementada: a aba `Metas` passa a ser `Metas & Compromissos`, separando `Juntar dinheiro` das metas atuais e `Compromissos` para financiamento do ap, carro, reforma ou dividas compartilhadas.
+- Compromissos persistem em `commitments` com valor total, minha cota percentual, pessoa vinculada de Reembolsos, parcela mensal, total de parcelas, inicio, valor ja pago, cor e status.
+- O progresso do compromisso nesta fase usa `paid_amount` manual e mostra minha cota, pago, falta, parcela e pessoa vinculada; a ligacao automatica com despesas divididas fica para a Fase 3.
+- Roadmap desta frente: Fase 3 vincula despesas ao compromisso e Fase 4 sugere recorrencia com divisao.
+- O Dashboard separa caixa real de balanço mensal: `Entrou nas contas` e `Saiu das contas` refletem movimentos confirmados em contas, com subtotais `Meu` e `Terceiros`.
+- Pagamentos de fatura são rateados entre gastos pessoais e valores de terceiros a partir dos itens da fatura, evitando que toda a saída da conta seja atribuída ao usuário.
+- Reembolsos recebidos contam como entrada de terceiros no mês do reembolso mesmo em registros históricos sem conta de recebimento preenchida; a conta continua sendo usada para conciliação de saldo quando disponível.
+- O card `Resultado do mês`, a meta mensal para investir, Relatórios e o resumo `Todas` de Transações usam a regra de competência mensal: receitas + reembolsos esperados - despesas pessoais - valores de terceiros.
+- Despesas de cartão entram na competência do mês da fatura pelo fechamento do cartão. Uma compra em maio que pertence à fatura de junho não pode deixar maio negativo no Dashboard, Transações ou Relatórios.
+- A tela de Transações preserva o mês ativo vindo do Dashboard ou de qualquer outra tela, em vez de voltar automaticamente para o mês atual.
+- Em `Entradas`, reembolsos recebidos aparecem agrupados por pessoa/empresa e abrem a tela de Reembolsos já filtrada no mês ativo.
+- A tela de Contas possui visão mensal com entradas, saídas, resultado, quantidade de movimentos, tendência de caixa dos últimos seis meses com barras separadas para entrada e saída, e detalhe por conta, mantendo o saldo atual como caixa real.
+- A tela de Cartões mostra o total da fatura separado entre valor próprio e valor de terceiros, além de pendências de reembolso e descontos/estornos quando existirem.
+- Em Relatórios, o escopo `Geral` usa total de entradas e total de saídas com terceiros/reembolsos; o escopo `Apenas meu` mostra receitas e despesas pessoais. Os cards principais de entradas e saídas exibem a composição entre valores próprios e de terceiros, e o relatório detalha despesas fixas, parceladas e variáveis com valor, quantidade e percentual. A meta mensal para investir exibe progresso real acima de 100% quando o usuário supera a meta.
+- A navegação desktop exibe a marca AxisFin no menu lateral. Quando a preferência de reembolsos está desativada, o menu Reembolsos e os blocos/filtros de terceiros ficam ocultos no Dashboard, Transações e Relatórios.
+- A migration `20260709183704_relax_paid_card_invoice_items.sql` ajusta o pagamento de faturas para permitir itens de cartão com status pago quando ainda não possuem metadados de fatura quitada, preservando a proteção contra pagamento duplicado.
+
+Regras financeiras reafirmadas:
+
+- `Saldo atual` e entradas/saídas de conta são caixa real confirmado.
+- `Balanço do mês` e meta mensal são competência mensal e incluem reembolsos esperados, inclusive pendentes.
+- Compras de terceiros no cartão só viram saída de conta quando a fatura é paga; até lá compõem valores de terceiros e reembolsos do mês.
+
 ## Status de atualização - 2026-07-04
 
 - A preferência `Meta mensal para investir` fica persistida no perfil do usuário e pode usar valor fixo ou percentual do salário, incluindo opcionalmente salário ainda pendente.
@@ -180,6 +209,7 @@ O produto deve abrir diretamente como app financeiro. A landing nao deve aparece
 - Relatorios com:
   - Cards financeiros.
   - Grafico simples de fluxo.
+  - Composicao de despesas fixas, parceladas e variaveis.
   - Gastos por categoria.
 - Perfil com dados do usuario, configuracoes, notificacoes e ajuda.
 - Categorias iniciais como ponto de partida por usuario.
@@ -397,9 +427,10 @@ Deve exibir:
 Regras:
 
 - Saldo atual deve refletir dinheiro real em contas.
-- Recebido representa receitas confirmadas.
-- Pago representa despesas confirmadas.
+- Entrou nas contas representa receitas confirmadas e reembolsos recebidos, separados entre `Meu` e `Terceiros`.
+- Saiu das contas representa saídas confirmadas de conta, separadas entre `Meu` e `Terceiros`; pagamento de fatura deve ser rateado pelos itens originais da fatura.
 - Pendente/previsto nao deve ser misturado com caixa real.
+- Resultado do mês não é saldo de conta: usa receitas + reembolsos esperados - despesas pessoais - valores de terceiros.
 
 ### Transacoes
 
@@ -411,6 +442,17 @@ Deve exibir:
 - Lista agrupada por data.
 - Status de lancamento.
 - Origem: conta ou cartao.
+- Deve preservar o mês ativo selecionado em outras telas.
+- Em Entradas, reembolsos recebidos devem aparecer agrupados por pessoa/empresa e abrir Reembolsos no mês ativo.
+
+### Contas
+
+Deve exibir:
+
+- Saldo atual como caixa real por conta.
+- Visão mensal com entradas, saídas, resultado e quantidade de movimentos.
+- Detalhe por conta no mês ativo.
+- Pagamentos de fatura navegáveis para o cartão e ciclo correspondentes.
 
 ### Adicionar Receita/Despesa/Transferencia
 
@@ -437,6 +479,7 @@ Deve exibir:
 - Saldo liquido.
 - Quantidade de lancamentos.
 - Grafico de fluxo.
+- Composicao de despesas fixas, parceladas e variaveis.
 - Gastos por categoria.
 - Futuro: comparativo entre meses.
 
@@ -517,6 +560,10 @@ Parcelas derivadas de compras parceladas.
 
 Metas financeiras.
 
+### commitments
+
+Compromissos financeiros de longo prazo, como financiamento do ap, carro, reforma ou divida compartilhada.
+
 ### budgets
 
 Orcamentos mensais por categoria.
@@ -542,6 +589,8 @@ Alertas e lembretes.
 - `installments.transaction_id` -> `transactions.id`.
 - `installments.invoice_id` -> `invoices.id`.
 - `goals.user_id` -> `auth.users.id`.
+- `commitments.user_id` -> `auth.users.id`.
+- `commitments.partner_person_id` -> `reimbursement_people.id`.
 - `budgets.category_id` -> `categories.id`.
 - `notifications.user_id` -> `auth.users.id`.
 

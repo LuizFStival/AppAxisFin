@@ -13,3 +13,6 @@ archive/
 supabase/.temp/
 
 .vercel
+.tools/
+graphify-out/
+.codex/hooks.json

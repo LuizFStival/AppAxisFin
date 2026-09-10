@@ -28,7 +28,8 @@ export const cardRepository = {
     const { data: existingCards, error: existingError } = await client
       .from('cards')
       .select('name')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('is_active', true);
 
     if (existingError) throw existingError;
 
@@ -47,8 +48,9 @@ export const cardRepository = {
         due_day: input.dueDay,
         color: input.color,
         network: input.network,
+        is_active: true,
       })
-      .select('id, name, account_id, network, credit_limit, closing_day, due_day, color')
+      .select('id, name, account_id, network, credit_limit, closing_day, due_day, color, is_active')
       .single();
 
     if (error) {
@@ -75,7 +77,8 @@ export const cardRepository = {
     const { data: existingCards, error: existingError } = await client
       .from('cards')
       .select('name')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('is_active', true);
 
     if (existingError) throw existingError;
 
@@ -96,7 +99,26 @@ export const cardRepository = {
       })
       .eq('id', id)
       .eq('user_id', userId)
-      .select('id, name, account_id, network, credit_limit, closing_day, due_day, color')
+      .select('id, name, account_id, network, credit_limit, closing_day, due_day, color, is_active')
+      .single();
+
+    if (error) {
+      if (isPostgresUniqueViolation(error)) throw new DuplicateNameError('cartao');
+      throw error;
+    }
+
+    return mapCard(data);
+  },
+
+  async setActive(id: string, isActive: boolean): Promise<Card> {
+    const userId = await assertCurrentUserId();
+    const client = assertSupabaseConfigured();
+    const { data, error } = await client
+      .from('cards')
+      .update({ is_active: isActive })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select('id, name, account_id, network, credit_limit, closing_day, due_day, color, is_active')
       .single();
 
     if (error) {

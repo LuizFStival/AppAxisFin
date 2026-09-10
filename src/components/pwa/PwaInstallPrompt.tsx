@@ -55,7 +55,7 @@ export function PwaInstallPrompt() {
         <X size={16} />
       </button>
       <div className="flex min-w-0 items-center gap-3">
-        <img src="/icon-192.png" alt="" className="h-11 w-11 rounded-xl" />
+        <img src="/axisfin-icon.svg" alt="" className="h-11 w-11 rounded-xl" />
         <div className="min-w-0">
           <p className="text-sm font-bold text-white">Instale o Axis Fin</p>
           <p className="mt-0.5 text-xs leading-4 text-slate-400">

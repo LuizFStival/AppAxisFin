@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, Trash2, UserRound } from 'lucide-react';
+import { Archive, ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, RotateCcw, Trash2, UserRound } from 'lucide-react';
 import { Account, Card, Category, ReimbursementPerson, Transaction } from '../../types';
-import { formatCurrency, getCategoryName, getExpenseSignedAmount, isCardInvoicePaid, isInvoiceCredit } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getExpenseSignedAmount, getPersonalExpenseSignedAmount, getTransactionReimbursementAmount, isCardInvoicePaid, isInvoiceCredit } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate, formatShortDatePtBr } from '../../lib/utils/date';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
@@ -37,6 +37,8 @@ interface CardsViewProps {
   onUpdateCardClosingDay: (card: Card, closingDay: number) => Promise<void>;
   onEditCard: (card: Card) => void;
   onDeleteCard: (card: Card) => void;
+  onArchiveCard: (card: Card) => void;
+  onRestoreCard: (card: Card) => void;
 }
 
 function getInvoiceTransactions(card: Card, transactions: Transaction[], closingMonth: string) {
@@ -126,10 +128,13 @@ export function CardsView({
   onUpdateCardClosingDay,
   onEditCard,
   onDeleteCard,
+  onArchiveCard,
+  onRestoreCard,
 }: CardsViewProps) {
   const [search, setSearch] = useState('');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseViewFilter>('all');
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null);
   const [dragTargetTransactionId, setDragTargetTransactionId] = useState<string | null>(null);
   const pointerDragRef = useRef({
@@ -140,25 +145,31 @@ export function CardsView({
     hasMoved: false,
   });
   const selectedCard = cards.find((card) => card.id === selectedCardId);
+  const activeCards = cards.filter((card) => card.isActive);
+  const archivedCards = cards.filter((card) => !card.isActive);
+  const visibleCards = showArchived ? archivedCards : activeCards;
   const invoices = useMemo(() => {
-    return cards.map((card) => {
+    return visibleCards.map((card) => {
       const invoice = getCardInvoiceInfoForClosingMonth(card, activeMonth, formatLocalDate(new Date()));
       const invoiceTransactions = getInvoiceTransactions(card, transactions, activeMonth);
-      const total = invoiceTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
+      const total = invoiceTransactions.reduce((sum, transaction) => sum + (isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount), 0);
       const invoiceCreditTotal = invoiceTransactions
         .filter((transaction) => isInvoiceCredit(transaction))
         .reduce((sum, transaction) => sum + transaction.amount, 0);
       const reimbursementTotal = invoiceTransactions
         .filter((transaction) => transaction.isReimbursable)
-        .reduce((sum, transaction) => sum + transaction.amount, 0);
+        .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
       const reimbursementPending = invoiceTransactions
         .filter((transaction) => transaction.isReimbursable && transaction.reimbursementStatus !== 'received')
-        .reduce((sum, transaction) => sum + transaction.amount, 0);
-      const personalTransactions = invoiceTransactions.filter((transaction) => !transaction.isReimbursable);
+        .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0);
+      const personalTransactions = invoiceTransactions.filter((transaction) => !transaction.isReimbursable || getPersonalExpenseSignedAmount(transaction) > 0);
       const reimbursementTransactions = invoiceTransactions.filter((transaction) => transaction.isReimbursable);
-      const personalTotal = personalTransactions.reduce((sum, transaction) => sum + getExpenseSignedAmount(transaction), 0);
-      const personalBreakdown = summarizeExpenseBreakdown(personalTransactions.filter((transaction) => !isInvoiceCredit(transaction)));
-      const reimbursementBreakdown = summarizeExpenseBreakdown(reimbursementTransactions);
+      const personalTotal = personalTransactions.reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0);
+      const personalBreakdown = summarizeExpenseBreakdown(
+        personalTransactions.filter((transaction) => !isInvoiceCredit(transaction)),
+        getPersonalExpenseSignedAmount,
+      );
+      const reimbursementBreakdown = summarizeExpenseBreakdown(reimbursementTransactions, getTransactionReimbursementAmount);
 
       return {
         card,
@@ -173,7 +184,7 @@ export function CardsView({
         reimbursementBreakdown,
       };
     });
-  }, [activeMonth, cards, transactions]);
+  }, [activeMonth, transactions, visibleCards]);
   const selectedInvoice = selectedCard
     ? invoices.find((item) => item.card.id === selectedCard.id)
     : null;
@@ -234,7 +245,7 @@ export function CardsView({
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, transaction: Transaction) {
-    if (transaction.isProjected || event.button !== 0) return;
+    if (event.button !== 0) return;
 
     pointerDragRef.current = {
       transactionId: transaction.id,
@@ -249,6 +260,8 @@ export function CardsView({
     } catch {
       // Some browsers may release capture during scroll/gesture negotiation.
     }
+    event.preventDefault();
+    event.stopPropagation();
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
@@ -283,7 +296,7 @@ export function CardsView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 pt-7 text-white md:px-8 md:pt-8">
+    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-7 text-white md:pt-8">
       <header className="shrink-0">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -307,14 +320,33 @@ export function CardsView({
 
       {!selectedCard ? (
         <>
-          <section className="mt-4 shrink-0 rounded-2xl border border-white/8 bg-[#101319] p-4">
+          <section className="premium-card mt-4 shrink-0 rounded-2xl p-4">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Faturas que fecham no mês</p>
             <p className="mt-1 font-display text-2xl font-bold text-white">{formatCurrency(totalAllCards)}</p>
-            <p className="mt-1 text-xs text-slate-500">{invoices.reduce((sum, item) => sum + item.transactions.length, 0)} lançamentos em {cards.length} cartão{cards.length === 1 ? '' : 'ões'}</p>
+            <p className="mt-1 text-xs text-slate-500">{invoices.reduce((sum, item) => sum + item.transactions.length, 0)} lançamentos em {visibleCards.length} cartão{visibleCards.length === 1 ? '' : 'ões'}</p>
           </section>
 
-          <section className="no-scrollbar mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pb-4">
-            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, reimbursementPending, invoiceCreditTotal }) => {
+          <section className="premium-scroll mt-5 min-h-[260px] flex-1 space-y-3 overflow-y-auto pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                {showArchived ? 'Cartões arquivados' : 'Cartões ativos'}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowArchived((current) => !current)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+              >
+                {showArchived ? 'Ver ativos' : `Arquivados ${archivedCards.length}`}
+              </button>
+            </div>
+            {invoices.length === 0 ? (
+              <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
+                <CreditCard size={22} className="mx-auto mb-2 text-slate-500" />
+                <p className="text-sm font-bold text-white">{showArchived ? 'Nenhum cartão arquivado' : 'Nenhum cartão ativo'}</p>
+                <p className="mt-1 text-xs text-slate-500">{showArchived ? 'Cartões parados aparecerão aqui sem perder histórico.' : 'Cadastre seus cartões para acompanhar as faturas.'}</p>
+              </div>
+            ) : null}
+            {invoices.map(({ card, invoice, transactions: invoiceTransactions, total, reimbursementTotal, reimbursementPending, invoiceCreditTotal, personalTotal }) => {
               const progress = card.limit > 0 ? Math.max(0, Math.min(100, (total / card.limit) * 100)) : 0;
               const displayStatus = getInvoiceDisplayStatus(invoice.status, invoiceTransactions);
               const statusClass = displayStatus === 'Paga'
@@ -327,7 +359,7 @@ export function CardsView({
               return (
                 <article
                   key={card.id}
-                  className="rounded-2xl border bg-[#101319] p-4"
+                  className="cosmic-card cosmic-card-hover relative overflow-hidden rounded-3xl border p-4"
                   style={{
                     borderColor: `${card.color}55`,
                     backgroundImage: `linear-gradient(135deg, ${card.color}18, transparent 55%)`,
@@ -369,9 +401,18 @@ export function CardsView({
                       <span className="font-mono font-bold text-white">{formatCurrency(total)}</span>
                       <span className="text-slate-500">{invoiceTransactions.length} lançamento{invoiceTransactions.length === 1 ? '' : 's'}</span>
                     </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl border border-emerald-400/15 bg-emerald-500/10 px-3 py-2">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-emerald-200">Meu</p>
+                        <p className="mt-1 truncate font-mono text-xs font-bold text-white">{formatCurrency(personalTotal)}</p>
+                      </div>
+                      <div className="rounded-xl border border-amber-400/15 bg-amber-500/10 px-3 py-2">
+                        <p className="text-[9px] font-bold uppercase tracking-widest text-amber-200">Terceiros</p>
+                        <p className="mt-1 truncate font-mono text-xs font-bold text-white">{formatCurrency(reimbursementTotal)}</p>
+                      </div>
+                    </div>
                     {reimbursementTotal > 0 ? (
                       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold">
-                        <span className="text-amber-200">Reembolsos: {formatCurrency(reimbursementTotal)}</span>
                         <span className={reimbursementPending > 0 ? 'text-rose-300' : 'text-emerald-300'}>
                           Pendente: {formatCurrency(reimbursementPending)}
                         </span>
@@ -381,6 +422,35 @@ export function CardsView({
                       <p className="mt-1 text-[10px] font-semibold text-emerald-200">Descontos/estornos: -{formatCurrency(invoiceCreditTotal)}</p>
                     ) : null}
                   </button>
+                  <div className="mt-3 flex justify-end gap-2 border-t border-white/8 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => onEditCard(card)}
+                      className="flex h-8 items-center gap-1.5 rounded-lg bg-white/5 px-3 text-xs font-bold text-slate-200 transition hover:bg-sky-500/20 hover:text-sky-100"
+                    >
+                      <Pencil size={14} />
+                      Editar
+                    </button>
+                    {card.isActive ? (
+                      <button
+                        type="button"
+                        onClick={() => onArchiveCard(card)}
+                        className="flex h-8 items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 text-xs font-bold text-amber-200 transition hover:bg-amber-500/20"
+                      >
+                        <Archive size={14} />
+                        Arquivar
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onRestoreCard(card)}
+                        className="flex h-8 items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 text-xs font-bold text-emerald-200 transition hover:bg-emerald-500/20"
+                      >
+                        <RotateCcw size={14} />
+                        Desarquivar
+                      </button>
+                    )}
+                  </div>
                 </article>
               );
             })}
@@ -390,7 +460,7 @@ export function CardsView({
 
       {selectedCard && selectedInvoice ? (
         <>
-          <section className="mt-3 shrink-0 rounded-2xl border border-white/8 bg-[#101319] p-3">
+          <section className="premium-card mt-3 shrink-0 rounded-2xl p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Fatura do ciclo</p>
@@ -433,7 +503,7 @@ export function CardsView({
             </div>
           </section>
 
-          <section className="mt-2 shrink-0 rounded-2xl border border-white/8 bg-[#101319] px-3 py-2">
+          <section className="premium-card-soft mt-2 shrink-0 rounded-2xl px-3 py-2">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Meu gasto</p>
@@ -499,9 +569,9 @@ export function CardsView({
             />
           </div>
 
-          <section className="no-scrollbar mt-3 min-h-0 flex-1 touch-pan-y space-y-2 overflow-y-auto overscroll-y-contain pb-4">
+          <section className="premium-scroll mt-3 min-h-[260px] flex-1 touch-pan-y space-y-2 overflow-y-auto overscroll-y-contain pb-4">
             {visibleTransactions.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-[#101319] p-6 text-center">
+              <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
                 <p className="text-sm font-bold text-white">Nenhuma despesa neste filtro</p>
                 <p className="mt-1 text-xs text-slate-500">Escolha outro tipo ou limpe a busca da fatura.</p>
               </div>
@@ -521,22 +591,17 @@ export function CardsView({
                       ? 'border-sky-300 bg-sky-500/15'
                       : isDragging
                         ? 'border-violet-300/50 bg-violet-500/10 opacity-70'
-                        : 'border-white/8 bg-[#101319]'
+                        : 'cosmic-card cosmic-card-hover border-white/8'
                   }`}
                 >
                   <button
                     type="button"
-                    disabled={transaction.isProjected}
                     onPointerDown={(event) => handlePointerDown(event, transaction)}
                     onPointerMove={handlePointerMove}
                     onPointerUp={(event) => void handlePointerUp(event)}
                     onPointerCancel={handlePointerCancel}
-                    className={`flex h-9 w-5 shrink-0 touch-none items-center justify-center rounded-lg text-slate-600 ${
-                      transaction.isProjected
-                        ? 'cursor-not-allowed opacity-30'
-                        : 'cursor-grab hover:bg-white/5 hover:text-slate-300 active:cursor-grabbing'
-                    }`}
-                    title={transaction.isProjected ? 'Ocorrências projetadas não podem ser reordenadas' : 'Arraste para reordenar'}
+                    className="flex h-9 w-5 shrink-0 touch-none items-center justify-center rounded-lg text-slate-600 cursor-grab hover:bg-white/5 hover:text-slate-300 active:cursor-grabbing"
+                    title="Arraste para reordenar"
                     aria-label={`Reordenar ${transaction.description}`}
                   >
                     <GripVertical size={16} />
