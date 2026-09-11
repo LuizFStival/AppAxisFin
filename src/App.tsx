@@ -32,7 +32,7 @@ import { profileRepository } from './features/profile/profileRepository';
 import { useNotifications } from './features/notifications/useNotifications';
 import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
-import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, ReserveBoxMovementType, Transaction } from './types';
+import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, ReserveBoxMovementType, Transaction, TransactionMeta } from './types';
 import { getCurrentMonthKey, getTransactionReimbursementBaseAmount, getTransactionReimbursementReceivedAmount, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
 import { getCardInvoiceClosingMonth } from './lib/utils/cardInvoices';
 import { addMonths, formatLocalDate } from './lib/utils/date';
@@ -50,8 +50,8 @@ const emptyFinanceSnapshot: FinanceSnapshot = {
   transactions: [],
 };
 
-function formatDescriptionForTransactionMeta(description: string, transaction: Transaction) {
-  const meta = readTransactionMeta(transaction.notes);
+function formatDescriptionForTransactionMeta(description: string, transactionOrMeta: Transaction | TransactionMeta) {
+  const meta = 'description' in transactionOrMeta ? readTransactionMeta(transactionOrMeta.notes) : transactionOrMeta;
   if (meta.entryMode !== 'installment' || !meta.installmentNumber || !meta.totalInstallments) return description;
   return `${description.replace(/\s\(\d+\/\d+\)$/, '')} (${meta.installmentNumber}/${meta.totalInstallments})`;
 }
@@ -441,7 +441,7 @@ export default function App() {
             ...item,
             ...transaction,
             id: item.id,
-            description: formatDescriptionForTransactionMeta(transaction.description, item),
+            description: formatDescriptionForTransactionMeta(transaction.description, itemMeta),
             date: addMonths(transaction.date, index),
             notes: writeTransactionNotes(visibleNotes, { ...itemMeta, expenseNeed }),
           };
@@ -1281,6 +1281,7 @@ export default function App() {
         <ReportsView
           month={activeMonth}
           accounts={snapshot.accounts}
+          reserveBoxes={snapshot.reserveBoxes}
           cards={snapshot.cards}
           transactions={snapshot.transactions}
           categories={snapshot.categories}

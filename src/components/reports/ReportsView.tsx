@@ -36,7 +36,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Account, Card, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
+import { Account, Card, Category, ReportWidgetId, ReserveBox, Transaction, UserProfile } from '../../types';
 import {
   expensesByCategory,
   formatCurrency,
@@ -63,6 +63,7 @@ interface ReportsViewProps {
   transactions: Transaction[];
   categories: Category[];
   accounts: Account[];
+  reserveBoxes: ReserveBox[];
   cards: Card[];
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
   reportWidgets: ReportWidgetId[];
@@ -128,6 +129,7 @@ export function ReportsView({
   transactions,
   categories,
   accounts,
+  reserveBoxes,
   cards,
   savingsPreferences,
   reportWidgets,
@@ -261,6 +263,61 @@ export function ReportsView({
       };
     });
   }, [cards, effectiveReportScope, month, reimbursementsEnabled, transactions]);
+  const reportYear = month.slice(0, 4);
+  const selectedYearMonthIndex = Math.min(12, Math.max(1, Number(month.slice(5, 7)) || 1));
+  const accountPatrimony = roundMoney(accounts
+    .filter((account) => account.isActive)
+    .reduce((sum, account) => sum + account.balance, 0));
+  const reservePatrimony = roundMoney(reserveBoxes
+    .filter((box) => box.isActive)
+    .reduce((sum, box) => sum + box.currentBalance, 0));
+  const currentPatrimony = roundMoney(accountPatrimony + reservePatrimony);
+  const annualEvolution = useMemo(() => {
+    let accumulated = 0;
+    const periods = Array.from({ length: 12 }, (_, index) => `${reportYear}-${String(index + 1).padStart(2, '0')}`);
+    const rows = periods.map((period) => {
+      const monthlyResult = summarizeMonthlyResult(transactions, period, cards, {
+        includeReimbursements: reimbursementsEnabled,
+      });
+      const scopedTotals = effectiveReportScope === 'general'
+        ? { income: monthlyResult.totalInflows, expenses: monthlyResult.totalOutflows }
+        : transactions
+          .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period)
+          .reduce((totals, transaction) => {
+            if (transaction.flow === 'income') totals.income += transaction.amount;
+            if (
+              transaction.flow === 'expense'
+              && !isInvoicePayment(transaction)
+            ) {
+              totals.expenses += getPersonalExpenseSignedAmount(transaction);
+            }
+            return totals;
+          }, { income: 0, expenses: 0 });
+      const result = roundMoney(scopedTotals.income - scopedTotals.expenses);
+      accumulated = roundMoney(accumulated + result);
+
+      return {
+        period,
+        month: formatMonthLabel(period).slice(0, 3),
+        Receitas: roundMoney(scopedTotals.income),
+        Despesas: roundMoney(scopedTotals.expenses),
+        Resultado: result,
+        Acumulado: accumulated,
+      };
+    });
+    const selectedAccumulated = rows[selectedYearMonthIndex - 1]?.Acumulado ?? 0;
+    return rows.map((row) => ({
+      ...row,
+      Patrimonio: roundMoney(currentPatrimony - selectedAccumulated + row.Acumulado),
+    }));
+  }, [cards, currentPatrimony, effectiveReportScope, reimbursementsEnabled, reportYear, selectedYearMonthIndex, transactions]);
+  const annualMonthsToDate = annualEvolution.slice(0, selectedYearMonthIndex);
+  const annualIncome = roundMoney(annualMonthsToDate.reduce((sum, item) => sum + item.Receitas, 0));
+  const annualExpenses = roundMoney(annualMonthsToDate.reduce((sum, item) => sum + item.Despesas, 0));
+  const annualResult = roundMoney(annualMonthsToDate.reduce((sum, item) => sum + item.Resultado, 0));
+  const annualAverageResult = roundMoney(annualMonthsToDate.length > 0 ? annualResult / annualMonthsToDate.length : 0);
+  const positiveMonths = annualMonthsToDate.filter((item) => item.Resultado > 0).length;
+  const negativeMonths = annualMonthsToDate.filter((item) => item.Resultado < 0).length;
   const savingsGoal = summarizeMonthlyInvestmentGoal(accounts, categories, transactions, month, {
     mode: savingsPreferences.savingsGoalMode,
     fixedAmount: savingsPreferences.savingsGoalAmount,
@@ -290,6 +347,10 @@ export function ReportsView({
       ['Despesas fixas', expenseBreakdown.find((item) => item.key === 'fixed')?.total ?? 0],
       ['Despesas variáveis', expenseBreakdown.find((item) => item.key === 'variable')?.total ?? 0],
       ['Resultado', balance],
+      [`Receitas no ano ${reportYear}`, annualIncome],
+      [`Despesas no ano ${reportYear}`, annualExpenses],
+      [`Resultado no ano ${reportYear}`, annualResult],
+      ['Patrimônio atual em contas e caixinhas', currentPatrimony],
       ['Meta mensal para investir', savingsGoal.target],
       ['Economizado', savingsGoal.saved],
       ['Taxa de economia (%)', savingsRate.toFixed(2)],
@@ -495,6 +556,75 @@ export function ReportsView({
           <span className="text-slate-500">
             {savingsGoal.remaining > 0 ? <>Falta <strong className={savingsZone.text}>{formatCurrency(savingsGoal.remaining)}</strong></> : 'Objetivo alcançado'}
           </span>
+        </div>
+      </section>
+
+      <section className="premium-card mt-3 rounded-[22px] p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">Ano {reportYear}</p>
+            <h2 className="font-display text-lg font-bold text-white">Patrimônio e sobra</h2>
+            <p className="mt-1 text-xs text-slate-500">Patrimônio atual em contas e caixinhas, com evolução pelo resultado mensal registrado.</p>
+          </div>
+          <PiggyBank size={20} className="shrink-0 text-emerald-300" />
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Patrimônio atual</p>
+            <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(currentPatrimony)}</p>
+            <p className="mt-1 text-[10px] text-slate-500">Contas {formatCurrency(accountPatrimony)} · Caixinhas {formatCurrency(reservePatrimony)}</p>
+          </div>
+          <div className={`rounded-2xl border p-3 ${annualResult >= 0 ? 'border-sky-400/15 bg-sky-500/[0.07]' : 'border-rose-400/15 bg-rose-500/[0.07]'}`}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${annualResult >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>Resultado acumulado</p>
+            <p className={`mt-1 font-mono text-sm font-bold ${annualResult >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>
+              {annualResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualResult))}
+            </p>
+            <p className="mt-1 text-[10px] text-slate-500">Até {formatMonthLabel(month)}</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Média mensal</p>
+            <p className={`mt-1 font-mono text-sm font-bold ${annualAverageResult >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+              {annualAverageResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualAverageResult))}
+            </p>
+            <p className="mt-1 text-[10px] text-slate-500">{positiveMonths} meses positivos · {negativeMonths} negativos</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Entradas vs. saídas</p>
+            <p className="mt-1 font-mono text-sm font-bold text-emerald-300">{formatCurrency(annualIncome)}</p>
+            <p className="mt-1 font-mono text-xs font-bold text-rose-300">{formatCurrency(annualExpenses)}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={annualEvolution}>
+              <defs>
+                <linearGradient id="annualPatrimonyGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#34D399" stopOpacity={0.28} />
+                  <stop offset="100%" stopColor="#34D399" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="annualResultGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#38BDF8" stopOpacity={0.24} />
+                  <stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="month" stroke="#64748B" fontSize={10} />
+              <YAxis hide />
+              <Tooltip
+                contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }}
+                formatter={(value: number) => formatCurrency(value)}
+              />
+              <Area type="monotone" dataKey="Patrimonio" name="Patrimônio estimado" stroke="#34D399" fill="url(#annualPatrimonyGradient)" strokeWidth={2.5} />
+              <Area type="monotone" dataKey="Acumulado" name="Resultado acumulado" stroke="#38BDF8" fill="url(#annualResultGradient)" strokeWidth={2} />
+              <Area type="monotone" dataKey="Resultado" name="Resultado mensal" stroke="#FACC15" fill="transparent" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-3 text-[10px] font-semibold">
+          <span className="text-emerald-300">● Patrimônio</span>
+          <span className="text-sky-300">● Acumulado</span>
+          <span className="text-amber-300">● Resultado mensal</span>
         </div>
       </section>
 

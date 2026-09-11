@@ -9,6 +9,7 @@ import {
   TransactionMeta,
 } from '../../types';
 import { addMonths } from '../../lib/utils/date';
+import { roundMoney } from '../../lib/utils/finance';
 import { createSeriesId, formatDescriptionForTransactionMeta, mergeTransactionMeta, writeTransactionNotes } from '../../lib/utils/transactionMeta';
 import { parseEntryCount, PaymentSourceType } from './addEntryRules';
 import { QuickReviewItem } from './QuickEntry';
@@ -51,6 +52,28 @@ function shouldMarkReimbursement(draft: AddEntryDraft): boolean {
 
 function reimbursementPersonName(draft: AddEntryDraft): string | undefined {
   return draft.reimbursementPeople.find((person) => person.id === draft.reimbursementPersonId)?.name;
+}
+
+export function splitAmountIntoInstallments(amount: number, installmentCount: number): number[] {
+  const count = Math.max(1, Math.floor(installmentCount));
+  if (count === 1) return [roundMoney(amount)];
+
+  const regularAmount = roundMoney(amount / count);
+  let accumulated = 0;
+  return Array.from({ length: count }, (_, index) => {
+    if (index === count - 1) return roundMoney(amount - accumulated);
+    accumulated = roundMoney(accumulated + regularAmount);
+    return regularAmount;
+  });
+}
+
+function installmentDraft(draft: AddEntryDraft, amount: number, personalAmount: number, reimbursementAmount: number): AddEntryDraft {
+  return {
+    ...draft,
+    amount,
+    personalAmount,
+    reimbursementAmount,
+  };
 }
 
 export function buildSingleEntryTransaction(
@@ -152,9 +175,12 @@ export function buildInstallmentEntryTransactions(
 ): Array<Omit<Transaction, 'id'>> {
   const seriesId = createSeriesId();
   const total = parseEntryCount(installmentCount, 2);
+  const amounts = splitAmountIntoInstallments(draft.amount, total);
+  const personalAmounts = splitAmountIntoInstallments(draft.personalAmount, total);
+  const reimbursementAmounts = splitAmountIntoInstallments(draft.reimbursementAmount, total);
 
   return Array.from({ length: total }, (_, index) =>
-    buildSingleEntryTransaction(draft, addMonths(dateValue, index), descriptionValue, {
+    buildSingleEntryTransaction(installmentDraft(draft, amounts[index], personalAmounts[index], reimbursementAmounts[index]), addMonths(dateValue, index), descriptionValue, {
       entryMode: 'installment',
       expenseNeed: draft.hasPersonalExpenseShare ? draft.expenseNeed || undefined : undefined,
       seriesId,
@@ -174,9 +200,17 @@ export function buildSharedInstallmentEntryTransactions(
   const seriesId = createSeriesId();
   const reimbursementSeriesId = createSeriesId();
   const total = parseEntryCount(installmentCount, 2);
+  const personalAmounts = splitAmountIntoInstallments(draft.personalAmount, total);
+  const reimbursementAmounts = splitAmountIntoInstallments(draft.reimbursementAmount, total);
 
   return Array.from({ length: total }, (_, index) => {
-    const [personalEntry, reimbursementEntry] = buildSharedEntryTransactions(draft, addMonths(dateValue, index), descriptionValue, {
+    const splitDraft = installmentDraft(
+      draft,
+      roundMoney(personalAmounts[index] + reimbursementAmounts[index]),
+      personalAmounts[index],
+      reimbursementAmounts[index],
+    );
+    const [personalEntry, reimbursementEntry] = buildSharedEntryTransactions(splitDraft, addMonths(dateValue, index), descriptionValue, {
       entryMode: 'installment',
       expenseNeed: draft.expenseNeed || undefined,
       seriesId,
