@@ -269,23 +269,9 @@ export default function App() {
     amount: number;
     date: string;
     description?: string;
-    createAccountIncome?: boolean;
     accountId?: string;
   }) {
     const result = await reserveBoxRepository.addMovement(input);
-
-    if (input.type === 'withdrawal' && input.createAccountIncome && input.accountId) {
-      const boxName = snapshot.reserveBoxes.find((box) => box.id === input.reserveBoxId)?.name ?? 'caixinha';
-      await transactionRepository.create({
-        description: `Resgate ${boxName}`,
-        amount: input.amount,
-        flow: 'income',
-        status: 'paid',
-        date: input.date,
-        accountId: input.accountId,
-        notes: input.description ? `Resgate de caixinha: ${input.description}` : 'Resgate de caixinha',
-      });
-    }
 
     const loaded = await loadFinanceSnapshot();
     setSnapshot({
@@ -1152,6 +1138,8 @@ export default function App() {
           cards={snapshot.cards}
           categories={snapshot.categories}
           transactions={snapshot.transactions}
+          reserveBoxes={snapshot.reserveBoxes}
+          reserveBoxMovements={snapshot.reserveBoxMovements}
           activeMonth={activeMonth}
           selectedAccountId={selectedAccountId}
           onSelectAccount={setSelectedAccountId}

@@ -1010,13 +1010,15 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 </div>
               ) : null}
 
-              <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-                Categoria
-                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-                  <option value="">Selecione</option>
-                  {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-              </label>
+              {flow !== 'transfer' ? (
+                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+                  Categoria
+                  <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
+                    <option value="">Selecione</option>
+                    {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
+                </label>
+              ) : null}
 
               <SourceSelector
                 accounts={accounts}
@@ -1026,6 +1028,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 sourceType={sourceType}
                 accountId={accountId}
                 cardId={cardId}
+                fromAccountId={fromAccountId}
+                toAccountId={toAccountId}
                 status={status}
                 isInstallmentExpense={isInstallmentExpense}
                 isInvoiceCredit={isInvoiceCredit}
@@ -1033,6 +1037,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 isEditingClosedInvoice={isEditingClosedInvoice}
                 onSourceTypeChange={setSourceType}
                 onAccountChange={setAccountId}
+                onFromAccountChange={setFromAccountId}
+                onToAccountChange={setToAccountId}
                 onCardChange={setCardId}
                 onStatusChange={setStatus}
               />

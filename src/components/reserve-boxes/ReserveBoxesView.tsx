@@ -75,8 +75,8 @@ const ICONS = [
 ];
 
 const movementLabels: Record<ReserveBoxMovementType, string> = {
-  deposit: 'Entrada',
-  withdrawal: 'Saída',
+  deposit: 'Aplicação',
+  withdrawal: 'Resgate',
   yield: 'Rendimento',
   balance_update: 'Saldo real',
 };
@@ -87,6 +87,26 @@ function hiddenMoney(show: boolean, value: number) {
 
 function getIcon(icon: string) {
   return ICONS.find((item) => item.id === icon)?.Icon ?? PiggyBank;
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function getDefaultMovementAccountId(accounts: Account[], box: ReserveBox) {
+  const normalizedInstitution = normalizeText(box.institution);
+  return accounts.find((account) =>
+    normalizeText(account.institution).includes(normalizedInstitution)
+    || normalizeText(account.name).includes(normalizedInstitution)
+  )?.id ?? accounts[0]?.id ?? '';
+}
+
+function getAccountName(accounts: Account[], accountId?: string) {
+  if (!accountId) return '';
+  return accounts.find((account) => account.id === accountId)?.name ?? 'Conta';
 }
 
 export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onCreateBox, onAddMovement }: ReserveBoxesViewProps) {
@@ -204,8 +224,8 @@ export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onC
                   <p className="mt-1 text-[10px] text-slate-600">Atualizada em {formatDatePtBr(box.lastBalanceUpdate)} • CDI previsto {hiddenMoney(showBalances, monthYield)}</p>
                 </button>
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  <ActionButton onClick={() => openMovement(box, 'deposit')} icon={<Plus size={15} />} label="Entrar" tone="emerald" />
-                  <ActionButton onClick={() => openMovement(box, 'withdrawal')} icon={<Minus size={15} />} label="Sair" tone="rose" />
+                  <ActionButton onClick={() => openMovement(box, 'deposit')} icon={<Plus size={15} />} label="Aplicar" tone="emerald" />
+                  <ActionButton onClick={() => openMovement(box, 'withdrawal')} icon={<Minus size={15} />} label="Resgatar" tone="rose" />
                   <ActionButton onClick={() => setBalanceBox(box)} icon={<RotateCcw size={15} />} label="Saldo" tone="sky" />
                 </div>
               </article>
@@ -241,7 +261,7 @@ export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onC
                   </div>
                 ) : null}
                 {selectedMovements.map((movement) => (
-                  <MovementRow key={movement.id} movement={movement} showBalances={showBalances} />
+                  <MovementRow key={movement.id} movement={movement} accounts={accounts} showBalances={showBalances} />
                 ))}
               </div>
             </>
@@ -339,14 +359,22 @@ function ActionButton({ icon, label, tone, onClick }: { icon: React.ReactNode; l
   );
 }
 
-function MovementRow({ movement, showBalances }: { key?: React.Key; movement: ReserveBoxMovement; showBalances: boolean }) {
+function MovementRow({ movement, accounts, showBalances }: { key?: React.Key; movement: ReserveBoxMovement; accounts: Account[]; showBalances: boolean }) {
   const positive = movement.type === 'deposit' || movement.type === 'yield';
   const neutral = movement.type === 'balance_update';
+  const accountName = getAccountName(accounts, movement.accountId);
+  const accountDetail = accountName
+    ? movement.type === 'deposit'
+      ? ` • saiu de ${accountName}`
+      : movement.type === 'withdrawal'
+        ? ` • entrou em ${accountName}`
+        : ''
+    : '';
   return (
     <article className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-3">
       <div className="min-w-0">
         <p className="text-sm font-bold text-white">{movementLabels[movement.type]}</p>
-        <p className="mt-1 truncate text-xs text-slate-500">{formatDatePtBr(movement.date)}{movement.description ? ` • ${movement.description}` : ''}</p>
+        <p className="mt-1 truncate text-xs text-slate-500">{formatDatePtBr(movement.date)}{accountDetail}{movement.description ? ` • ${movement.description}` : ''}</p>
       </div>
       <p className={`shrink-0 font-mono text-sm font-bold ${neutral ? 'text-sky-200' : positive ? 'text-emerald-300' : 'text-rose-300'}`}>
         {neutral ? '' : positive ? '+' : '-'}{hiddenMoney(showBalances, movement.amount)}
@@ -443,11 +471,13 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
   const [amount, setAmount] = useState(DEFAULT_CURRENCY_INPUT);
   const [date, setDate] = useState(formatLocalDate(new Date()));
   const [description, setDescription] = useState('');
-  const [createAccountIncome, setCreateAccountIncome] = useState(false);
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? '');
+  const [accountId, setAccountId] = useState(getDefaultMovementAccountId(accounts, box));
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const isWithdrawal = type === 'withdrawal';
+  const isDeposit = type === 'deposit';
+  const requiresAccount = isDeposit || isWithdrawal;
+  const selectedAccount = accounts.find((account) => account.id === accountId) ?? null;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -460,8 +490,12 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
       setError('O resgate não pode ser maior que o saldo atual.');
       return;
     }
-    if (isWithdrawal && createAccountIncome && !accountId) {
-      setError('Selecione a conta que recebeu o resgate.');
+    if (requiresAccount && !accountId) {
+      setError(isDeposit ? 'Selecione a conta de origem da aplicação.' : 'Selecione a conta que recebeu o resgate.');
+      return;
+    }
+    if (isDeposit && selectedAccount && parsedAmount > selectedAccount.balance) {
+      setError('A aplicação não pode ser maior que o saldo atual da conta de origem.');
       return;
     }
     setIsSaving(true);
@@ -472,8 +506,7 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
         amount: parsedAmount,
         date,
         description: description.trim() || undefined,
-        createAccountIncome: isWithdrawal && createAccountIncome,
-        accountId: isWithdrawal && createAccountIncome ? accountId : undefined,
+        accountId: requiresAccount ? accountId : undefined,
       });
       onClose();
     } catch (saveError) {
@@ -491,18 +524,21 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
         <label className="grid gap-1 text-xs font-semibold text-slate-400">Valor<CurrencyInput value={amount} onChange={setAmount} /></label>
         <label className="grid gap-1 text-xs font-semibold text-slate-400">Data<input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400" /></label>
         <label className="grid gap-1 text-xs font-semibold text-slate-400">Descrição<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={type === 'yield' ? 'Rendimento mensal' : 'Opcional'} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400" /></label>
-        {isWithdrawal ? (
+        {requiresAccount ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-              <input type="checkbox" checked={createAccountIncome} onChange={(event) => setCreateAccountIncome(event.target.checked)} className="h-4 w-4 accent-violet-400" />
-              Gerar entrada em conta
+            <label className="grid gap-1 text-xs font-semibold text-slate-400">
+              {isDeposit ? 'Conta de origem' : 'Conta de destino'}
+              <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
+                <option value="">Selecione</option>
+                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+              </select>
             </label>
-            {createAccountIncome ? (
-              <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-400">Conta<select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
-            ) : null}
+            <p className="mt-2 text-xs text-slate-500">
+              {isDeposit ? 'O valor sai da conta escolhida e entra nesta caixinha.' : 'O valor sai desta caixinha e entra na conta escolhida.'}
+            </p>
           </div>
         ) : null}
-        <button type="submit" disabled={isSaving} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200 disabled:opacity-60">{type === 'withdrawal' ? <ArrowUpFromLine size={18} /> : <ArrowDownToLine size={18} />}{isSaving ? 'Salvando...' : 'Salvar movimento'}</button>
+        <button type="submit" disabled={isSaving} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200 disabled:opacity-60">{type === 'withdrawal' ? <ArrowUpFromLine size={18} /> : <ArrowDownToLine size={18} />}{isSaving ? 'Salvando...' : isDeposit ? 'Aplicar na caixinha' : isWithdrawal ? 'Resgatar para conta' : 'Salvar movimento'}</button>
       </form>
     </ModalFrame>
   );

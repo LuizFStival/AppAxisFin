@@ -10,7 +10,7 @@ import {
 } from '../finance/financeStore';
 
 const reserveBoxFields = 'id, name, institution, cdi_percent, initial_balance, current_balance, created_on, goal, color, icon, last_balance_update, is_active';
-const reserveBoxMovementFields = 'id, reserve_box_id, movement_type, amount, movement_date, description, created_at';
+const reserveBoxMovementFields = 'id, reserve_box_id, account_id, movement_type, amount, movement_date, description, created_at';
 
 function reserveBoxesUnavailableError() {
   const error = new Error('A seção Caixinhas ainda precisa da atualização do banco no Supabase para salvar dados.');
@@ -83,6 +83,7 @@ export const reserveBoxRepository = {
     amount: number;
     date: string;
     description?: string;
+    accountId?: string;
   }): Promise<{ box: ReserveBox; movement: ReserveBoxMovement }> {
     const userId = await assertCurrentUserId();
     const client = assertSupabaseConfigured();
@@ -91,6 +92,7 @@ export const reserveBoxRepository = {
       .insert({
         user_id: userId,
         reserve_box_id: input.reserveBoxId,
+        account_id: input.accountId ?? null,
         movement_type: input.type,
         amount: input.amount,
         movement_date: input.date,
@@ -99,7 +101,7 @@ export const reserveBoxRepository = {
       .select(reserveBoxMovementFields)
       .single();
 
-    if (isMissingRemoteSchemaError(movementError, ['reserve_box_movements'])) throw reserveBoxesUnavailableError();
+    if (isMissingRemoteSchemaError(movementError, ['reserve_box_movements', 'account_id'])) throw reserveBoxesUnavailableError();
     if (movementError) throw movementError;
 
     const { data: boxData, error: boxError } = await client

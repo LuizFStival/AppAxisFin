@@ -123,6 +123,7 @@ type ReserveBoxRow = {
 type ReserveBoxMovementRow = {
   id: string;
   reserve_box_id: string;
+  account_id?: string | null;
   movement_type: ReserveBoxMovement['type'];
   amount: number | string;
   movement_date: string;
@@ -267,6 +268,7 @@ export function mapReserveBoxMovement(row: ReserveBoxMovementRow): ReserveBoxMov
   return {
     id: row.id,
     reserveBoxId: row.reserve_box_id,
+    accountId: row.account_id ?? undefined,
     type: row.movement_type,
     amount: Number(row.amount),
     date: row.movement_date,
@@ -506,12 +508,23 @@ export async function loadFinanceSnapshot(): Promise<FinanceSnapshot> {
       .order('created_at')
     : Promise.resolve({ data: [], error: null });
   const reserveBoxMovementsPromise = reserveBoxesAvailable
-    ? client
-      .from('reserve_box_movements')
-      .select('id, reserve_box_id, movement_type, amount, movement_date, description, created_at')
-      .eq('user_id', userId)
-      .order('movement_date', { ascending: false })
-      .order('created_at', { ascending: false })
+    ? (async () => {
+      const withAccount = await client
+        .from('reserve_box_movements')
+        .select('id, reserve_box_id, account_id, movement_type, amount, movement_date, description, created_at')
+        .eq('user_id', userId)
+        .order('movement_date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (!withAccount.error || !isMissingRemoteSchemaError(withAccount.error, ['account_id'])) return withAccount;
+
+      return client
+        .from('reserve_box_movements')
+        .select('id, reserve_box_id, movement_type, amount, movement_date, description, created_at')
+        .eq('user_id', userId)
+        .order('movement_date', { ascending: false })
+        .order('created_at', { ascending: false });
+    })()
     : Promise.resolve({ data: [], error: null });
 
   const [cardsResult, categoriesResult, reimbursementPeopleResult, recurringTransactionsResult, reserveBoxesResult, reserveBoxMovementsResult, transactionsResult] = await Promise.all([
