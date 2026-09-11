@@ -106,6 +106,7 @@ export interface ReserveBox {
 export interface ReserveBoxMovement {
   id: string;
   reserveBoxId: string;
+  accountId?: string;
   type: ReserveBoxMovementType;
   amount: number;
   date: string;

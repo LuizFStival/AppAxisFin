@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { AlertCircle, Archive, ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Calendar, Check, CreditCard, Pencil, Plus, RotateCcw, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react';
-import { Account, Card, Category, Transaction } from '../../types';
+import { AlertCircle, Archive, ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Calendar, Check, CreditCard, Pencil, PiggyBank, Plus, RotateCcw, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react';
+import { Account, Card, Category, ReserveBox, ReserveBoxMovement, Transaction } from '../../types';
 import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCategoryName, getPaymentSource, shiftMonthKey } from '../../lib/utils/finance';
 import { BankLogo } from '../shared/BankLogo';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
@@ -14,6 +14,8 @@ interface AccountsViewProps {
   cards: Card[];
   categories: Category[];
   transactions: Transaction[];
+  reserveBoxes: ReserveBox[];
+  reserveBoxMovements: ReserveBoxMovement[];
   activeMonth: string;
   selectedAccountId: string;
   onSelectAccount: (accountId: string) => void;
@@ -42,6 +44,13 @@ function isAccountTransaction(transaction: Transaction, accountId: string) {
     || transaction.reimbursementReceivedAccountId === accountId;
 }
 
+function getReserveBoxAccountAmount(movement: ReserveBoxMovement, accountId: string) {
+  if (movement.accountId !== accountId) return 0;
+  if (movement.type === 'deposit') return -movement.amount;
+  if (movement.type === 'withdrawal') return movement.amount;
+  return 0;
+}
+
 function formatDatePtBr(date: string) {
   const [year, month, day] = date.split('-');
   if (!year || !month || !day) return date;
@@ -53,6 +62,8 @@ export function AccountsView({
   cards,
   categories,
   transactions,
+  reserveBoxes,
+  reserveBoxMovements,
   activeMonth,
   selectedAccountId,
   onSelectAccount,
@@ -75,11 +86,16 @@ export function AccountsView({
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? null;
   const accountMonthlySummaries = useMemo(() => {
     return visibleAccounts.map((account) => {
-      const entries = transactions.flatMap((transaction) =>
+      const transactionEntries = transactions.flatMap((transaction) =>
         getAccountMovementEntries(transaction, account.id, cards)
           .filter((entry) => entry.month === activeMonth)
           .map((entry) => entry.amount),
       );
+      const reserveEntries = reserveBoxMovements
+        .filter((movement) => movement.date.startsWith(activeMonth))
+        .map((movement) => getReserveBoxAccountAmount(movement, account.id))
+        .filter((amount) => amount !== 0);
+      const entries = [...transactionEntries, ...reserveEntries];
       const monthlyInflow = entries.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
       const monthlyOutflow = Math.abs(entries.reduce((sum, amount) => amount < 0 ? sum + amount : sum, 0));
 
@@ -91,7 +107,7 @@ export function AccountsView({
         count: entries.length,
       };
     });
-  }, [activeMonth, cards, transactions, visibleAccounts]);
+  }, [activeMonth, cards, reserveBoxMovements, transactions, visibleAccounts]);
   const monthlyInflow = accountMonthlySummaries.reduce((sum, item) => sum + item.inflow, 0);
   const monthlyOutflow = accountMonthlySummaries.reduce((sum, item) => sum + item.outflow, 0);
   const monthlyNet = monthlyInflow - monthlyOutflow;
@@ -104,6 +120,11 @@ export function AccountsView({
           getAccountMovementEntries(transaction, account.id, cards)
             .filter((entry) => entry.month === month)
             .map((entry) => entry.amount),
+        ).concat(
+          reserveBoxMovements
+            .filter((movement) => movement.date.startsWith(month))
+            .map((movement) => getReserveBoxAccountAmount(movement, account.id))
+            .filter((amount) => amount !== 0),
         ),
       );
       const inflow = entries.reduce((sum, amount) => amount > 0 ? sum + amount : sum, 0);
@@ -117,7 +138,7 @@ export function AccountsView({
         net: inflow - outflow,
       };
     });
-  }, [activeAccounts, activeMonth, cards, transactions]);
+  }, [activeAccounts, activeMonth, cards, reserveBoxMovements, transactions]);
   const previousCashNet = accountCashEvolution.at(-2)?.net ?? 0;
   const currentCashNet = accountCashEvolution.at(-1)?.net ?? 0;
   const cashTrendDelta = currentCashNet - previousCashNet;
@@ -125,15 +146,44 @@ export function AccountsView({
   const maxCashFlow = Math.max(1, ...accountCashEvolution.flatMap((item) => [item.inflow, item.outflow]));
   const selectedMovements = useMemo(() => {
     if (!selectedAccount) return [];
-    return transactions
+    const transactionMovements = transactions
       .filter((transaction) => isAccountTransaction(transaction, selectedAccount.id))
       .flatMap((transaction) =>
         getAccountMovementEntries(transaction, selectedAccount.id, cards)
           .filter((entry) => entry.month === activeMonth)
-          .map((entry) => ({ transaction, signedAmount: entry.amount })),
-      )
-      .sort((left, right) => right.transaction.date.localeCompare(left.transaction.date));
-  }, [activeMonth, cards, selectedAccount, transactions]);
+          .map((entry) => ({
+            id: `${transaction.id}-${entry.month}-${entry.amount}`,
+            date: transaction.date,
+            description: transaction.description,
+            detail: `${getCategoryName(categories, transaction.categoryId)} - ${getPaymentSource(accounts, cards, transaction)}`,
+            signedAmount: entry.amount,
+            transaction,
+            type: transaction.flow,
+          })),
+      );
+    const reserveMovements = reserveBoxMovements
+      .map((movement) => ({
+        movement,
+        signedAmount: getReserveBoxAccountAmount(movement, selectedAccount.id),
+      }))
+      .filter(({ movement, signedAmount }) => signedAmount !== 0 && movement.date.startsWith(activeMonth))
+      .map(({ movement, signedAmount }) => {
+        const box = reserveBoxes.find((item) => item.id === movement.reserveBoxId);
+        return {
+          id: movement.id,
+          date: movement.date,
+          description: movement.type === 'deposit'
+            ? `Aplicação em ${box?.name ?? 'caixinha'}`
+            : `Resgate de ${box?.name ?? 'caixinha'}`,
+          detail: movement.description ?? box?.institution ?? 'Caixinha',
+          signedAmount,
+          type: 'reserve' as const,
+        };
+      });
+
+    return [...transactionMovements, ...reserveMovements]
+      .sort((left, right) => right.date.localeCompare(left.date));
+  }, [accounts, activeMonth, cards, categories, reserveBoxes, reserveBoxMovements, selectedAccount, transactions]);
   const inflow = selectedMovements.reduce((sum, movement) => {
     return movement.signedAmount > 0 ? sum + movement.signedAmount : sum;
   }, 0);
@@ -390,16 +440,16 @@ export function AccountsView({
             {selectedMovements.length === 0 ? (
               <div className="premium-card-soft rounded-2xl border-dashed p-5 text-center">
                 <Wallet size={22} className="mx-auto mb-2 text-slate-500" />
-                <p className="text-sm font-semibold text-slate-300">Sem transações nesta conta</p>
-                <p className="mt-1 text-xs text-slate-500">O resumo respeita o mês selecionado no app.</p>
+                <p className="text-sm font-semibold text-slate-300">Sem movimentações nesta conta</p>
+                <p className="mt-1 text-xs text-slate-500">Transações, transferências e caixinhas respeitam o mês selecionado no app.</p>
               </div>
             ) : (
-              selectedMovements.map(({ transaction, signedAmount }) => {
-                const meta = readTransactionMeta(transaction.notes);
+              selectedMovements.map((movement) => {
+                const meta = movement.transaction ? readTransactionMeta(movement.transaction.notes) : {};
                 const isInvoicePayment = Boolean(meta.invoicePaymentCardId && meta.invoicePaymentPeriod);
                 return (
                   <button
-                    key={`${transaction.id}-${signedAmount}`}
+                    key={movement.id}
                     type="button"
                     onClick={isInvoicePayment
                       ? () => onOpenInvoice(meta.invoicePaymentCardId!, meta.invoicePaymentPeriod!)
@@ -409,22 +459,22 @@ export function AccountsView({
                       isInvoicePayment
                         ? 'cursor-pointer border-violet-400/20 transition hover:border-violet-400/40 hover:bg-violet-500/[0.07]'
                         : 'cursor-default border-white/8'
-                    }`}
+                      }`}
                   >
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${signedAmount >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
-                      {isInvoicePayment ? <CreditCard size={17} /> : transaction.flow === 'transfer' ? <ArrowRightLeft size={17} /> : signedAmount >= 0 ? <ArrowDownToLine size={17} /> : <ArrowUpFromLine size={17} />}
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${movement.signedAmount >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
+                      {isInvoicePayment ? <CreditCard size={17} /> : movement.type === 'transfer' ? <ArrowRightLeft size={17} /> : movement.type === 'reserve' ? <PiggyBank size={17} /> : movement.signedAmount >= 0 ? <ArrowDownToLine size={17} /> : <ArrowUpFromLine size={17} />}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-bold text-white">{transaction.description}</p>
+                      <p className="truncate text-sm font-bold text-white">{movement.description}</p>
                       <p className="mt-1 truncate text-xs text-slate-500">
-                        {getCategoryName(categories, transaction.categoryId)} - {getPaymentSource(accounts, cards, transaction)}
+                        {movement.detail}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className={`whitespace-nowrap font-mono text-sm font-bold ${signedAmount >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                        {signedAmount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(signedAmount))}
+                      <p className={`whitespace-nowrap font-mono text-sm font-bold ${movement.signedAmount >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        {movement.signedAmount >= 0 ? '+' : '-'}{formatCurrency(Math.abs(movement.signedAmount))}
                       </p>
-                      <p className="mt-1 text-[11px] text-slate-500">{transaction.date.slice(8, 10)}/{transaction.date.slice(5, 7)}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">{movement.date.slice(8, 10)}/{movement.date.slice(5, 7)}</p>
                       {isInvoicePayment ? <p className="mt-1 text-[9px] font-bold text-violet-300">Abrir fatura</p> : null}
                     </div>
                   </button>

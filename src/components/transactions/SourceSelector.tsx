@@ -12,6 +12,8 @@ interface SourceSelectorProps {
   sourceType: PaymentSourceType;
   accountId: string;
   cardId: string;
+  fromAccountId: string;
+  toAccountId: string;
   status: 'paid' | 'pending';
   isInstallmentExpense: boolean;
   isInvoiceCredit: boolean;
@@ -19,6 +21,8 @@ interface SourceSelectorProps {
   isEditingClosedInvoice: boolean;
   onSourceTypeChange: (sourceType: PaymentSourceType) => void;
   onAccountChange: (accountId: string) => void;
+  onFromAccountChange: (accountId: string) => void;
+  onToAccountChange: (accountId: string) => void;
   onCardChange: (cardId: string) => void;
   onStatusChange: (status: 'paid' | 'pending') => void;
 }
@@ -31,6 +35,8 @@ export function SourceSelector({
   sourceType,
   accountId,
   cardId,
+  fromAccountId,
+  toAccountId,
   status,
   isInstallmentExpense,
   isInvoiceCredit,
@@ -38,6 +44,8 @@ export function SourceSelector({
   isEditingClosedInvoice,
   onSourceTypeChange,
   onAccountChange,
+  onFromAccountChange,
+  onToAccountChange,
   onCardChange,
   onStatusChange,
 }: SourceSelectorProps) {
@@ -76,6 +84,21 @@ export function SourceSelector({
             </select>
           )}
         </div>
+      ) : flow === 'transfer' ? (
+        <>
+          <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+            Conta de origem
+            <select value={fromAccountId} onChange={(event) => onFromAccountChange(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
+              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+            </select>
+          </label>
+          <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+            Conta de destino
+            <select value={toAccountId} onChange={(event) => onToAccountChange(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
+              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+            </select>
+          </label>
+        </>
       ) : (
         <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
           Conta

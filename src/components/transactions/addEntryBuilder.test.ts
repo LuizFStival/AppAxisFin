@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
-import { AddEntryDraft, buildInstallmentEntryTransactions, buildSharedEntryTransactions, buildSingleEntryTransaction } from './addEntryBuilder';
+import { AddEntryDraft, buildInstallmentEntryTransactions, buildSharedEntryTransactions, buildSingleEntryTransaction, splitAmountIntoInstallments } from './addEntryBuilder';
 
 const baseDraft: AddEntryDraft = {
   flow: 'expense',
@@ -52,7 +52,17 @@ const installments = buildInstallmentEntryTransactions(baseDraft, '2026-08-04', 
 assert.equal(installments.length, 3);
 assert.equal(installments[0].date, '2026-08-04');
 assert.equal(installments[1].date, '2026-09-04');
+assert.deepEqual(installments.map((item) => item.amount), [40, 40, 40]);
 assert.equal(installments[2].description, 'Amazon (3/3)');
 assert.equal(readTransactionMeta(installments[2].notes).totalInstallments, 3);
+
+const splitInstallments = buildInstallmentEntryTransactions({
+  ...baseDraft,
+  amount: 297.55,
+  personalAmount: 297.55,
+}, '2026-09-07', 'Almare', '5');
+assert.deepEqual(splitInstallments.map((item) => item.amount), [59.51, 59.51, 59.51, 59.51, 59.51]);
+
+assert.deepEqual(splitAmountIntoInstallments(100, 3), [33.33, 33.33, 33.34]);
 
 console.log('add entry builder tests passed');

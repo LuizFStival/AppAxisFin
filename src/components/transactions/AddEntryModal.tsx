@@ -5,6 +5,7 @@ import { CurrencyInput } from '../shared/CurrencyInput';
 import { DateInput } from '../shared/DateInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { formatLocalDate } from '../../lib/utils/date';
+import { formatCurrency } from '../../lib/utils/finance';
 import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { getVisibleNotes, readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { hasDuplicateName } from '../../lib/utils/validation';
@@ -19,12 +20,14 @@ import {
   isInvoiceAdjustmentCategory,
   isReimbursementCategory,
   normalizeCategoryName,
+  parseEntryCount,
   PaymentSourceType,
   REIMBURSEMENT_CATEGORY_NAME,
 } from './addEntryRules';
 import {
   AddEntryDraft,
   buildQuickEntryTransactions,
+  splitAmountIntoInstallments,
 } from './addEntryBuilder';
 import { AddEntrySavePlan, buildAddEntrySavePlan } from './addEntrySavePlan';
 import { ExpenseOptions } from './ExpenseOptions';
@@ -174,7 +177,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setHasFixedEndDate(Boolean(transactionMeta.generatedUntil));
     setFixedEndDate(transactionMeta.generatedUntil ?? '');
     setInstallmentCount(String(transactionMeta.totalInstallments ?? 2));
-    setEditScope(transaction && isRecurringOccurrence ? 'forward' : 'single');
+    setEditScope(transaction && (isRecurringOccurrence || transactionMeta.entryMode === 'installment') ? 'forward' : 'single');
     setNewCategoryName('');
     setCategoryError('');
     setFormError('');
@@ -286,6 +289,17 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     : [];
   const cannotSubmit = flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && cards.length === 0;
   const parsedAmount = parseCurrencyInput(amount);
+  const installmentPreview = (() => {
+    if (!isInstallmentExpense || transaction || parsedAmount <= 0) return null;
+    const count = parseEntryCount(installmentCount, 2);
+    const amounts = splitAmountIntoInstallments(parsedAmount, count);
+    const firstAmount = amounts[0] ?? 0;
+    const lastAmount = amounts[amounts.length - 1] ?? firstAmount;
+    const hasAdjustment = amounts.some((item) => item !== firstAmount);
+    return hasAdjustment
+      ? `${count} parcelas: ${formatCurrency(firstAmount)} nas primeiras e ${formatCurrency(lastAmount)} na última. Total ${formatCurrency(parsedAmount)}.`
+      : `${count}x de ${formatCurrency(firstAmount)}. Total ${formatCurrency(parsedAmount)}.`;
+  })();
   const parsedSplitPercent = Math.min(100, Math.max(0, Number.parseFloat(splitPercent.replace(',', '.')) || 0));
   const parsedSplitFixedAmount = parseCurrencyInput(splitFixedAmount);
   const reimbursementAmount = flow === 'expense' && splitMode === 'third_party_full'
@@ -863,7 +877,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         </div>
 
         <div className="px-5 pb-5 pt-1 md:px-6">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Valor</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            {isInstallmentExpense && !transaction ? 'Valor total da compra' : 'Valor'}
+          </p>
           <div className="mt-1 flex items-center gap-3">
             <CurrencyInput
               value={amount}
@@ -930,6 +946,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                   isInvoiceCredit={isInvoiceCredit}
                   canEditForwardEntries={canEditForwardEntries}
                   editScope={editScope}
+                  installmentPreview={installmentPreview}
                   onExpenseModeChange={setExpenseMode}
                   onCardChange={setCardId}
                   onInstallmentCountChange={setInstallmentCount}
@@ -993,13 +1010,15 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 </div>
               ) : null}
 
-              <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-                Categoria
-                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-                  <option value="">Selecione</option>
-                  {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-              </label>
+              {flow !== 'transfer' ? (
+                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+                  Categoria
+                  <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
+                    <option value="">Selecione</option>
+                    {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
+                </label>
+              ) : null}
 
               <SourceSelector
                 accounts={accounts}
@@ -1009,6 +1028,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 sourceType={sourceType}
                 accountId={accountId}
                 cardId={cardId}
+                fromAccountId={fromAccountId}
+                toAccountId={toAccountId}
                 status={status}
                 isInstallmentExpense={isInstallmentExpense}
                 isInvoiceCredit={isInvoiceCredit}
@@ -1016,6 +1037,8 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                 isEditingClosedInvoice={isEditingClosedInvoice}
                 onSourceTypeChange={setSourceType}
                 onAccountChange={setAccountId}
+                onFromAccountChange={setFromAccountId}
+                onToAccountChange={setToAccountId}
                 onCardChange={setCardId}
                 onStatusChange={setStatus}
               />

@@ -7,6 +7,7 @@ interface ExpenseOptionsProps {
   lockedSourceType: PaymentSourceType | null;
   expenseMode: ExpenseEntryMode;
   installmentCount: string;
+  installmentPreview?: string | null;
   transaction?: Transaction | null;
   isGroupedTransaction: boolean;
   isRecurringOccurrence: boolean;
@@ -27,6 +28,7 @@ export function ExpenseOptions({
   lockedSourceType,
   expenseMode,
   installmentCount,
+  installmentPreview,
   transaction,
   isGroupedTransaction,
   isRecurringOccurrence,
@@ -89,6 +91,11 @@ export function ExpenseOptions({
               <span className="text-[11px] font-medium text-slate-500">
                 {`${parseEntryCount(installmentCount, 2)} parcelas serão criadas.`}
               </span>
+              {installmentPreview ? (
+                <span className="text-[11px] font-bold text-violet-200">
+                  {installmentPreview}
+                </span>
+              ) : null}
             </label>
           ) : null}
         </div>
@@ -97,14 +104,19 @@ export function ExpenseOptions({
       {canEditForwardEntries ? (
         <div className="grid grid-cols-2 gap-2 rounded-2xl border border-amber-400/20 bg-amber-400/5 p-2 md:col-span-12">
           <p className="col-span-2 px-2 pb-1 text-xs font-bold text-amber-100">
-            Aplicar alteração
+            {expenseMode === 'installment' ? 'Parcelas desta compra' : 'Aplicar alteração'}
           </p>
           <button type="button" onClick={() => onEditScopeChange('single')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'single' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
-            Apenas esta
+            {expenseMode === 'installment' ? 'Só esta parcela' : 'Apenas esta'}
           </button>
           <button type="button" onClick={() => onEditScopeChange('forward')} className={`h-11 rounded-xl text-xs font-bold ${editScope === 'forward' ? 'bg-amber-400 text-slate-950' : 'text-amber-100'}`}>
             Esta e próximas
           </button>
+          {expenseMode === 'installment' ? (
+            <p className="col-span-2 px-2 pt-1 text-[11px] font-semibold leading-relaxed text-amber-100/80">
+              Use “esta e próximas” para corrigir valor, categoria ou título das parcelas restantes.
+            </p>
+          ) : null}
           {isRecurringOccurrence ? (
             <>
               <p className="col-span-2 px-2 pt-1 text-[11px] font-semibold leading-relaxed text-amber-100/80">

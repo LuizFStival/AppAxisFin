@@ -58,7 +58,8 @@ create table if not exists public.accounts (
   color text not null default '#3B82F6',
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (id, user_id)
 );
 
 create table if not exists public.cards (
@@ -364,6 +365,7 @@ create table if not exists public.reserve_box_movements (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   reserve_box_id uuid not null,
+  account_id uuid references public.accounts(id) on delete set null,
   movement_type text not null check (movement_type in ('deposit', 'withdrawal', 'yield', 'balance_update')),
   amount numeric(14,2) not null check (amount >= 0),
   movement_date date not null default current_date,
@@ -415,33 +417,63 @@ security invoker
 set search_path = public, pg_temp
 as $$
 declare
-  current_amount numeric(14,2);
-  next_amount numeric(14,2);
+  current_box_balance numeric(14,2);
+  next_box_balance numeric(14,2);
+  current_account_balance numeric(14,2);
+  next_account_balance numeric(14,2);
 begin
-  select current_balance into current_amount
+  select current_balance into current_box_balance
   from public.reserve_boxes
   where id = new.reserve_box_id
     and user_id = new.user_id
   for update;
 
-  if current_amount is null then
+  if current_box_balance is null then
     raise exception 'Caixinha nao encontrada para o usuario atual.';
   end if;
 
-  next_amount := case new.movement_type
-    when 'deposit' then current_amount + new.amount
-    when 'yield' then current_amount + new.amount
-    when 'withdrawal' then current_amount - new.amount
+  if new.account_id is not null and new.movement_type not in ('deposit', 'withdrawal') then
+    raise exception 'Conta so pode ser vinculada a aplicacao ou resgate de caixinha.';
+  end if;
+
+  next_box_balance := case new.movement_type
+    when 'deposit' then current_box_balance + new.amount
+    when 'yield' then current_box_balance + new.amount
+    when 'withdrawal' then current_box_balance - new.amount
     when 'balance_update' then new.amount
-    else current_amount
+    else current_box_balance
   end;
 
-  if next_amount < 0 then
+  if next_box_balance < 0 then
     raise exception 'O valor retirado e maior que o saldo atual da caixinha.';
   end if;
 
+  if new.account_id is not null then
+    select balance into current_account_balance
+    from public.accounts
+    where id = new.account_id
+      and user_id = new.user_id
+    for update;
+
+    if current_account_balance is null then
+      raise exception 'Conta nao encontrada para o usuario atual.';
+    end if;
+
+    next_account_balance := case new.movement_type
+      when 'deposit' then current_account_balance - new.amount
+      when 'withdrawal' then current_account_balance + new.amount
+      else current_account_balance
+    end;
+
+    update public.accounts
+    set balance = next_account_balance,
+        last_balance_update = new.movement_date
+    where id = new.account_id
+      and user_id = new.user_id;
+  end if;
+
   update public.reserve_boxes
-  set current_balance = next_amount,
+  set current_balance = next_box_balance,
       last_balance_update = new.movement_date
   where id = new.reserve_box_id
     and user_id = new.user_id;
@@ -525,6 +557,7 @@ create index if not exists reserve_boxes_user_active_idx on public.reserve_boxes
 create index if not exists reserve_boxes_user_institution_idx on public.reserve_boxes(user_id, institution);
 create unique index if not exists reserve_boxes_user_id_name_ci_idx on public.reserve_boxes(user_id, lower(trim(name))) where is_active;
 create index if not exists reserve_box_movements_user_box_idx on public.reserve_box_movements(user_id, reserve_box_id, movement_date desc, created_at desc);
+create index if not exists reserve_box_movements_account_id_idx on public.reserve_box_movements(account_id);
 create index if not exists budgets_user_id_period_idx on public.budgets(user_id, period);
 create index if not exists budgets_category_id_idx on public.budgets(category_id);
 create index if not exists notifications_user_id_created_at_idx on public.notifications(user_id, created_at desc);
