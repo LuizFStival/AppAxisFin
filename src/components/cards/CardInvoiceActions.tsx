@@ -5,6 +5,7 @@ import { Account, Card, Transaction } from '../../types';
 import { formatCurrency, isCardInvoicePaid } from '../../lib/utils/finance';
 import { formatLocalDate } from '../../lib/utils/date';
 import { DateInput } from '../shared/DateInput';
+import { AccountSelect } from '../shared/EntitySelect';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 
 interface CardInvoiceActionsProps {
@@ -170,17 +171,7 @@ export function CardInvoiceActions({
                 Data do pagamento
                 <DateInput value={paymentDate} onChange={setPaymentDate} />
               </label>
-              <label className="grid gap-1 text-xs font-semibold text-slate-400">
-                Conta usada
-                <select value={paymentAccountId} onChange={(event) => setPaymentAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-emerald-400">
-                  <option value="">Selecione</option>
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name} - {formatCurrency(account.balance)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <AccountSelect accounts={accounts} value={paymentAccountId} onChange={setPaymentAccountId} label="Conta usada" includeEmptyOption emptyLabel="Selecione" />
             </div>
 
             <button type="submit" disabled={isSaving || !canPay} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 font-bold text-white disabled:opacity-60">

@@ -289,6 +289,14 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     : [];
   const cannotSubmit = flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && cards.length === 0;
   const parsedAmount = parseCurrencyInput(amount);
+  const selectedAccount = accounts.find((account) => account.id === accountId);
+  const selectedFromAccount = accounts.find((account) => account.id === fromAccountId);
+  const selectedToAccount = accounts.find((account) => account.id === toAccountId);
+  const selectedSourceName = flow === 'transfer'
+    ? [selectedFromAccount?.name, selectedToAccount?.name].filter(Boolean).join(' → ')
+    : sourceType === 'card' || isInvoiceCredit
+      ? selectedCard?.name
+      : selectedAccount?.name;
   const installmentPreview = (() => {
     if (!isInstallmentExpense || transaction || parsedAmount <= 0) return null;
     const count = parseEntryCount(installmentCount, 2);
@@ -314,6 +322,84 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     && !isInvoiceCredit
     && personalAmount > 0
     && reimbursementAmount > 0;
+  const entrySummary = (() => {
+    if (parsedAmount <= 0) return 'Informe o valor para ver o impacto antes de salvar.';
+
+    if (transaction && canEditForwardEntries) {
+      const modeLabel = transactionMeta.entryMode === 'installment' ? 'parcela' : 'fixa';
+      return editScope === 'single'
+        ? `Você está editando só esta ${modeLabel}; as demais ocorrências continuam como estão.`
+        : `Você está editando esta ${modeLabel} e as próximas; meses anteriores não mudam.`;
+    }
+
+    if (flow === 'transfer') {
+      return `Transferência de ${formatCurrency(parsedAmount)}${selectedSourceName ? `: ${selectedSourceName}` : ''}. O patrimônio total não muda.`;
+    }
+
+    if (flow === 'income') {
+      return `Receita de ${formatCurrency(parsedAmount)}${selectedSourceName ? ` em ${selectedSourceName}` : ''}. Entra como ganho no mês.`;
+    }
+
+    if (isInvoiceCredit) {
+      return `Crédito de ${formatCurrency(parsedAmount)} na fatura${selectedSourceName ? ` ${selectedSourceName}` : ''}. Reduz a fatura e não vira receita.`;
+    }
+
+    if (expenseMode === 'installment' && !transaction) {
+      const count = parseEntryCount(installmentCount, 2);
+      const amounts = splitAmountIntoInstallments(parsedAmount, count);
+      const firstAmount = amounts[0] ?? 0;
+      const reimbursementText = shouldCreateSharedEntries
+        ? ` Também cria ${count} registro${count === 1 ? '' : 's'} de reembolso para ${formatCurrency(reimbursementAmount)} no total.`
+        : '';
+      return `Compra total de ${formatCurrency(parsedAmount)} será dividida em ${count} parcela${count === 1 ? '' : 's'} de aproximadamente ${formatCurrency(firstAmount)}.${reimbursementText}`;
+    }
+
+    if (expenseMode === 'fixed' && !transaction) {
+      const projection = hasFixedEndDate && fixedEndDate
+        ? `${fixedDates.length} ocorrência${fixedDates.length === 1 ? '' : 's'} até ${fixedEndDate}`
+        : 'regra mensal recorrente';
+      return `Despesa fixa de ${formatCurrency(parsedAmount)}: será salva como ${projection}.`;
+    }
+
+    if (splitMode === 'third_party_full') {
+      return `Despesa de ${formatCurrency(parsedAmount)} é 100% de terceiro. Fica em reembolsos e não pesa como gasto pessoal.`;
+    }
+
+    if (shouldCreateSharedEntries) {
+      return `Divisão: sua parte será ${formatCurrency(personalAmount)} e o reembolso será ${formatCurrency(reimbursementAmount)}.`;
+    }
+
+    return `Despesa de ${formatCurrency(parsedAmount)}${selectedSourceName ? ` em ${selectedSourceName}` : ''}.`;
+  })();
+  const submitLabel = transaction
+    ? editScope === 'forward' && canEditForwardEntries ? 'Salvar esta e próximas' : 'Salvar alteração'
+    : expenseMode === 'installment' && flow === 'expense' && !isInvoiceCredit
+      ? 'Criar parcelas'
+      : expenseMode === 'fixed' && flow === 'expense' && !isInvoiceCredit
+        ? 'Criar fixa'
+        : 'Salvar lançamento';
+  const flowLabel = transaction
+    ? 'Edição'
+    : flow === 'income'
+      ? 'Receita'
+      : flow === 'transfer'
+        ? 'Transferência'
+        : lockedSourceType === 'card'
+          ? 'Compra no cartão'
+          : lockedSourceType === 'account'
+            ? 'Despesa em conta'
+            : 'Despesa';
+  const flowSubtitle = transaction
+    ? 'Revise os campos e escolha o escopo antes de salvar.'
+    : flow === 'income'
+      ? 'Entrada de dinheiro em uma conta.'
+      : flow === 'transfer'
+        ? 'Movimento entre contas, sem impacto no patrimônio total.'
+        : lockedSourceType === 'card'
+          ? 'Compra entra na fatura do cartão selecionado.'
+          : lockedSourceType === 'account'
+            ? 'Débito, Pix ou saída direta de uma conta.'
+            : 'Escolha origem, categoria e detalhes da despesa.';
   const hasAdvancedContext = expenseMode !== 'variable'
     || isInvoiceCredit
     || splitMode !== 'none'
@@ -846,6 +932,12 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
               <ArrowRightLeft size={24} className="text-slate-300" />
             </button>
           </div>
+          <div className="mt-4 rounded-2xl border border-violet-300/15 bg-violet-400/[0.06] px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-100/70">Importação em lote</p>
+            <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-300">
+              Fatura Nubank e conciliação em lote ficam em Cartões, dentro da fatura do cartão.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -910,139 +1002,175 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
             </p>
           ) : null}
 
-          <div className="grid gap-3">
-            <label className="grid gap-2 text-sm font-semibold text-slate-200">
-              Título
-              <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-base text-white outline-none transition focus:border-violet-300" />
-            </label>
+          <div className="mb-4 rounded-2xl border border-sky-300/15 bg-sky-300/[0.06] px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-200/80">Ao salvar</p>
+            <p className="mt-1 text-sm font-semibold leading-relaxed text-slate-100">{entrySummary}</p>
+          </div>
 
-            <div className="grid gap-3 md:grid-cols-12">
-              <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-5">
-                Data
-                <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setDate(todayValue)}
-                    className={`h-11 rounded-full border px-4 text-sm font-bold ${
-                      date === todayValue ? 'border-emerald-400 text-emerald-300' : 'border-white/15 text-slate-400'
-                    }`}
-                  >
-                    Hoje
-                  </button>
-                  <DateInput value={date} onChange={setDate} />
+          <div className="grid gap-4">
+            <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">1. Identificação</p>
+                  <p className="mt-1 text-sm font-bold text-white">{flowLabel}</p>
                 </div>
-              </label>
+                <p className="max-w-sm text-xs font-semibold leading-relaxed text-slate-400">{flowSubtitle}</p>
+              </div>
 
-              {flow === 'expense' ? (
-                <ExpenseOptions
-                  cards={cards}
-                  cardId={cardId}
-                  lockedSourceType={lockedSourceType}
-                  expenseMode={expenseMode}
-                  installmentCount={installmentCount}
-                  transaction={transaction}
-                  isGroupedTransaction={isGroupedTransaction}
-                  isRecurringOccurrence={isRecurringOccurrence}
-                  isInvoiceCredit={isInvoiceCredit}
-                  canEditForwardEntries={canEditForwardEntries}
-                  editScope={editScope}
-                  installmentPreview={installmentPreview}
-                  onExpenseModeChange={setExpenseMode}
-                  onCardChange={setCardId}
-                  onInstallmentCountChange={setInstallmentCount}
-                  onEditScopeChange={setEditScope}
-                  onSkipFixedOccurrence={onSkipFixedOccurrence}
-                  onClose={onClose}
-                />
-              ) : null}
-
-              {flow === 'expense' ? (
-                <ReimbursementFields
-                  accounts={accounts}
-                  reimbursementPeople={reimbursementPeople}
-                  accountId={accountId}
-                  lockedSourceType={lockedSourceType}
-                  canUseReimbursements={canUseReimbursements}
-                  isInvoiceCredit={isInvoiceCredit}
-                  isQuickOptionsOpen={isQuickOptionsOpen}
-                  splitMode={splitMode}
-                  splitType={splitType}
-                  splitPercent={splitPercent}
-                  splitFixedAmount={splitFixedAmount}
-                  personalAmount={personalAmount}
-                  reimbursementAmount={reimbursementAmount}
-                  isReimbursable={isReimbursable}
-                  reimbursementPersonId={reimbursementPersonId}
-                  reimbursementStatus={reimbursementStatus}
-                  reimbursementReceivedAccountId={reimbursementReceivedAccountId}
-                  newPersonName={newPersonName}
-                  isCreatingPerson={isCreatingPerson}
-                  personError={personError}
-                  onInvoiceCreditChange={handleInvoiceCreditChange}
-                  onQuickOptionsOpenChange={setIsQuickOptionsOpen}
-                  onSplitModeChange={handleSplitModeChange}
-                  onSplitTypeChange={setSplitType}
-                  onSplitPercentChange={setSplitPercent}
-                  onSplitFixedAmountChange={setSplitFixedAmount}
-                  onReimbursementPersonChange={setReimbursementPersonId}
-                  onReimbursementStatusChange={setReimbursementStatus}
-                  onReimbursementReceivedAccountChange={setReimbursementReceivedAccountId}
-                  onNewPersonNameChange={setNewPersonName}
-                  onCreatePerson={handleCreatePerson}
-                />
-              ) : null}
-
-              {hasPersonalExpenseShare ? (
-                <div className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-                  Natureza
-                  <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.035] p-1.5">
-                    {expenseNeedOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setExpenseNeed(option.id)}
-                        className={`h-10 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {flow !== 'transfer' ? (
-                <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-                  Categoria
-                  <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-                    <option value="">Selecione</option>
-                    {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                  </select>
+              <div className="grid gap-3 md:grid-cols-12">
+                <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-12">
+                  Título
+                  <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Título do lançamento" className="h-12 rounded-2xl border border-white/10 bg-black/20 px-4 text-base text-white outline-none transition focus:border-violet-300" />
                 </label>
-              ) : null}
 
-              <SourceSelector
-                accounts={accounts}
-                cards={cards}
-                flow={flow}
-                lockedSourceType={lockedSourceType}
-                sourceType={sourceType}
-                accountId={accountId}
-                cardId={cardId}
-                fromAccountId={fromAccountId}
-                toAccountId={toAccountId}
-                status={status}
-                isInstallmentExpense={isInstallmentExpense}
-                isInvoiceCredit={isInvoiceCredit}
-                invoiceInfo={invoiceInfo}
-                isEditingClosedInvoice={isEditingClosedInvoice}
-                onSourceTypeChange={setSourceType}
-                onAccountChange={setAccountId}
-                onFromAccountChange={setFromAccountId}
-                onToAccountChange={setToAccountId}
-                onCardChange={setCardId}
-                onStatusChange={setStatus}
-              />
-            </div>
+                <label className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-5">
+                  Data
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDate(todayValue)}
+                      className={`h-11 rounded-full border px-4 text-sm font-bold ${
+                        date === todayValue ? 'border-emerald-400 text-emerald-300' : 'border-white/15 text-slate-400'
+                      }`}
+                    >
+                      Hoje
+                    </button>
+                    <DateInput value={date} onChange={setDate} />
+                  </div>
+                </label>
+
+                {flow !== 'transfer' ? (
+                  <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-7">
+                    Categoria
+                    <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-black/20 px-4 text-white outline-none transition focus:border-violet-300">
+                      <option value="">Selecione</option>
+                      {filteredCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+            </section>
+
+            {flow === 'expense' ? (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+                <div className="mb-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">2. Detalhes da despesa</p>
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-400">
+                    Ajuste parcelamento, fixa, estorno ou reembolso apenas quando o lançamento precisar.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-12">
+                  <ExpenseOptions
+                    cards={cards}
+                    cardId={cardId}
+                    lockedSourceType={lockedSourceType}
+                    expenseMode={expenseMode}
+                    installmentCount={installmentCount}
+                    transaction={transaction}
+                    isGroupedTransaction={isGroupedTransaction}
+                    isRecurringOccurrence={isRecurringOccurrence}
+                    isInvoiceCredit={isInvoiceCredit}
+                    canEditForwardEntries={canEditForwardEntries}
+                    editScope={editScope}
+                    installmentPreview={installmentPreview}
+                    onExpenseModeChange={setExpenseMode}
+                    onCardChange={setCardId}
+                    onInstallmentCountChange={setInstallmentCount}
+                    onEditScopeChange={setEditScope}
+                    onSkipFixedOccurrence={onSkipFixedOccurrence}
+                    onClose={onClose}
+                  />
+
+                  <ReimbursementFields
+                    accounts={accounts}
+                    reimbursementPeople={reimbursementPeople}
+                    accountId={accountId}
+                    lockedSourceType={lockedSourceType}
+                    canUseReimbursements={canUseReimbursements}
+                    isInvoiceCredit={isInvoiceCredit}
+                    isQuickOptionsOpen={isQuickOptionsOpen}
+                    splitMode={splitMode}
+                    splitType={splitType}
+                    splitPercent={splitPercent}
+                    splitFixedAmount={splitFixedAmount}
+                    personalAmount={personalAmount}
+                    reimbursementAmount={reimbursementAmount}
+                    isReimbursable={isReimbursable}
+                    reimbursementPersonId={reimbursementPersonId}
+                    reimbursementStatus={reimbursementStatus}
+                    reimbursementReceivedAccountId={reimbursementReceivedAccountId}
+                    newPersonName={newPersonName}
+                    isCreatingPerson={isCreatingPerson}
+                    personError={personError}
+                    onInvoiceCreditChange={handleInvoiceCreditChange}
+                    onQuickOptionsOpenChange={setIsQuickOptionsOpen}
+                    onSplitModeChange={handleSplitModeChange}
+                    onSplitTypeChange={setSplitType}
+                    onSplitPercentChange={setSplitPercent}
+                    onSplitFixedAmountChange={setSplitFixedAmount}
+                    onReimbursementPersonChange={setReimbursementPersonId}
+                    onReimbursementStatusChange={setReimbursementStatus}
+                    onReimbursementReceivedAccountChange={setReimbursementReceivedAccountId}
+                    onNewPersonNameChange={setNewPersonName}
+                    onCreatePerson={handleCreatePerson}
+                  />
+
+                  {hasPersonalExpenseShare ? (
+                    <div className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
+                      Natureza
+                      <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-black/20 p-1.5">
+                        {expenseNeedOptions.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setExpenseNeed(option.id)}
+                            className={`h-10 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-4">
+              <div className="mb-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  {flow === 'expense' ? '3.' : '2.'} Origem e estado
+                </p>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-400">
+                  {flow === 'transfer' ? 'Escolha de onde sai e para onde entra.' : 'Escolha a conta ou cartão e o estado financeiro do lançamento.'}
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-12">
+                <SourceSelector
+                  accounts={accounts}
+                  cards={cards}
+                  flow={flow}
+                  lockedSourceType={lockedSourceType}
+                  sourceType={sourceType}
+                  accountId={accountId}
+                  cardId={cardId}
+                  fromAccountId={fromAccountId}
+                  toAccountId={toAccountId}
+                  status={status}
+                  isInstallmentExpense={isInstallmentExpense}
+                  isInvoiceCredit={isInvoiceCredit}
+                  invoiceInfo={invoiceInfo}
+                  isEditingClosedInvoice={isEditingClosedInvoice}
+                  onSourceTypeChange={setSourceType}
+                  onAccountChange={setAccountId}
+                  onFromAccountChange={setFromAccountId}
+                  onToAccountChange={setToAccountId}
+                  onCardChange={setCardId}
+                  onStatusChange={setStatus}
+                />
+              </div>
+            </section>
 
             <button
               type="button"
@@ -1126,7 +1254,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
 
             <button type="submit" disabled={cannotSubmit || isSaving} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-br from-sky-500 to-violet-500 font-bold text-white disabled:opacity-50">
               <Check size={18} />
-              {isSaving ? 'Salvando...' : 'Salvar lançamento'}
+              {isSaving ? 'Salvando...' : submitLabel}
             </button>
           </div>
         </div>

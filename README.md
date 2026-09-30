@@ -103,7 +103,7 @@ As telas e os modais secundários usam carregamento sob demanda com `React.lazy`
 
 ## Mapa Graphify
 
-O mapa estrutural do app fica salvo em `src/graphify-out/`. Não é preciso reconstruir para consultar a visualização já gerada.
+O mapa estrutural do app fica salvo em `src/graphify-out/` e faz parte da governança técnica do projeto. Não é preciso reconstruir para consultar a visualização já gerada.
 
 Abrir o mapa existente:
 
@@ -129,6 +129,37 @@ Reconstrua o mapa apenas depois de mudanças relevantes em `src/`:
 
 ```bash
 npm run graphify:src
+```
+
+Resumo humano do mapa:
+
+```text
+docs/axisfin-graphify-map.md
+```
+
+## Documentação D.N.E.E.
+
+O AxisFin usa o padrão D.N.E.E. Docs para manter uma documentação viva do produto, dos fluxos e das decisões.
+
+Arquivos principais:
+
+```text
+docs/SOBRE.md                  # visão de produto
+docs/SDD.md                    # norte técnico e regras atuais
+docs/ROADMAP.md                # prioridades, fases e gargalos
+docs/CHANGELOG_EVIDENCES.md    # decisões e evidências
+docs/visao-projeto.html        # visão visual em 4 abas
+```
+
+A fonte da verdade são os arquivos Markdown. A página `docs/visao-projeto.html` é apenas uma interface visual de leitura.
+
+Documentos históricos e estudos continuam em `docs/`, incluindo:
+
+```text
+docs/despezzas-sdd.md
+docs/design-study-premium-dark.md
+docs/premium-design-rollout-plan.md
+docs/axisfin-graphify-map.md
 ```
 
 ## Supabase
@@ -220,7 +251,7 @@ Speed Insights:
 O documento vivo do produto fica em:
 
 ```text
-docs/despezzas-sdd.md
+docs/SDD.md
 ```
 
-Toda mudança de produto, regra financeira, arquitetura, persistência, navegação ou schema deve atualizar o SDD no mesmo ciclo de trabalho.
+Toda mudança de produto, regra financeira, arquitetura, persistência, navegação ou schema deve atualizar a documentação D.N.E.E. no mesmo ciclo de trabalho.

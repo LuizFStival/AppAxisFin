@@ -24,6 +24,7 @@ import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from 
 import { formatCurrency } from '../../lib/utils/finance';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { CurrencyInput } from '../shared/CurrencyInput';
+import { AccountSelect } from '../shared/EntitySelect';
 import {
   estimateReserveYield,
   getReserveBoxDeltaFromEstimate,
@@ -34,6 +35,7 @@ import {
 } from '../../lib/utils/reserveBoxes';
 import { DuplicateNameError, hasDuplicateName } from '../../lib/utils/validation';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
+import { cx, screen, surface } from '../shared/visualTokens';
 
 interface ReserveBoxesViewProps {
   boxes: ReserveBox[];
@@ -135,7 +137,7 @@ export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onC
   }
 
   return (
-    <div className="premium-scroll app-page-gutters h-full overflow-y-auto pb-8 pt-7 text-white">
+    <div className={screen.scroll}>
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-slate-400">Reservas</p>
@@ -151,7 +153,7 @@ export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onC
         </button>
       </header>
 
-      <section className="premium-card mt-5 overflow-hidden rounded-3xl p-4">
+      <section className={cx(surface.summary, 'mt-5 overflow-hidden rounded-3xl p-4')}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Total em caixinhas</p>
@@ -182,7 +184,7 @@ export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onC
       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
         <section className="grid content-start gap-3 sm:grid-cols-2">
           {visibleBoxes.length === 0 ? (
-            <div className="premium-card-soft rounded-3xl border-dashed p-7 text-center sm:col-span-2">
+            <div className={cx(surface.empty, 'rounded-3xl p-7 sm:col-span-2')}>
               <PiggyBank size={30} className="mx-auto text-slate-600" />
               <p className="mt-3 font-bold text-white">Nenhuma caixinha encontrada</p>
             </div>
@@ -196,7 +198,7 @@ export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onC
             return (
               <article
                 key={box.id}
-                className={`cosmic-card cosmic-card-hover overflow-hidden rounded-3xl border p-4 transition ${selected ? 'border-white/30' : 'border-white/8'}`}
+                className={`overflow-hidden rounded-3xl border bg-white/[0.035] p-4 transition hover:border-white/20 hover:bg-white/[0.055] ${selected ? 'border-white/30' : 'border-white/8'}`}
                 style={{
                   borderColor: selected ? `${box.color}99` : `${box.color}44`,
                   backgroundImage: `radial-gradient(circle at 82% 14%, ${box.color}2f, transparent 30%), linear-gradient(135deg, ${box.color}18, transparent 58%)`,
@@ -233,7 +235,7 @@ export function ReserveBoxesView({ boxes, movements, accounts, showBalances, onC
           })}
         </section>
 
-        <section className="premium-card-soft rounded-3xl p-4">
+        <section className={cx(surface.panelMuted, 'rounded-3xl p-4')}>
           {selectedBox ? (
             <>
               <div className="flex items-start justify-between gap-3">
@@ -526,13 +528,7 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
         <label className="grid gap-1 text-xs font-semibold text-slate-400">Descrição<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder={type === 'yield' ? 'Rendimento mensal' : 'Opcional'} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none focus:border-sky-400" /></label>
         {requiresAccount ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-            <label className="grid gap-1 text-xs font-semibold text-slate-400">
-              {isDeposit ? 'Conta de origem' : 'Conta de destino'}
-              <select value={accountId} onChange={(event) => setAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400">
-                <option value="">Selecione</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-              </select>
-            </label>
+            <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId} label={isDeposit ? 'Conta de origem' : 'Conta de destino'} includeEmptyOption emptyLabel="Selecione" />
             <p className="mt-2 text-xs text-slate-500">
               {isDeposit ? 'O valor sai da conta escolhida e entra nesta caixinha.' : 'O valor sai desta caixinha e entra na conta escolhida.'}
             </p>
@@ -624,7 +620,7 @@ function ColorIconPicker({ color, icon, onColorChange, onIconChange }: {
 function ModalFrame({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="premium-card premium-scroll max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] p-5 sm:rounded-[28px]">
+      <div className={cx(surface.modal, 'premium-scroll max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[28px] p-5 sm:rounded-[28px]')}>
         <div className="mb-5 flex items-center justify-between gap-3">
           <h2 className="font-display text-lg font-bold text-white">{title}</h2>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">

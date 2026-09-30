@@ -15,22 +15,47 @@ const primaryItems = [
   { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
 ];
 
-const moreItems = [
-  { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
-  { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
-  { id: 'accounts' as const, label: 'Contas', icon: Wallet },
-  { id: 'reserves' as const, label: 'Caixinhas', icon: PiggyBank },
-  { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },
-  { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
-  { id: 'profile' as const, label: 'Perfil', icon: User },
+const moreSections = [
+  {
+    title: 'Movimentos',
+    items: [
+      { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
+      { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
+    ],
+  },
+  {
+    title: 'Patrimônio',
+    items: [
+      { id: 'accounts' as const, label: 'Contas', icon: Wallet },
+      { id: 'reserves' as const, label: 'Caixinhas', icon: PiggyBank },
+      { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },
+    ],
+  },
+  {
+    title: 'Análise',
+    items: [
+      { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
+    ],
+  },
+  {
+    title: 'Configuração',
+    items: [
+      { id: 'profile' as const, label: 'Perfil', icon: User },
+    ],
+  },
 ];
 
 export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigate, onAdd }: BottomNavigationProps) {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  const visibleMoreItems = reimbursementsEnabled
-    ? moreItems
-    : moreItems.filter((item) => item.id !== 'reimbursements');
-  const isMoreActive = visibleMoreItems.some((item) => item.id === currentView);
+  const visibleMoreSections = moreSections
+    .map((section) => ({
+      ...section,
+      items: reimbursementsEnabled
+        ? section.items
+        : section.items.filter((item) => item.id !== 'reimbursements'),
+    }))
+    .filter((section) => section.items.length > 0);
+  const isMoreActive = visibleMoreSections.some((section) => section.items.some((item) => item.id === currentView));
 
   function handleNavigate(view: AppView) {
     setIsMoreOpen(false);
@@ -40,25 +65,30 @@ export function BottomNavigation({ currentView, reimbursementsEnabled, onNavigat
   return (
     <nav className="bottom-navigation fixed inset-x-0 bottom-0 z-40 bg-transparent px-4 pt-2 md:absolute" aria-label="Navegacao inferior">
       {isMoreOpen ? (
-        <div className="absolute bottom-[86px] right-4 w-56 rounded-2xl border border-white/10 bg-[#101319]/95 p-2 shadow-2xl shadow-black/60 backdrop-blur-xl">
-          {visibleMoreItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentView === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleNavigate(item.id)}
-                aria-current={isActive ? 'page' : undefined}
-                className={`flex h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition ${
-                  isActive ? 'premium-metal text-white' : 'text-slate-300 hover:bg-white/5'
-                }`}
-              >
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
+        <div className="absolute bottom-[86px] right-4 max-h-[min(68vh,30rem)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#101319]/95 p-3 shadow-2xl shadow-black/60 backdrop-blur-xl">
+          {visibleMoreSections.map((section) => (
+            <div key={section.title} className="space-y-1 pb-3 last:pb-0">
+              <p className="px-3 py-1 text-[0.62rem] font-black uppercase tracking-[0.18em] text-slate-500">{section.title}</p>
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentView === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleNavigate(item.id)}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex h-12 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition ${
+                      isActive ? 'premium-metal text-white' : 'text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
       ) : null}
 

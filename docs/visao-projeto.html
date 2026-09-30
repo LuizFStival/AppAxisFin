@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AxisFin - Visao do Projeto</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #090a0d;
+        --surface: #111319;
+        --surface-2: #171a22;
+        --border: rgba(255, 255, 255, 0.1);
+        --text: #f8fafc;
+        --muted: #98a2b3;
+        --soft: #cbd5e1;
+        --accent: #8b5cf6;
+        --accent-2: #38bdf8;
+        --green: #34d399;
+        --amber: #fbbf24;
+        --rose: #fb7185;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 18% 8%, rgba(139, 92, 246, 0.18), transparent 32rem),
+          radial-gradient(circle at 82% 24%, rgba(56, 189, 248, 0.12), transparent 28rem),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 32px 0 48px;
+      }
+
+      header {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+
+      .eyebrow {
+        color: var(--accent-2);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(32px, 5vw, 54px);
+        line-height: 0.95;
+        letter-spacing: -0.03em;
+      }
+
+      .subtitle {
+        max-width: 760px;
+        margin: 0;
+        color: var(--soft);
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .pill {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.045);
+        padding: 8px 12px;
+        color: var(--soft);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin: 24px 0 16px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.035);
+        padding: 6px;
+      }
+
+      .tabs label {
+        cursor: pointer;
+        border-radius: 13px;
+        padding: 12px 10px;
+        color: var(--muted);
+        text-align: center;
+        font-size: 13px;
+        font-weight: 800;
+        transition: 0.18s ease;
+      }
+
+      input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #tab-sobre:checked ~ .tabs label[for="tab-sobre"],
+      #tab-norte:checked ~ .tabs label[for="tab-norte"],
+      #tab-roadmap:checked ~ .tabs label[for="tab-roadmap"],
+      #tab-evidencias:checked ~ .tabs label[for="tab-evidencias"] {
+        background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(139,92,246,0.22));
+        color: white;
+      }
+
+      .panel {
+        display: none;
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        background:
+          linear-gradient(145deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)),
+          var(--surface);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+        padding: clamp(20px, 3vw, 32px);
+      }
+
+      #tab-sobre:checked ~ .content #sobre,
+      #tab-norte:checked ~ .content #norte,
+      #tab-roadmap:checked ~ .content #roadmap,
+      #tab-evidencias:checked ~ .content #evidencias {
+        display: block;
+      }
+
+      h2 {
+        margin: 0 0 14px;
+        font-size: 24px;
+      }
+
+      h3 {
+        margin: 24px 0 10px;
+        color: white;
+        font-size: 16px;
+      }
+
+      p,
+      li {
+        color: var(--soft);
+        line-height: 1.65;
+      }
+
+      a {
+        color: #93c5fd;
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.035);
+        padding: 16px;
+      }
+
+      .card strong {
+        display: block;
+        margin-bottom: 6px;
+        color: white;
+      }
+
+      .status {
+        display: inline-flex;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .green { color: var(--green); }
+      .amber { color: var(--amber); }
+      .rose { color: var(--rose); }
+      .blue { color: var(--accent-2); }
+
+      .docs-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .docs-list a {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 12px 14px;
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      .docs-list span {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      @media (max-width: 760px) {
+        .tabs {
+          grid-template-columns: 1fr;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="eyebrow">D.N.E.E. Docs · AxisFin</div>
+        <h1>Visao viva do projeto</h1>
+        <p class="subtitle">
+          Painel humano para acompanhar o que o AxisFin e hoje, quais regras guiam o produto, o que esta priorizado e quais decisoes ja foram tomadas.
+          Os arquivos Markdown continuam sendo a fonte da verdade.
+        </p>
+        <div class="meta">
+          <span class="pill">Fonte: docs/*.md</span>
+          <span class="pill">Graphify: src/graphify-out</span>
+          <span class="pill">Status: consolidacao</span>
+        </div>
+      </header>
+
+      <input id="tab-sobre" name="tabs" type="radio" checked />
+      <input id="tab-norte" name="tabs" type="radio" />
+      <input id="tab-roadmap" name="tabs" type="radio" />
+      <input id="tab-evidencias" name="tabs" type="radio" />
+
+      <nav class="tabs" aria-label="Abas da documentacao">
+        <label for="tab-sobre">Sobre o projeto</label>
+        <label for="tab-norte">Norte do projeto</label>
+        <label for="tab-roadmap">Roadmap</label>
+        <label for="tab-evidencias">Decisoes & Evidencias</label>
+      </nav>
+
+      <section class="content">
+        <article id="sobre" class="panel">
+          <h2>Sobre o projeto</h2>
+          <p>
+            AxisFin e um app financeiro pessoal para transformar contas, cartoes, caixinhas, reembolsos e compromissos em uma visao simples do que aconteceu,
+            do que precisa ser resolvido e do que esta sobrando.
+          </p>
+          <div class="grid">
+            <div class="card"><strong>Problema</strong><p>Controlar dinheiro real sem confundir caixa, competencia, fatura, terceiros e patrimonio.</p></div>
+            <div class="card"><strong>Publico atual</strong><p>Uso pessoal com multiplas contas, cartoes, reservas, reembolsos e metas.</p></div>
+            <div class="card"><strong>Momento</strong><p>Produto rico em funcionalidades, agora em fase de simplificacao e governanca.</p></div>
+          </div>
+          <h3>Leia a fonte</h3>
+          <div class="docs-list">
+            <a href="./SOBRE.md">SOBRE.md <span>visao de produto</span></a>
+          </div>
+        </article>
+
+        <article id="norte" class="panel">
+          <h2>Norte do projeto</h2>
+          <p>
+            O SDD registra escopo, regras financeiras, arquitetura, riscos e criterios de qualidade. Graphify entra aqui como mapa tecnico vivo:
+            ele mostra comunidades, arquivos centrais, relacoes e possiveis gargalos antes de grandes mudancas.
+          </p>
+          <div class="grid">
+            <div class="card"><strong class="blue">Graphify atual</strong><p>843 nos, 3026 arestas, 38 comunidades e nenhum ciclo de importacao detectado.</p></div>
+            <div class="card"><strong class="amber">Centros do sistema</strong><p>App, AddEntryModal, MonthCenterView, ReportsView, CardsView, financeStore e transactionMeta.</p></div>
+            <div class="card"><strong class="green">Regra</strong><p>Antes de refatorar, consultar o mapa. Depois de alterar codigo, tentar atualizar o Graphify.</p></div>
+          </div>
+          <h3>Leia as fontes</h3>
+          <div class="docs-list">
+            <a href="./SDD.md">SDD.md <span>norte tecnico</span></a>
+            <a href="./axisfin-graphify-map.md">axisfin-graphify-map.md <span>mapa tecnico humano</span></a>
+            <a href="../src/graphify-out/GRAPH_REPORT.md">GRAPH_REPORT.md <span>relatorio gerado</span></a>
+            <a href="../src/graphify-out/graph.html">graph.html <span>grafo interativo</span></a>
+          </div>
+        </article>
+
+        <article id="roadmap" class="panel">
+          <h2>Roadmap</h2>
+          <p>
+            A prioridade e reduzir ruido e complexidade antes de adicionar novas frentes. O roadmap esta organizado por navegacao,
+            modal de lancamento, limpeza visual, relatorios, Central do Mes, dialogs internos e refatoracao guiada pelo Graphify.
+          </p>
+          <div class="grid">
+            <div class="card"><strong>P0</strong><p>Resolver/contornar bloqueio Graphify e revalidar fluxos financeiros sensiveis.</p></div>
+            <div class="card"><strong>P1</strong><p>Reorganizar navegacao, simplificar modal e redesenhar relatorios.</p></div>
+            <div class="card"><strong>P2</strong><p>Limpar visual, reduzir excesso de cards e melhorar listas densas.</p></div>
+          </div>
+          <h3>Leia a fonte</h3>
+          <div class="docs-list">
+            <a href="./ROADMAP.md">ROADMAP.md <span>planejamento priorizado</span></a>
+          </div>
+        </article>
+
+        <article id="evidencias" class="panel">
+          <h2>Decisoes & Evidencias</h2>
+          <p>
+            O changelog registra Antes, Depois, Decisao, Evidencia, Impacto e Proximos passos. Mudancas relevantes devem atualizar este historico,
+            principalmente quando alterarem regras financeiras, fluxos ou estrutura.
+          </p>
+          <div class="grid">
+            <div class="card"><strong class="green">Decisao</strong><p>D.N.E.E. Docs passa a governar mudancas relevantes.</p></div>
+            <div class="card"><strong class="blue">Evidencia</strong><p>Documentos base criados e Graphify integrado ao processo.</p></div>
+            <div class="card"><strong class="amber">Pendente</strong><p>Validar impacto real da documentacao no proximo ciclo de implementacao.</p></div>
+          </div>
+          <h3>Leia a fonte</h3>
+          <div class="docs-list">
+            <a href="./CHANGELOG_EVIDENCES.md">CHANGELOG_EVIDENCES.md <span>historico e evidencias</span></a>
+          </div>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

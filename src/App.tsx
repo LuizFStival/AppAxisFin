@@ -38,6 +38,7 @@ import { getCardInvoiceClosingMonth } from './lib/utils/cardInvoices';
 import { addMonths, formatLocalDate } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
 import { getUserFriendlyError } from './lib/utils/userFriendlyError';
+import { buildAccountBalanceAdjustmentTransaction } from './lib/utils/accountBalanceAdjustment';
 
 const emptyFinanceSnapshot: FinanceSnapshot = {
   accounts: [],
@@ -212,11 +213,21 @@ export default function App() {
     }));
   }
 
-  async function handleUpdateAccountBalance(account: FinanceSnapshot['accounts'][number], balance: number, date: string = formatLocalDate(new Date())) {
+  async function handleUpdateAccountBalance(account: FinanceSnapshot['accounts'][number], balance: number, date: string = formatLocalDate(new Date()), adjustmentDescription?: string) {
+    const adjustment = buildAccountBalanceAdjustmentTransaction({
+      account,
+      balance,
+      date,
+      description: adjustmentDescription,
+    });
+    const savedAdjustment = adjustment ? await transactionRepository.create(adjustment) : undefined;
     const saved = await accountRepository.updateBalance(account.id, balance, date);
     setSnapshot((current) => ({
       ...current,
       accounts: current.accounts.map((item) => item.id === saved.id ? saved : item),
+      transactions: savedAdjustment
+        ? [savedAdjustment, ...current.transactions].sort((left, right) => right.date.localeCompare(left.date))
+        : current.transactions,
     }));
   }
 
@@ -1188,6 +1199,7 @@ export default function App() {
           )}
           onReorderInvoiceTransactions={reorderInvoiceTransactions}
           onPayInvoice={handlePayCardInvoice}
+          onImportInvoiceTransactions={(transactions) => handleSaveTransaction(transactions)}
           onUpdateCardClosingDay={handleUpdateCardClosingDay}
           onEditCard={(card) => {
             setEditingCard(card);

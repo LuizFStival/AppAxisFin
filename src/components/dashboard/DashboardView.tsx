@@ -23,6 +23,7 @@ import { summarizeReserveBoxes } from '../../lib/utils/reserveBoxes';
 import { StatCard } from '../shared/StatCard';
 import { BankLogo } from '../shared/BankLogo';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
+import { CardPhysicalPreview, getNetworkLabel } from '../cards/CardPhysicalPreview';
 
 interface DashboardViewProps {
   userName: string;
@@ -100,6 +101,23 @@ function getInvoiceSummary(card: Card, transactions: Transaction[], closingMonth
     transactions: invoiceTransactions,
     transactionCount: invoiceTransactions.length,
   };
+}
+
+function getInvoiceStatusLabel(status: 'aberta' | 'fechada' | 'vencida') {
+  return status === 'aberta' ? 'Aberta' : status === 'fechada' ? 'Fechada' : 'Vencida';
+}
+
+function getInvoiceDisplayStatus(status: 'aberta' | 'fechada' | 'vencida', invoiceTransactions: Transaction[]) {
+  if (isCardInvoicePaid(invoiceTransactions)) return 'Paga';
+
+  return getInvoiceStatusLabel(status);
+}
+
+function getInvoiceStatusClass(displayStatus: string) {
+  if (displayStatus === 'Paga') return 'border-emerald-400/25 bg-emerald-500/15 text-emerald-200';
+  if (displayStatus === 'Vencida') return 'border-rose-400/25 bg-rose-500/15 text-rose-200';
+  if (displayStatus === 'Fechada') return 'border-amber-400/25 bg-amber-500/15 text-amber-200';
+  return 'border-sky-400/25 bg-sky-500/15 text-sky-200';
 }
 
 function getAccountMonthSummary(account: Account, transactions: Transaction[], month: string, cards: Card[]) {
@@ -226,7 +244,7 @@ export function DashboardView({
 
   return (
     <div className="premium-scroll flex h-full min-h-0 flex-col overflow-y-auto pb-8 text-white">
-      <header className="premium-card-soft mx-4 mb-3 mt-4 flex items-center justify-between gap-3 rounded-2xl px-3 py-2.5 md:mx-8 xl:mx-10">
+      <header className="mx-4 mb-3 mt-4 flex items-center justify-between gap-3 border-b border-white/8 px-1 pb-3 md:mx-8 xl:mx-10">
         <button
           type="button"
           onClick={onOpenProfile}
@@ -297,8 +315,7 @@ export function DashboardView({
       </section>
 
       <section className="app-page-gutters text-center">
-        <div className="premium-card relative flex flex-col items-center overflow-hidden rounded-3xl px-4 py-4 md:px-5">
-          <div className="absolute -right-16 -top-16 h-36 w-36 rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="relative flex flex-col items-center overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035] px-4 py-4 md:px-5">
           <div className="mb-1 flex items-center justify-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-gray-400">
             <span>Saldo atual</span>
             <button type="button" onClick={onToggleBalances} className="p-1 text-gray-400 transition hover:text-white">
@@ -312,7 +329,7 @@ export function DashboardView({
           <div className="mb-3 h-px w-full bg-white/8" />
 
           <div className="grid w-full grid-cols-1 gap-2 text-left sm:grid-cols-2">
-            <button type="button" onClick={() => onViewDashboardTransactions('received')} className="premium-card-soft rounded-2xl p-3 text-left transition hover:border-white/15" title="Ver entradas confirmadas">
+            <button type="button" onClick={() => onViewDashboardTransactions('received')} className="rounded-2xl border border-white/8 bg-black/20 p-3 text-left transition hover:border-white/15 hover:bg-white/[0.045]" title="Ver entradas confirmadas">
               <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-gray-400">Entrou nas contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-emerald-400">
                 {hiddenMoney(showBalances, summary.accountInflow)}
@@ -321,7 +338,7 @@ export function DashboardView({
                 Meu {hiddenMoney(showBalances, summary.accountInflowPersonal)} • Terceiros {hiddenMoney(showBalances, summary.accountInflowThirdParty)}
               </p>
             </button>
-            <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="premium-card-soft rounded-2xl p-3 text-left transition hover:border-white/15" title="Ver saídas confirmadas">
+            <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="rounded-2xl border border-white/8 bg-black/20 p-3 text-left transition hover:border-white/15 hover:bg-white/[0.045]" title="Ver saídas confirmadas">
               <p className="mb-1 text-[10px] uppercase tracking-[0.14em] text-gray-400">Saiu das contas</p>
               <p className="whitespace-nowrap font-mono text-sm font-semibold text-red-400">
                 {hiddenMoney(showBalances, summary.accountOutflow)}
@@ -413,7 +430,7 @@ export function DashboardView({
         <button
           type="button"
           onClick={onViewReserves}
-          className="cosmic-card cosmic-card-hover grid w-full gap-3 rounded-3xl border border-violet-400/20 p-4 text-left sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+          className="grid w-full gap-3 rounded-3xl border border-white/10 bg-white/[0.035] p-4 text-left transition hover:border-violet-300/25 hover:bg-white/[0.055] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
         >
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-200">
@@ -466,7 +483,7 @@ export function DashboardView({
                 type="button"
                 key={account.id}
                 onClick={() => onViewAccounts(account.id)}
-                className="cosmic-card cosmic-card-hover relative flex w-[168px] shrink-0 snap-start cursor-pointer flex-col justify-between overflow-hidden rounded-2xl p-3 text-left md:min-h-[132px] md:w-auto md:shrink"
+                className="relative flex w-[168px] shrink-0 snap-start cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-left transition hover:border-white/20 hover:bg-white/[0.055] md:min-h-[132px] md:w-auto md:shrink"
                 style={{
                   borderColor: `${account.color}44`,
                   backgroundImage: `linear-gradient(135deg, ${account.color}22, transparent 54%)`,
@@ -521,60 +538,78 @@ export function DashboardView({
           </button>
         </div>
         {activeInvoiceSummaries.length === 0 ? (
-          <div className="cosmic-card rounded-2xl border-dashed p-5 text-center">
+          <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.025] p-5 text-center">
             <CreditCard size={22} className="mx-auto mb-2 text-gray-600" />
             <p className="text-sm font-semibold text-gray-300">Nenhum cartão cadastrado</p>
             <p className="mt-1 text-xs text-gray-500">Seus cartões reais vão aparecer aqui quando forem adicionados.</p>
           </div>
         ) : (
-          <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
+          <div className="grid w-full grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-[repeat(auto-fit,minmax(380px,1fr))]">
           {activeInvoiceSummaries.map(({ card, invoice }) => {
-            const paid = isCardInvoicePaid(invoice.transactions);
             const progress = card.limit > 0 ? Math.min(100, (invoice.total / card.limit) * 100) : 0;
+            const displayStatus = getInvoiceDisplayStatus(invoice.status, invoice.transactions);
+            const statusClass = getInvoiceStatusClass(displayStatus);
             return (
               <article
                 key={card.id}
-                className="cosmic-card cosmic-card-hover relative min-h-[152px] w-full cursor-pointer overflow-hidden rounded-3xl p-4"
+                className="cosmic-card cosmic-card-hover relative w-full overflow-hidden rounded-3xl border p-4"
                 style={{
-                  borderColor: `${card.color}66`,
-                  backgroundImage: `radial-gradient(circle at 86% 18%, ${card.color}38, transparent 30%), linear-gradient(135deg, ${card.color}20, transparent 58%)`,
+                  borderColor: `${card.color}55`,
+                  backgroundImage: `linear-gradient(135deg, ${card.color}18, transparent 55%)`,
                 }}
-                onClick={() => onViewCards(card.id)}
               >
-                <span className="pointer-events-none absolute -bottom-12 -right-10 h-32 w-32 rounded-full border border-white/10" />
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-white">{card.name}</p>
-                    <p className="mt-1 text-[10px] font-semibold capitalize text-sky-200">
-                      {invoice.label} {paid ? 'Paga' : invoice.status}
-                    </p>
-                    <p className="mt-1 text-[10px] text-gray-500">Vence em {formatDatePtBr(invoice.dueDate)}</p>
+                <button type="button" onClick={() => onViewCards(card.id)} className="w-full text-left">
+                  <CardPhysicalPreview
+                    card={card}
+                    displayStatus={displayStatus}
+                    invoiceLabel={invoice.label}
+                    total={invoice.total}
+                    totalDisplay={hiddenMoney(showBalances, invoice.total)}
+                  />
+
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-2 text-[11px] font-bold text-slate-400">
+                      <CreditCard size={14} style={{ color: card.color }} />
+                      <span className="truncate">{getNetworkLabel(card.network)} crédito</span>
+                    </span>
+                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-black ${statusClass}`}>
+                      {displayStatus}
+                    </span>
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2">
-                    <CreditCard size={20} style={{ color: card.color }} />
-                    <CardInvoiceActions
-                      card={card}
-                      accounts={accounts}
-                      invoiceLabel={invoice.label}
-                      invoiceTotal={invoice.total}
-                      invoiceTransactions={invoice.transactions}
-                      onPayInvoice={onPayInvoice}
-                      onUpdateClosingDay={onUpdateCardClosingDay}
-                      onEditCard={onEditCard}
-                      onDeleteCard={onDeleteCard}
-                    />
+
+                  <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5">
+                    <span className="text-[10px] leading-relaxed text-slate-500">
+                      Ciclo {formatDatePtBr(invoice.startDate)}–{formatDatePtBr(invoice.endDate)}
+                    </span>
+                    <span className="text-right">
+                      <span className="block text-[8px] font-bold uppercase tracking-widest text-slate-500">Vencimento</span>
+                      <span className={`mt-0.5 block font-mono text-xs font-bold ${displayStatus === 'Vencida' ? 'text-rose-300' : 'text-white'}`}>
+                        {formatDatePtBr(invoice.dueDate)}
+                      </span>
+                    </span>
                   </div>
+                  <div className="mt-4 h-2 rounded-full bg-white/8">
+                    <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: card.color }} />
+                  </div>
+                  <div className="mt-2 flex justify-between text-xs">
+                    <span className="font-mono font-bold text-white">{hiddenMoney(showBalances, invoice.total)}</span>
+                    <span className="text-slate-500">{invoice.transactionCount} lançamento{invoice.transactionCount === 1 ? '' : 's'}</span>
+                  </div>
+                  <p className="mt-1 text-[10px] text-slate-500">Limite {hiddenMoney(showBalances, card.limit)}</p>
+                </button>
+                <div className="mt-3 flex justify-end gap-2 border-t border-white/8 pt-3">
+                  <CardInvoiceActions
+                    card={card}
+                    accounts={accounts}
+                    invoiceLabel={invoice.label}
+                    invoiceTotal={invoice.total}
+                    invoiceTransactions={invoice.transactions}
+                    onPayInvoice={onPayInvoice}
+                    onUpdateClosingDay={onUpdateCardClosingDay}
+                    onEditCard={onEditCard}
+                    onDeleteCard={onDeleteCard}
+                  />
                 </div>
-                <div className="mt-4 h-2 rounded-full bg-white/8">
-                  <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: card.color }} />
-                </div>
-                <div className="mt-2 flex justify-between text-[10px] text-gray-400">
-                  <span>{hiddenMoney(showBalances, invoice.total)}</span>
-                  <span>limite {hiddenMoney(showBalances, card.limit)}</span>
-                </div>
-                <p className="mt-2 text-[10px] text-gray-500">
-                  {invoice.transactionCount} lançamento{invoice.transactionCount === 1 ? '' : 's'} no ciclo de {formatDatePtBr(invoice.startDate)} a {formatDatePtBr(invoice.endDate)}
-                </p>
               </article>
             );
           })}

@@ -6,7 +6,9 @@ import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from 
 import { formatLocalDate } from '../../lib/utils/date';
 import { getReimbursementDueDate, getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
 import { CurrencyInput } from '../shared/CurrencyInput';
+import { AccountSelect } from '../shared/EntitySelect';
 import { MonthNavigator } from '../shared/MonthNavigator';
+import { control, cx, screen, surface } from '../shared/visualTokens';
 
 interface ReimbursementsViewProps {
   people: ReimbursementPerson[];
@@ -182,13 +184,13 @@ export function ReimbursementsView({
       : 'Nenhum reembolso registrado';
 
   return (
-    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-4 text-white md:pt-6">
+    <div className={cx(screen.scroll, 'pt-4 md:pt-6')}>
       <header className="shrink-0">
         <p className="text-xs text-slate-400">Controle de terceiros</p>
         <h1 className="font-display text-xl font-bold leading-tight text-white">Reembolsos</h1>
       </header>
 
-      <div className="premium-card-soft mt-3 grid shrink-0 grid-cols-3 gap-1 rounded-2xl p-1">
+      <div className={cx(surface.segmented, 'mt-3 grid shrink-0 grid-cols-3 gap-1')}>
         {modeOptions.map((item) => (
           <button
             key={item.id}
@@ -215,7 +217,7 @@ export function ReimbursementsView({
             setMode('pending');
             setSelectedPersonId(null);
           }}
-          className="cosmic-card cosmic-card-hover mt-3 flex shrink-0 items-center gap-2 rounded-2xl border border-rose-400/25 px-3 py-2.5 text-left"
+          className="mt-3 flex shrink-0 items-center gap-2 rounded-2xl border border-rose-400/25 bg-rose-500/[0.06] px-3 py-2.5 text-left transition hover:border-rose-300/40 hover:bg-rose-500/10"
         >
           <AlertTriangle size={16} className="shrink-0 text-rose-200" />
           <span className="min-w-0">
@@ -228,11 +230,11 @@ export function ReimbursementsView({
       ) : null}
 
       <section className="mt-3 grid shrink-0 grid-cols-2 gap-2">
-        <div className="premium-card rounded-2xl border-amber-400/20 p-3">
+        <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.05] p-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-100">A receber</p>
           <p className="mt-0.5 font-display text-lg font-bold text-white">{formatCurrency(pendingTotal)}</p>
         </div>
-        <div className="premium-card rounded-2xl border-emerald-400/20 p-3">
+        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.05] p-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-100">Recebido</p>
           <p className="mt-0.5 font-display text-lg font-bold text-white">{formatCurrency(receivedTotal)}</p>
         </div>
@@ -260,7 +262,7 @@ export function ReimbursementsView({
                 className={`grid h-11 w-[116px] shrink-0 snap-start grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 rounded-xl border px-2.5 py-1.5 text-left transition sm:block sm:h-auto sm:w-[112px] sm:rounded-2xl sm:p-3 ${
                   selectedPersonId === person.id
                     ? 'border-amber-300/60 bg-amber-400/15 ring-1 ring-amber-300/20'
-                    : 'cosmic-card cosmic-card-hover border-white/8'
+                    : 'border-white/8 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.055]'
                 }`}
               >
                 <div className="hidden h-7 w-7 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200 sm:mb-2 sm:flex">
@@ -276,7 +278,7 @@ export function ReimbursementsView({
       ) : null}
 
       {selectedPersonId ? (
-        <div className="premium-card-soft mt-3 flex shrink-0 items-center justify-between rounded-xl border-amber-400/20 px-3 py-2">
+        <div className="mt-3 flex shrink-0 items-center justify-between rounded-xl border border-amber-400/20 bg-amber-500/[0.05] px-3 py-2">
           <p className="truncate text-xs font-bold text-amber-100">
             Despesas de {selectedPersonId === 'unknown' ? 'Pessoa removida' : getPersonName(people, selectedPersonId)}
           </p>
@@ -292,14 +294,14 @@ export function ReimbursementsView({
         </div>
       ) : null}
 
-      <label className="premium-card-soft mt-3 flex h-10 shrink-0 items-center gap-2 rounded-2xl px-3 text-slate-400">
+      <label className={cx(surface.panelMuted, 'mt-3 flex h-10 shrink-0 items-center gap-2 px-3 text-slate-400')}>
         <Search size={15} />
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar pessoa ou lançamento" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-600" />
       </label>
 
       <section className="premium-scroll mt-3 min-h-[240px] flex-1 space-y-2 overflow-y-auto pb-4">
         {reimbursementTransactions.length === 0 ? (
-          <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
+          <div className={cx(surface.empty, 'p-6')}>
             <UserRound size={24} className="mx-auto text-slate-500" />
             <p className="mt-3 text-sm font-bold text-white">{emptyMessage}</p>
             <p className="mt-1 text-xs text-slate-500">Marque uma despesa como reembolso no lançamento.</p>
@@ -310,7 +312,7 @@ export function ReimbursementsView({
           const isOverdue = isReimbursementOverdue(transaction, cards, today);
           const dueDate = getReimbursementDueDate(transaction, cards);
           return (
-            <article key={transaction.id} className={`cosmic-card cosmic-card-hover rounded-2xl border px-3 py-2.5 ${isOverdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-white/8'}`}>
+            <article key={transaction.id} className={`rounded-2xl border bg-white/[0.03] px-3 py-2.5 transition hover:border-white/20 hover:bg-white/[0.055] ${isOverdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-white/8'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-1.5">
@@ -369,7 +371,7 @@ export function ReimbursementsView({
                         <ArrowRight size={14} />
                       </button>
                     ) : null}
-                    <button type="button" onClick={() => onEditTransaction(transaction)} className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/5 text-slate-300" title="Editar lançamento">
+                    <button type="button" onClick={() => onEditTransaction(transaction)} className={cx(control.iconButton, 'h-7 w-7')} title="Editar lançamento">
                       <Pencil size={14} />
                     </button>
                   </div>
@@ -382,7 +384,7 @@ export function ReimbursementsView({
 
       {receivingTransaction ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="premium-card w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]">
+          <div className={cx(surface.modal, 'w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]')}>
             <h2 className="font-display text-lg font-bold text-white">Registrar reembolso</h2>
             <p className="mt-1 text-xs text-slate-500">
               {receivingTransaction.description} · pendente {formatCurrency(getTransactionReimbursementAmount(receivingTransaction))}
@@ -391,17 +393,7 @@ export function ReimbursementsView({
               Valor recebido
               <CurrencyInput value={receivingAmount} onChange={setReceivingAmount} />
             </label>
-            <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
-              Conta onde o dinheiro entrou
-              <select
-                value={receivingAccountId}
-                onChange={(event) => setReceivingAccountId(event.target.value)}
-                className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300"
-              >
-                <option value="">Selecione uma conta</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-              </select>
-            </label>
+            <AccountSelect accounts={accounts} value={receivingAccountId} onChange={setReceivingAccountId} label="Conta onde o dinheiro entrou" className="mt-4" includeEmptyOption emptyLabel="Selecione uma conta" />
             {(() => {
               const pendingAmount = getTransactionReimbursementAmount(receivingTransaction);
               const parsedReceivedAmount = parseCurrencyInput(receivingAmount);

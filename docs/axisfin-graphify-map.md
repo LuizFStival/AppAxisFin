@@ -1,14 +1,14 @@
 # AxisFin Graphify Map
 
-Atualizado em 2026-09-09 a partir de `src/graphify-out/GRAPH_REPORT.md`.
+Atualizado em 2026-09-30 a partir de `src/graphify-out/GRAPH_REPORT.md`.
 
 ## Resultado do Mapeamento
 
 - Escopo analisado: `src/`
-- Arquivos de código: 93
-- Nós no grafo: 745
-- Conexões: 2483
-- Comunidades: 27
+- Arquivos de código: 101
+- Nós no grafo: 843
+- Conexões: 3026
+- Comunidades: 38
 - Custo de tokens: 0 input / 0 output
 - Ciclos de importação: nenhum detectado
 
@@ -84,6 +84,13 @@ Prioridades sugeridas:
 - Corrigida a compatibilidade do app quando o Supabase remoto ainda não tem as migrations de caixinhas e conferência de saldo.
 - O carregamento principal agora ignora temporariamente `reserve_boxes` ausente e cai para o formato antigo de `accounts` quando `last_balance_update` ainda não existe.
 - Regerado o grafo incremental: 745 nós, 2483 conexões e 27 comunidades.
+
+### 2026-09-30
+
+- Central do Mês consolidada como cockpit de ação, com fila "Resolver agora" para fatura, despesa de conta, reembolso e fixa ignorável.
+- Checklist de fechamento passou a priorizar resolução dentro da própria Central quando a pendência pertence ao cockpit.
+- Modais de pagamento e reembolso da Central passaram a usar seletor visual compartilhado de conta.
+- Regerado o grafo incremental via workaround `uvx.exe --no-cache`: 843 nós, 3026 conexões e 38 comunidades.
 
 ## Funcionalidades Para Reorganizar
 

@@ -193,6 +193,14 @@ export interface TransactionMeta {
   invoicePaymentCardId?: string;
   invoicePaymentPeriod?: string;
   invoiceSortOrder?: number;
+  invoiceImportSource?: 'nubank_csv';
+  invoiceImportId?: string;
+  invoiceImportBank?: string;
+  invoiceImportPart?: 'personal' | 'reimbursement';
+  accountBalanceAdjustment?: 'increase' | 'decrease';
+  accountBalancePreviousBalance?: number;
+  accountBalanceNewBalance?: number;
+  accountBalanceAdjustmentDate?: string;
   recurringTransactionId?: string;
   recurringOccurrenceDate?: string;
   recurringExcludedDates?: string[];

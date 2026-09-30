@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, Check, X } from 'lucide-react';
 import { Account, Card, CardNetwork } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
+import { AccountSelect } from '../shared/EntitySelect';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { DuplicateNameError, hasDuplicateName } from '../../lib/utils/validation';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
@@ -151,21 +152,7 @@ export function AddCardModal({ isOpen, accounts, cards, card, onClose, onSave }:
             />
           </label>
 
-          <label className="grid gap-1 text-xs font-semibold text-slate-400">
-            Conta vinculada
-            <select
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-              className="h-12 rounded-2xl border border-white/10 bg-white/5 px-3 text-white outline-none focus:border-sky-400"
-            >
-              <option value="">Nenhuma</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <AccountSelect accounts={accounts} value={accountId} onChange={setAccountId} label="Conta vinculada" placeholder="Nenhuma conta vinculada" includeEmptyOption emptyLabel="Nenhuma" />
 
           <label className="grid gap-1 text-xs font-semibold text-slate-400">
             Limite

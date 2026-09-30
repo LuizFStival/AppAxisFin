@@ -1,0 +1,52 @@
+# AxisFin - D.N.E.E. Docs
+
+Este projeto usa o padrao D.N.E.E. Docs para mudancas relevantes.
+
+## Fonte da verdade
+
+Os arquivos Markdown em `docs/` sao a fonte da verdade:
+
+- `docs/SOBRE.md`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `docs/CHANGELOG_EVIDENCES.md`
+
+`docs/visao-projeto.html` e apenas uma interface visual de leitura humana.
+
+## Fluxo obrigatorio para mudancas relevantes
+
+1. Ler `docs/SOBRE.md`.
+2. Ler `docs/SDD.md`.
+3. Ler `docs/ROADMAP.md`.
+4. Ler `docs/CHANGELOG_EVIDENCES.md`.
+5. Fazer um Discovery curto no chat.
+6. Aguardar aprovacao quando a mudanca alterar fluxo, regra financeira, arquitetura ou visual relevante.
+7. Implementar.
+8. Validar com os comandos adequados.
+9. Atualizar Markdown relacionado.
+10. Registrar evidencia no changelog.
+
+## Graphify
+
+O AxisFin possui mapa tecnico em `src/graphify-out/`.
+
+Antes de grandes refatoracoes ou auditorias de arquitetura:
+
+- consultar `src/graphify-out/GRAPH_REPORT.md`;
+- consultar `docs/axisfin-graphify-map.md`;
+- usar o grafo para identificar arquivos centrais e comunidades.
+
+Apos mudancas de codigo, tentar rodar:
+
+```bash
+npm.cmd run graphify:src
+```
+
+Se o ambiente bloquear Graphify, registrar a falha na resposta e manter a documentacao honesta.
+
+## Regras de honestidade
+
+- Usar `[A VALIDAR]` quando algo precisar ser confirmado.
+- Usar `[PERGUNTA AO RESPONSAVEL]` quando depender de resposta humana.
+- Usar `[HIPOTESE - CONFIRMAR]` para hipoteses provaveis ainda nao validadas.
+- Nao inventar metricas, decisoes ou evidencias.

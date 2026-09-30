@@ -8,6 +8,7 @@ import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from 
 import { formatCurrency } from '../../lib/utils/finance';
 import { formatDatePtBr } from '../../lib/utils/date';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
+import { cx, screen, surface } from '../shared/visualTokens';
 
 interface GoalsViewProps {
   categories: Category[];
@@ -213,7 +214,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
   }
 
   return (
-    <div className="premium-scroll app-page-gutters h-full overflow-y-auto pb-8 pt-7">
+    <div className={screen.scroll}>
       <header className="flex items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-slate-400">Planejamento</p>
@@ -235,7 +236,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
         </button>
       </header>
 
-      <div className="premium-card-soft mt-5 grid grid-cols-2 rounded-2xl p-1">
+      <div className={cx(surface.segmented, 'mt-5 grid grid-cols-2')}>
         <button type="button" onClick={() => setSection('goals')} className={`h-10 rounded-xl text-xs font-bold transition ${section === 'goals' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
           Juntar dinheiro
         </button>
@@ -245,7 +246,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
       </div>
 
       {section === 'goals' ? (
-        <div className="premium-card-soft mt-3 grid grid-cols-2 rounded-2xl p-1">
+        <div className={cx(surface.segmented, 'mt-3 grid grid-cols-2')}>
           {(['active', 'completed'] as const).map((status) => (
             <button key={status} type="button" onClick={() => setGoalStatus(status)} className={`h-10 rounded-xl text-xs font-bold transition ${goalStatus === status ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
               {status === 'active' ? 'Ativas' : 'Concluidas'} ({goals.filter((goal) => goal.status === status).length})
@@ -260,7 +261,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
         <section className="mt-5 grid gap-3">
           {isLoading ? <p className="py-8 text-center text-sm text-slate-500">Carregando metas...</p> : null}
           {!isLoading && visibleGoals.length === 0 ? (
-            <div className="premium-card-soft rounded-[24px] border-dashed p-7 text-center">
+            <div className={cx(surface.empty, 'rounded-[24px] p-7')}>
               <Target size={32} className="mx-auto text-slate-700" />
               <p className="mt-3 font-bold text-white">Nenhuma meta {goalStatus === 'active' ? 'ativa' : 'concluida'}</p>
               <p className="mt-1 text-xs text-slate-500">Crie um objetivo e acompanhe seu progresso.</p>
@@ -270,7 +271,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
             const progress = Math.min(100, goal.targetAmount > 0 ? (goal.currentAmount / goal.targetAmount) * 100 : 0);
             const category = categories.find((item) => item.id === goal.categoryId);
             return (
-              <article key={goal.id} className="cosmic-card cosmic-card-hover overflow-hidden rounded-[24px] border border-white/8">
+              <article key={goal.id} className="overflow-hidden rounded-[24px] border border-white/8 bg-white/[0.035] transition hover:border-white/20 hover:bg-white/[0.055]">
                 <div className="relative h-28" style={{ background: goal.imageUrl ? undefined : `linear-gradient(135deg, ${goal.color}, #0B0E14)` }}>
                   {goal.imageUrl ? <img src={goal.imageUrl} alt="" className="h-full w-full object-cover" /> : null}
                   <div className="absolute inset-0 bg-gradient-to-t from-[#101116] via-transparent to-transparent" />
@@ -309,7 +310,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
         <section className="mt-5 grid gap-3">
           {isLoading ? <p className="py-8 text-center text-sm text-slate-500">Carregando compromissos...</p> : null}
           {!isLoading && commitments.length === 0 ? (
-            <div className="premium-card-soft rounded-[24px] border-dashed p-7 text-center">
+            <div className={cx(surface.empty, 'rounded-[24px] p-7')}>
               <Home size={32} className="mx-auto text-slate-700" />
               <p className="mt-3 font-bold text-white">Nenhum compromisso cadastrado</p>
               <p className="mt-1 text-xs text-slate-500">Cadastre financiamentos, reformas ou pagamentos divididos de longo prazo.</p>
@@ -360,7 +361,7 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
                 <label className="grid gap-1 text-xs font-semibold text-slate-400">Inicio<input type="date" value={commitmentStartDate} onChange={(event) => setCommitmentStartDate(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-white" /></label>
                 <label className="grid gap-1 text-xs font-semibold text-slate-400">Ja pago<CurrencyInput value={commitmentPaidAmount} onChange={setCommitmentPaidAmount} /></label>
               </div>
-              <div className="premium-card-soft rounded-2xl border-amber-400/20 p-3">
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.05] p-3">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-amber-100">Minha cota</p>
                 <p className="mt-1 font-mono text-lg font-bold text-white">{formatCurrency(commitmentPreview.myShareValue)}</p>
                 <p className="mt-1 text-xs text-amber-100/80">Falta {formatCurrency(commitmentPreview.remaining)} - {commitmentPreview.progress.toFixed(0)}% pago</p>
@@ -390,7 +391,7 @@ function CommitmentCard({ commitment, people, onDelete }: { key?: React.Key; com
   const remaining = Math.max(0, myShareValue - commitment.paidAmount);
   const progress = myShareValue > 0 ? Math.min(100, (commitment.paidAmount / myShareValue) * 100) : 0;
   return (
-    <article className="cosmic-card cosmic-card-hover rounded-[24px] border border-white/8 p-4">
+    <article className="rounded-[24px] border border-white/8 bg-white/[0.035] p-4 transition hover:border-white/20 hover:bg-white/[0.055]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -427,7 +428,7 @@ function CommitmentCard({ commitment, people, onDelete }: { key?: React.Key; com
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="premium-card-soft rounded-2xl p-3">
+    <div className={cx(surface.panelMuted, 'p-3')}>
       <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
       <p className="mt-1 truncate font-mono text-xs font-bold text-white">{value}</p>
     </div>
@@ -447,7 +448,7 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (value: str
 function ModalFrame({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="premium-card premium-scroll max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[28px] p-5 sm:rounded-[28px]">
+      <div className={cx(surface.modal, 'premium-scroll max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[28px] p-5 sm:rounded-[28px]')}>
         <div className="mb-5 flex items-center justify-between">
           <h2 className="font-display text-lg font-bold text-white">{title}</h2>
           <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-400">

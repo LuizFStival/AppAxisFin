@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, RotateCcw, Trash2, UserRound } from 'lucide-react';
+import { Archive, ArrowLeft, ChevronDown, ChevronUp, CreditCard, GripVertical, Pencil, RotateCcw, Trash2, Upload, UserRound } from 'lucide-react';
 import { Account, Card, Category, ReimbursementPerson, Transaction } from '../../types';
 import { formatCurrency, getCategoryName, getExpenseSignedAmount, getPersonalExpenseSignedAmount, getTransactionReimbursementAmount, isCardInvoicePaid, isInvoiceCredit } from '../../lib/utils/finance';
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
@@ -11,6 +11,9 @@ import { CardInvoiceActions } from './CardInvoiceActions';
 import { ExpenseFilterChips } from '../shared/ExpenseFilterChips';
 import { CollapsibleSearch } from '../shared/CollapsibleSearch';
 import { MonthNavigator } from '../shared/MonthNavigator';
+import { CardInvoiceImportModal } from './CardInvoiceImportModal';
+import { CardPhysicalPreview, getNetworkLabel } from './CardPhysicalPreview';
+import { control, cx, screen, surface } from '../shared/visualTokens';
 
 interface CardsViewProps {
   cards: Card[];
@@ -34,6 +37,7 @@ interface CardsViewProps {
     amount: number;
     transactions: Transaction[];
   }) => Promise<void>;
+  onImportInvoiceTransactions: (transactions: Array<Omit<Transaction, 'id'>>) => Promise<void>;
   onUpdateCardClosingDay: (card: Card, closingDay: number) => Promise<void>;
   onEditCard: (card: Card) => void;
   onDeleteCard: (card: Card) => void;
@@ -125,6 +129,7 @@ export function CardsView({
   onDeleteTransaction,
   onReorderInvoiceTransactions,
   onPayInvoice,
+  onImportInvoiceTransactions,
   onUpdateCardClosingDay,
   onEditCard,
   onDeleteCard,
@@ -135,6 +140,7 @@ export function CardsView({
   const [expenseFilter, setExpenseFilter] = useState<ExpenseViewFilter>('all');
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [draggedTransactionId, setDraggedTransactionId] = useState<string | null>(null);
   const [dragTargetTransactionId, setDragTargetTransactionId] = useState<string | null>(null);
   const pointerDragRef = useRef({
@@ -296,7 +302,7 @@ export function CardsView({
   }
 
   return (
-    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-7 text-white md:pt-8">
+    <div className={screen.scrollWide}>
       <header className="shrink-0">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -320,7 +326,7 @@ export function CardsView({
 
       {!selectedCard ? (
         <>
-          <section className="premium-card mt-4 shrink-0 rounded-2xl p-4">
+          <section className={cx(surface.summary, 'mt-4 shrink-0 p-4')}>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Faturas que fecham no mês</p>
             <p className="mt-1 font-display text-2xl font-bold text-white">{formatCurrency(totalAllCards)}</p>
             <p className="mt-1 text-xs text-slate-500">{invoices.reduce((sum, item) => sum + item.transactions.length, 0)} lançamentos em {visibleCards.length} cartão{visibleCards.length === 1 ? '' : 'ões'}</p>
@@ -334,13 +340,13 @@ export function CardsView({
               <button
                 type="button"
                 onClick={() => setShowArchived((current) => !current)}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+                className={control.ghostButton}
               >
                 {showArchived ? 'Ver ativos' : `Arquivados ${archivedCards.length}`}
               </button>
             </div>
             {invoices.length === 0 ? (
-              <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
+              <div className={cx(surface.empty, 'p-6')}>
                 <CreditCard size={22} className="mx-auto mb-2 text-slate-500" />
                 <p className="text-sm font-bold text-white">{showArchived ? 'Nenhum cartão arquivado' : 'Nenhum cartão ativo'}</p>
                 <p className="mt-1 text-xs text-slate-500">{showArchived ? 'Cartões parados aparecerão aqui sem perder histórico.' : 'Cadastre seus cartões para acompanhar as faturas.'}</p>
@@ -359,30 +365,30 @@ export function CardsView({
               return (
                 <article
                   key={card.id}
-                  className="cosmic-card cosmic-card-hover relative overflow-hidden rounded-3xl border p-4"
+                  className="relative overflow-hidden rounded-3xl border bg-white/[0.035] p-4 transition hover:border-white/20 hover:bg-white/[0.055]"
                   style={{
                     borderColor: `${card.color}55`,
                     backgroundImage: `linear-gradient(135deg, ${card.color}18, transparent 55%)`,
                   }}
                 >
                   <button type="button" onClick={() => onSelectCard(card.id)} className="w-full text-left">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: card.color }}>
-                        {card.network} • Crédito
+                    <CardPhysicalPreview
+                      card={card}
+                      displayStatus={displayStatus}
+                      invoiceLabel={invoice.label}
+                      total={total}
+                    />
+
+                    <div className="mt-1 flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2 text-[11px] font-bold text-slate-400">
+                        <CreditCard size={14} style={{ color: card.color }} />
+                        {getNetworkLabel(card.network)} crédito
                       </span>
-                      <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${statusClass}`}>
+                      <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black ${statusClass}`}>
                         {displayStatus}
                       </span>
                     </div>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate font-display text-base font-bold text-white">{card.name}</p>
-                        <p className="mt-1 text-[10px] font-semibold text-slate-400">{invoice.label}</p>
-                      </div>
-                      <span className="rounded-xl border border-white/10 bg-black/20 p-2">
-                        <CreditCard size={20} style={{ color: card.color }} />
-                      </span>
-                    </div>
+
                     <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5">
                       <span className="text-[10px] leading-relaxed text-slate-500">
                         Ciclo {formatDatePtBr(invoice.startDate)}–{formatDatePtBr(invoice.endDate)}
@@ -460,7 +466,7 @@ export function CardsView({
 
       {selectedCard && selectedInvoice ? (
         <>
-          <section className="premium-card mt-3 shrink-0 rounded-2xl p-3">
+          <section className={cx(surface.summary, 'mt-3 shrink-0 p-3')}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Fatura do ciclo</p>
@@ -488,22 +494,33 @@ export function CardsView({
                 <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-bold text-sky-200">
                   {getInvoiceDisplayStatus(selectedInvoice.invoice.status, selectedInvoice.transactions)}
                 </span>
-                <CardInvoiceActions
-                  card={selectedCard}
-                  accounts={accounts}
-                  invoiceLabel={selectedInvoice.invoice.label}
-                  invoiceTotal={selectedInvoice.total}
-                  invoiceTransactions={selectedInvoice.transactions}
-                  onPayInvoice={onPayInvoice}
-                  onUpdateClosingDay={onUpdateCardClosingDay}
-                  onEditCard={onEditCard}
-                  onDeleteCard={onDeleteCard}
-                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsImportOpen(true)}
+                    className="flex h-8 items-center gap-1.5 rounded-lg bg-violet-500/15 px-2.5 text-[11px] font-bold text-violet-100 transition hover:bg-violet-500/25"
+                    title="Importar CSV da fatura"
+                  >
+                    <Upload size={14} />
+                    Importar
+                  </button>
+                  <CardInvoiceActions
+                    card={selectedCard}
+                    accounts={accounts}
+                    invoiceLabel={selectedInvoice.invoice.label}
+                    invoiceTotal={selectedInvoice.total}
+                    invoiceTransactions={selectedInvoice.transactions}
+                    onPayInvoice={onPayInvoice}
+                    onUpdateClosingDay={onUpdateCardClosingDay}
+                    onEditCard={onEditCard}
+                    onDeleteCard={onDeleteCard}
+                  />
+                </div>
               </div>
             </div>
           </section>
 
-          <section className="premium-card-soft mt-2 shrink-0 rounded-2xl px-3 py-2">
+          <section className={cx(surface.panelMuted, 'mt-2 shrink-0 px-3 py-2')}>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Meu gasto</p>
@@ -571,7 +588,7 @@ export function CardsView({
 
           <section className="premium-scroll mt-3 min-h-[260px] flex-1 touch-pan-y space-y-2 overflow-y-auto overscroll-y-contain pb-4">
             {visibleTransactions.length === 0 ? (
-              <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
+              <div className={cx(surface.empty, 'p-6')}>
                 <p className="text-sm font-bold text-white">Nenhuma despesa neste filtro</p>
                 <p className="mt-1 text-xs text-slate-500">Escolha outro tipo ou limpe a busca da fatura.</p>
               </div>
@@ -591,7 +608,7 @@ export function CardsView({
                       ? 'border-sky-300 bg-sky-500/15'
                       : isDragging
                         ? 'border-violet-300/50 bg-violet-500/10 opacity-70'
-                        : 'cosmic-card cosmic-card-hover border-white/8'
+                        : 'border-white/8 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.055]'
                   }`}
                 >
                   <button
@@ -646,6 +663,19 @@ export function CardsView({
               );
             })}
           </section>
+
+          {isImportOpen ? (
+            <CardInvoiceImportModal
+              card={selectedCard}
+              categories={categories}
+              reimbursementPeople={reimbursementPeople}
+              invoiceLabel={selectedInvoice.invoice.label}
+              activeMonth={activeMonth}
+              invoiceTransactions={selectedInvoice.transactions}
+              onClose={() => setIsImportOpen(false)}
+              onImport={onImportInvoiceTransactions}
+            />
+          ) : null}
         </>
       ) : null}
     </div>

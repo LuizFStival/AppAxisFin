@@ -13,23 +13,53 @@ interface AppShellProps {
   children: React.ReactNode;
 }
 
-const desktopItems = [
-  { id: 'home' as const, label: 'Home', icon: Home },
-  { id: 'month-center' as const, label: 'Central do Mês', icon: CalendarCheck2 },
-  { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
-  { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
-  { id: 'accounts' as const, label: 'Contas', icon: Wallet },
-  { id: 'reserves' as const, label: 'Caixinhas', icon: PiggyBank },
-  { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },
-  { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
-  { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
-  { id: 'profile' as const, label: 'Perfil', icon: User },
+const desktopSections = [
+  {
+    title: 'Hoje',
+    items: [
+      { id: 'home' as const, label: 'Home', icon: Home },
+      { id: 'month-center' as const, label: 'Central do Mês', icon: CalendarCheck2 },
+    ],
+  },
+  {
+    title: 'Movimentos',
+    items: [
+      { id: 'transactions' as const, label: 'Transações', icon: ArrowLeftRight },
+      { id: 'cards' as const, label: 'Cartões', icon: CreditCard },
+      { id: 'reimbursements' as const, label: 'Reembolsos', icon: HandCoins },
+    ],
+  },
+  {
+    title: 'Patrimônio',
+    items: [
+      { id: 'accounts' as const, label: 'Contas', icon: Wallet },
+      { id: 'reserves' as const, label: 'Caixinhas', icon: PiggyBank },
+      { id: 'goals' as const, label: 'Metas & Compromissos', icon: Target },
+    ],
+  },
+  {
+    title: 'Análise',
+    items: [
+      { id: 'reports' as const, label: 'Relatórios', icon: BarChart3 },
+    ],
+  },
+  {
+    title: 'Configuração',
+    items: [
+      { id: 'profile' as const, label: 'Perfil', icon: User },
+    ],
+  },
 ];
 
 export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd, children }: AppShellProps) {
-  const visibleDesktopItems = reimbursementsEnabled
-    ? desktopItems
-    : desktopItems.filter((item) => item.id !== 'reimbursements');
+  const visibleDesktopSections = desktopSections
+    .map((section) => ({
+      ...section,
+      items: reimbursementsEnabled
+        ? section.items
+        : section.items.filter((item) => item.id !== 'reimbursements'),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <main className="app-viewport overflow-hidden bg-[#050505] text-[#E7E8EC] selection:bg-[#8B5CF6] selection:text-white md:p-4 lg:p-5">
@@ -50,29 +80,34 @@ export function AppShell({ currentView, reimbursementsEnabled, onNavigate, onAdd
             className="hidden"
           >
             <Plus size={18} strokeWidth={2.5} />
-            <span>Novo lanÃ§amento</span>
+            <span>Novo lançamento</span>
           </button>
-          <nav className="mt-6 flex shrink-0 flex-col gap-1.5" aria-label="Navegacao principal">
-            {visibleDesktopItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onNavigate(item.id)}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={`flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition ${
-                    isActive
-                      ? 'premium-metal text-white shadow-[0_14px_30px_-22px_rgba(139,92,246,0.7)]'
-                      : 'text-slate-400 hover:bg-white/[0.055] hover:text-white'
-                  }`}
-                >
-                  <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+          <nav className="mt-6 flex shrink-0 flex-col gap-5" aria-label="Navegacao principal">
+            {visibleDesktopSections.map((section) => (
+              <div key={section.title} className="space-y-1.5">
+                <p className="px-3 text-[0.65rem] font-black uppercase tracking-[0.18em] text-slate-500">{section.title}</p>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentView === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onNavigate(item.id)}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition ${
+                        isActive
+                          ? 'premium-metal text-white shadow-[0_14px_30px_-22px_rgba(139,92,246,0.7)]'
+                          : 'text-slate-400 hover:bg-white/[0.055] hover:text-white'
+                      }`}
+                    >
+                      <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
           <button
             type="button"

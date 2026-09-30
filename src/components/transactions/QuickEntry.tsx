@@ -1,6 +1,7 @@
 import { AlertCircle, ArrowLeft, Mic, X } from 'lucide-react';
 import { Account, Card, Category } from '../../types';
 import { CurrencyInput } from '../shared/CurrencyInput';
+import { AccountSelect, CardSelect } from '../shared/EntitySelect';
 import { PaymentSourceType } from './addEntryRules';
 
 export interface QuickReviewItem {
@@ -101,15 +102,9 @@ export function QuickEntry({
               <button type="button" onClick={() => onSourceTypeChange('account')} className={`h-10 rounded-xl text-xs font-bold transition ${quickSourceType === 'account' ? 'bg-white text-black' : 'text-slate-400'}`}>Conta</button>
             </div>
             {quickSourceType === 'card' ? (
-              <select value={quickCardId} onChange={(event) => onCardChange(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
-                <option value="">Selecione o cartão</option>
-                {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
-              </select>
+              <CardSelect cards={cards} value={quickCardId} onChange={onCardChange} placeholder="Selecione o cartao" emptyLabel="Selecione o cartao" />
             ) : (
-              <select value={quickAccountId} onChange={(event) => onAccountChange(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
-                <option value="">Selecione a conta</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-              </select>
+              <AccountSelect accounts={accounts} value={quickAccountId} onChange={onAccountChange} placeholder="Selecione a conta" includeEmptyOption emptyLabel="Selecione a conta" />
             )}
             <select value={quickCategoryId} onChange={(event) => onCategoryChange(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-sm font-bold text-white outline-none focus:border-violet-300">
               <option value="">Categoria padrão</option>

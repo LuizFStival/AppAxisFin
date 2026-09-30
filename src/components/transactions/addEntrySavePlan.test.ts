@@ -82,6 +82,28 @@ if (installmentPlan.kind === 'save' && Array.isArray(installmentPlan.transaction
   assert.equal(installmentPlan.transaction[2].description, 'Mercado (3/3)');
 }
 
+const sharedInstallmentPlan = buildAddEntrySavePlan({
+  ...commonInput,
+  expenseMode: 'installment',
+  installmentCount: '3',
+  shouldCreateSharedEntries: true,
+  entryDraft: {
+    ...baseDraft,
+    amount: 297.55,
+    splitMode: 'shared',
+    personalAmount: 178.2,
+    reimbursementAmount: 119.35,
+    reimbursementPersonId: 'person',
+  },
+});
+assert.equal(sharedInstallmentPlan.kind, 'save');
+if (sharedInstallmentPlan.kind === 'save' && Array.isArray(sharedInstallmentPlan.transaction)) {
+  assert.equal(sharedInstallmentPlan.transaction.length, 6);
+  assert.deepEqual(sharedInstallmentPlan.transaction.map((item) => item.amount), [59.4, 39.78, 59.4, 39.78, 59.4, 39.79]);
+  assert.equal(sharedInstallmentPlan.transaction[1].isReimbursable, true);
+  assert.equal(readTransactionMeta(sharedInstallmentPlan.transaction[4].notes).installmentNumber, 3);
+}
+
 const sharedFixedPlan = buildAddEntrySavePlan({
   ...commonInput,
   expenseMode: 'fixed',

@@ -43,6 +43,7 @@ export function ExpenseOptions({
   onClose,
 }: ExpenseOptionsProps) {
   if (isInvoiceCredit && !canEditForwardEntries) return null;
+  const parsedInstallmentCount = parseEntryCount(installmentCount, 2);
 
   return (
     <>
@@ -79,7 +80,7 @@ export function ExpenseOptions({
           })}
           {expenseMode === 'installment' && !transaction ? (
             <label className="col-span-3 grid gap-1 px-2 pb-2 pt-1 text-xs font-semibold text-slate-400">
-              Número de parcelas
+              Total de parcelas
               <input
                 type="number"
                 min={2}
@@ -89,10 +90,10 @@ export function ExpenseOptions({
                 className="h-11 rounded-xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-violet-300"
               />
               <span className="text-[11px] font-medium text-slate-500">
-                {`${parseEntryCount(installmentCount, 2)} parcelas serão criadas.`}
+                O valor digitado é o total da compra; serão criadas {parsedInstallmentCount} parcelas.
               </span>
               {installmentPreview ? (
-                <span className="text-[11px] font-bold text-violet-200">
+                <span className="rounded-xl border border-violet-300/20 bg-violet-400/10 px-3 py-2 text-[11px] font-bold leading-relaxed text-violet-100">
                   {installmentPreview}
                 </span>
               ) : null}
@@ -114,7 +115,7 @@ export function ExpenseOptions({
           </button>
           {expenseMode === 'installment' ? (
             <p className="col-span-2 px-2 pt-1 text-[11px] font-semibold leading-relaxed text-amber-100/80">
-              Use “esta e próximas” para corrigir valor, categoria ou título das parcelas restantes.
+              “Só esta parcela” não mexe nas outras. “Esta e próximas” corrige valor, categoria, título e demais campos nas parcelas restantes.
             </p>
           ) : null}
           {isRecurringOccurrence ? (

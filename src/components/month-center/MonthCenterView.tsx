@@ -28,6 +28,8 @@ import { getTransactionExpenseNeed, getTransactionInstallmentLabel, hasInvoiceSe
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
 import { CurrencyInput } from '../shared/CurrencyInput';
+import { AccountSelect } from '../shared/EntitySelect';
+import { cx, surface } from '../shared/visualTokens';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import {
   daysBetween,
@@ -106,11 +108,22 @@ export function MonthCenterView({
   const [accountPaymentDate, setAccountPaymentDate] = useState(formatLocalDate(new Date()));
   const today = formatLocalDate(new Date());
 
+  const focusPendingPayments = useCallback(() => {
+    setTab('payments');
+    setPaymentStatusFilter('pending');
+  }, []);
+
   const openAccountExpensePayment = useCallback((transaction: Transaction) => {
     setPayingAccountExpense(transaction);
     setPayingAccountId(transaction.accountId ?? accounts[0]?.id ?? '');
     setAccountPaymentDate(transaction.date || today);
   }, [accounts, today]);
+
+  const openReimbursementReceipt = useCallback((transaction: Transaction) => {
+    setReceivingTransaction(transaction);
+    setReceivingAccountId(transaction.accountId ?? accounts[0]?.id ?? '');
+    setReceivingAmount(formatCurrencyInput(getTransactionReimbursementAmount(transaction)));
+  }, [accounts]);
 
   const pendingInvoices = useMemo(() => (
     getPendingInvoiceSummaries(cards, transactions, activeMonth)
@@ -192,7 +205,7 @@ export function MonthCenterView({
       amount: item.total,
       dueDate: item.invoice.dueDate,
       kind: 'invoice' as const,
-      action: () => onOpenCards(item.card.id),
+      action: focusPendingPayments,
     }));
     const accountItems = pendingAccountExpenses.map((transaction) => ({
       id: `account:${transaction.id}`,
@@ -206,11 +219,17 @@ export function MonthCenterView({
 
     return [...invoiceItems, ...accountItems]
       .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || right.amount - left.amount);
-  }, [cards, onOpenCards, openAccountExpensePayment, pendingAccountExpenses, pendingInvoices]);
+  }, [focusPendingPayments, openAccountExpensePayment, pendingAccountExpenses, pendingInvoices]);
 
   const fixedExpenses = useMemo(() => (
     getFixedExpensesForMonth(transactions, cards, activeMonth)
   ), [activeMonth, cards, transactions]);
+
+  const nextSkippableFixedExpense = fixedExpenses.find((transaction) => {
+    const isRecurring = Boolean(transaction.recurringTransactionId || hasRecurringSourceMeta(transaction.notes));
+    const isPaid = transaction.cardId ? hasInvoiceSettlementMeta(transaction.notes) : transaction.status === 'paid';
+    return isRecurring && !isPaid;
+  });
 
   const installmentExpenses = useMemo(() => (
     getInstallmentExpensesForMonth(transactions, cards, activeMonth)
@@ -219,6 +238,10 @@ export function MonthCenterView({
   const reimbursementPeopleSummaries = useMemo(() => {
     return buildReimbursementPeopleSummaries(pendingReimbursements, people, cards, activeMonth, today);
   }, [activeMonth, cards, pendingReimbursements, people, today]);
+
+  const nextInvoiceToPay = pendingInvoices[0];
+  const nextAccountExpenseToPay = pendingAccountExpenses[0];
+  const nextReimbursementToReceive = reimbursementPeopleSummaries.find((person) => person.oldestTransaction)?.oldestTransaction;
 
   const invoiceTotal = roundMoney(pendingInvoices.reduce((sum, item) => sum + item.total, 0));
   const accountExpenseTotal = roundMoney(pendingAccountExpenses.reduce((sum, item) => sum + item.amount, 0));
@@ -297,18 +320,13 @@ export function MonthCenterView({
   const canCloseMonth = closingItems.every((item) => item.done);
 
   function handleClosingItemAction(id: MonthClosingItemId) {
-    if (id === 'invoices') {
-      onOpenCards();
+    if (id === 'invoices' || id === 'account-expenses' || id === 'reimbursements') {
+      focusPendingPayments();
       return;
     }
 
     if (id === 'fixed-expenses') {
       setTab('fixed');
-      return;
-    }
-
-    if (id === 'reimbursements') {
-      onOpenReimbursements();
       return;
     }
 
@@ -329,7 +347,7 @@ export function MonthCenterView({
       </header>
 
       <section className="mt-4 grid shrink-0 gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <div className="premium-card rounded-2xl p-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Preciso pagar</p>
@@ -349,7 +367,7 @@ export function MonthCenterView({
           </div>
         </div>
 
-        <div className="premium-card-soft rounded-2xl p-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
           <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-100/80">Leitura rápida</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
             <div className="flex items-center justify-between gap-3 rounded-xl bg-white/[0.035] px-3 py-2">
@@ -368,7 +386,62 @@ export function MonthCenterView({
         </div>
       </section>
 
-      <section className="premium-card-soft mt-3 grid shrink-0 gap-2 rounded-2xl p-3 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
+      <section className="mt-3 grid shrink-0 gap-2 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.045] p-3 lg:grid-cols-[170px_minmax(0,1fr)] lg:items-center">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-100">Resolver agora</p>
+          <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-400">A fila curta do que tira pendência do mês.</p>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          <button
+            type="button"
+            disabled={!nextInvoiceToPay}
+            onClick={focusPendingPayments}
+            className="min-h-16 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-emerald-200/35 hover:bg-white/[0.055] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-500">Fatura</span>
+            <span className="mt-1 block truncate text-sm font-black text-white">{nextInvoiceToPay ? nextInvoiceToPay.card.name : 'Nada pendente'}</span>
+            <span className="mt-0.5 block truncate font-mono text-xs font-bold text-emerald-100">{nextInvoiceToPay ? formatCurrency(nextInvoiceToPay.total) : formatCurrency(0)}</span>
+          </button>
+          <button
+            type="button"
+            disabled={!nextAccountExpenseToPay}
+            onClick={() => {
+              if (nextAccountExpenseToPay) openAccountExpensePayment(nextAccountExpenseToPay);
+            }}
+            className="min-h-16 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-emerald-200/35 hover:bg-white/[0.055] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-500">Conta</span>
+            <span className="mt-1 block truncate text-sm font-black text-white">{nextAccountExpenseToPay ? nextAccountExpenseToPay.description : 'Nada pendente'}</span>
+            <span className="mt-0.5 block truncate font-mono text-xs font-bold text-emerald-100">{nextAccountExpenseToPay ? formatCurrency(nextAccountExpenseToPay.amount) : formatCurrency(0)}</span>
+          </button>
+          <button
+            type="button"
+            disabled={!nextReimbursementToReceive}
+            onClick={() => {
+              if (nextReimbursementToReceive) openReimbursementReceipt(nextReimbursementToReceive);
+            }}
+            className="min-h-16 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-emerald-200/35 hover:bg-white/[0.055] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-500">Reembolso</span>
+            <span className="mt-1 block truncate text-sm font-black text-white">{nextReimbursementToReceive ? nextReimbursementToReceive.description : 'Nada pendente'}</span>
+            <span className="mt-0.5 block truncate font-mono text-xs font-bold text-emerald-100">{nextReimbursementToReceive ? formatCurrency(getTransactionReimbursementAmount(nextReimbursementToReceive)) : formatCurrency(0)}</span>
+          </button>
+          <button
+            type="button"
+            disabled={!nextSkippableFixedExpense}
+            onClick={() => {
+              if (nextSkippableFixedExpense) void onSkipFixedOccurrence(nextSkippableFixedExpense);
+            }}
+            className="min-h-16 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-emerald-200/35 hover:bg-white/[0.055] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span className="block text-[10px] font-black uppercase tracking-widest text-slate-500">Fixa</span>
+            <span className="mt-1 block truncate text-sm font-black text-white">{nextSkippableFixedExpense ? nextSkippableFixedExpense.description : 'Nada para ignorar'}</span>
+            <span className="mt-0.5 block truncate font-mono text-xs font-bold text-emerald-100">{nextSkippableFixedExpense ? formatCurrency(getPersonalExpenseSignedAmount(nextSkippableFixedExpense)) : formatCurrency(0)}</span>
+          </button>
+        </div>
+      </section>
+
+      <section className="mt-3 grid shrink-0 gap-2 rounded-2xl border border-white/10 bg-white/[0.025] p-3 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
         <div className="grid gap-2 sm:grid-cols-3">
           <button type="button" onClick={() => setTab('payments')} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-left transition hover:border-rose-200/40">
             <span className="text-xs font-black uppercase tracking-wide text-rose-100">Atrasado</span>
@@ -396,13 +469,13 @@ export function MonthCenterView({
         )}
       </section>
 
-      <section className="premium-card-soft mt-3 flex shrink-0 flex-col gap-2 rounded-2xl p-3 text-xs font-semibold text-slate-400 lg:flex-row lg:items-center lg:justify-between">
+      <section className="mt-3 flex shrink-0 flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.025] p-3 text-xs font-semibold text-slate-400 lg:flex-row lg:items-center lg:justify-between">
         <span>Resultado do mês: <strong className="font-mono text-white">{formatCurrency(monthResult)}</strong></span>
         <span>Meu x terceiros: <strong className="font-mono text-white">{formatCurrency(monthPersonalExpenses)}</strong> / {formatCurrency(monthThirdPartyExpenses)}</span>
         <span>Supérfluos: <strong className="font-mono text-white">{formatCurrency(superfluousTotal)}</strong></span>
       </section>
 
-      <div className="premium-card-soft mt-4 grid shrink-0 grid-cols-3 gap-1 rounded-2xl p-1">
+      <div className="mt-4 grid shrink-0 grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-white/[0.025] p-1">
         <button type="button" onClick={() => setTab('payments')} className={`h-11 rounded-xl text-sm font-black transition ${tab === 'payments' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Pagamentos</button>
         <button type="button" onClick={() => setTab('fixed')} className={`h-11 rounded-xl text-sm font-black transition ${tab === 'fixed' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Compromissos</button>
         <button type="button" onClick={() => setTab('closing')} className={`h-11 rounded-xl text-sm font-black transition ${tab === 'closing' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Fechamento</button>
@@ -439,7 +512,7 @@ export function MonthCenterView({
               </div>
             </div>
             {visiblePaymentCount === 0 ? (
-              <div className="premium-card-soft rounded-2xl border-emerald-400/20 p-6 text-center">
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.04] p-6 text-center">
                 <CheckCircle2 size={28} className="mx-auto text-emerald-200" />
                 <p className="mt-3 font-bold text-white">
                   {paymentStatusFilter === 'pending' ? 'Nada pendente para pagar neste mês.' : 'Nada encontrado neste filtro.'}
@@ -455,7 +528,7 @@ export function MonthCenterView({
                 : dueBadge(item.invoice.dueDate, today);
               const invoiceTransactions = getCardInvoiceTransactions(item.card, transactions, item.invoice.period);
               return (
-                <article key={`${item.card.id}:${item.invoice.period}`} className="premium-card rounded-2xl p-4">
+                <article key={`${item.card.id}:${item.invoice.period}`} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -495,7 +568,7 @@ export function MonthCenterView({
                 ? { label: 'paga', className: 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100' }
                 : dueBadge(transaction.date, today);
               return (
-                <article key={transaction.id} className="premium-card w-full rounded-2xl p-4">
+                <article key={transaction.id} className="w-full rounded-2xl border border-white/10 bg-white/[0.035] p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -545,14 +618,14 @@ export function MonthCenterView({
               <h2 className="font-display text-lg font-bold">Reembolsos em aberto</h2>
             </div>
             {reimbursementPeopleSummaries.length === 0 ? (
-              <div className="premium-card-soft rounded-2xl p-5 text-center">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-5 text-center">
                 <CheckCircle2 size={24} className="mx-auto text-emerald-200" />
                 <p className="mt-2 text-sm font-bold text-white">Sem pendências de terceiros.</p>
               </div>
             ) : reimbursementPeopleSummaries.slice(0, 6).map((person) => {
               const overdue = person.overdueCount > 0;
               return (
-                <article key={person.personId ?? 'unknown'} className={`premium-card rounded-2xl p-3 ${overdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-amber-400/10'}`}>
+                <article key={person.personId ?? 'unknown'} className={`rounded-2xl border bg-white/[0.035] p-3 ${overdue ? 'border-rose-400/20 bg-rose-500/10' : 'border-amber-400/10'}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-white">{person.personName}</p>
@@ -574,9 +647,7 @@ export function MonthCenterView({
                       type="button"
                       onClick={() => {
                         if (!person.oldestTransaction) return;
-                        setReceivingTransaction(person.oldestTransaction);
-                        setReceivingAccountId(person.oldestTransaction.accountId ?? accounts[0]?.id ?? '');
-                        setReceivingAmount(formatCurrencyInput(getTransactionReimbursementAmount(person.oldestTransaction)));
+                        openReimbursementReceipt(person.oldestTransaction);
                       }}
                       className="h-9 flex-1 rounded-xl bg-emerald-500/15 text-xs font-bold text-emerald-100 hover:bg-emerald-500/25"
                     >
@@ -606,24 +677,24 @@ export function MonthCenterView({
       {tab === 'fixed' ? (
         <section className="mt-4 min-h-0 flex-1 space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
-            <button type="button" onClick={() => setCommitmentFilter('all')} className={`premium-card rounded-2xl p-4 text-left transition hover:border-white/20 ${commitmentFilter === 'all' ? 'ring-1 ring-white/35' : ''}`}>
+            <button type="button" onClick={() => setCommitmentFilter('all')} className={`rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-left transition hover:border-white/20 ${commitmentFilter === 'all' ? 'ring-1 ring-white/35' : ''}`}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total compromissos</p>
               <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(commitmentExpenseTotal)}</p>
               <p className="mt-1 text-xs text-slate-500">{visibleFixedExpenses.length + visibleInstallmentExpenses.length} lançamento{visibleFixedExpenses.length + visibleInstallmentExpenses.length === 1 ? '' : 's'}</p>
             </button>
-            <button type="button" onClick={() => setCommitmentFilter('fixed')} className={`premium-card-soft rounded-2xl border-amber-400/15 p-4 text-left transition hover:border-amber-200/35 ${commitmentFilter === 'fixed' ? 'ring-1 ring-amber-200/45' : ''}`}>
+            <button type="button" onClick={() => setCommitmentFilter('fixed')} className={`rounded-2xl border border-amber-400/15 bg-amber-500/[0.04] p-4 text-left transition hover:border-amber-200/35 ${commitmentFilter === 'fixed' ? 'ring-1 ring-amber-200/45' : ''}`}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-amber-100/80">Fixas</p>
               <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(selectedFixedTotal)}</p>
               <p className="mt-1 text-xs text-slate-500">{visibleFixedExpenses.length} lançamento{visibleFixedExpenses.length === 1 ? '' : 's'} fixo{visibleFixedExpenses.length === 1 ? '' : 's'}</p>
             </button>
-            <button type="button" onClick={() => setCommitmentFilter('installment')} className={`premium-card-soft rounded-2xl border-violet-400/15 p-4 text-left transition hover:border-violet-200/35 ${commitmentFilter === 'installment' ? 'ring-1 ring-violet-200/45' : ''}`}>
+            <button type="button" onClick={() => setCommitmentFilter('installment')} className={`rounded-2xl border border-violet-400/15 bg-violet-500/[0.04] p-4 text-left transition hover:border-violet-200/35 ${commitmentFilter === 'installment' ? 'ring-1 ring-violet-200/45' : ''}`}>
               <p className="text-[10px] font-bold uppercase tracking-widest text-violet-100/80">Parceladas</p>
               <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(selectedInstallmentTotal)}</p>
               <p className="mt-1 text-xs text-slate-500">{visibleInstallmentExpenses.length} parcela{visibleInstallmentExpenses.length === 1 ? '' : 's'} no mês</p>
             </button>
           </div>
 
-          <div className="premium-card-soft flex flex-col gap-3 rounded-2xl p-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/20 p-1 sm:w-[280px]">
               <button type="button" onClick={() => setCommitmentOwner('mine')} className={`h-10 rounded-lg text-sm font-black transition ${commitmentOwner === 'mine' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Meus</button>
               <button type="button" onClick={() => setCommitmentOwner('others')} className={`h-10 rounded-lg text-sm font-black transition ${commitmentOwner === 'others' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>Terceiros</button>
@@ -638,7 +709,7 @@ export function MonthCenterView({
             )}
           </div>
 
-          <div className="premium-card overflow-hidden rounded-2xl">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035]">
             <div className="flex flex-col gap-2 border-b border-white/8 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Repeat size={18} className="text-amber-200" />
@@ -739,7 +810,7 @@ export function MonthCenterView({
 
       {tab === 'closing' ? (
         <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <div className="premium-card rounded-2xl p-5">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
             <div className="flex items-center gap-2">
               <ListChecks size={18} className="text-violet-200" />
               <h2 className="font-display text-lg font-bold">Checklist de {formatMonthLabel(activeMonth)}</h2>
@@ -762,7 +833,7 @@ export function MonthCenterView({
             </div>
           </div>
 
-          <div className="premium-card rounded-2xl p-5">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
             <div className="flex items-center gap-2">
               <CalendarCheck2 size={18} className="text-cyan-200" />
               <h2 className="font-display text-lg font-bold">Resumo para decidir</h2>
@@ -789,20 +860,22 @@ export function MonthCenterView({
 
       {receivingTransaction ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="premium-card w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]">
+          <div className={cx(surface.modal, 'w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]')}>
             <h2 className="font-display text-lg font-bold text-white">Registrar reembolso</h2>
             <p className="mt-1 text-xs text-slate-500">{receivingTransaction.description} · pendente {formatCurrency(getTransactionReimbursementAmount(receivingTransaction))}</p>
             <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
               Valor recebido
               <CurrencyInput value={receivingAmount} onChange={setReceivingAmount} />
             </label>
-            <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
-              Conta onde o dinheiro entrou
-              <select value={receivingAccountId} onChange={(event) => setReceivingAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300">
-                <option value="">Selecione uma conta</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-              </select>
-            </label>
+            <AccountSelect
+              accounts={accounts}
+              value={receivingAccountId}
+              onChange={setReceivingAccountId}
+              label="Conta onde o dinheiro entrou"
+              className="mt-4"
+              includeEmptyOption
+              emptyLabel="Selecione uma conta"
+            />
             {(() => {
               const pendingAmount = getTransactionReimbursementAmount(receivingTransaction);
               const parsedReceivedAmount = parseCurrencyInput(receivingAmount);
@@ -837,7 +910,7 @@ export function MonthCenterView({
 
       {payingAccountExpense ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="premium-card w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]">
+          <div className={cx(surface.modal, 'w-full rounded-t-[28px] p-5 sm:max-w-sm sm:rounded-[28px]')}>
             <h2 className="font-display text-lg font-bold text-white">Registrar pagamento</h2>
             <p className="mt-1 text-xs text-slate-500">{payingAccountExpense.description} · {formatCurrency(payingAccountExpense.amount)}</p>
             <label className="mt-4 grid gap-1 text-xs font-semibold text-slate-400">
@@ -849,13 +922,15 @@ export function MonthCenterView({
                 className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300"
               />
             </label>
-            <label className="mt-3 grid gap-1 text-xs font-semibold text-slate-400">
-              Conta usada
-              <select value={payingAccountId} onChange={(event) => setPayingAccountId(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-black/25 px-3 text-white outline-none focus:border-emerald-300">
-                <option value="">Selecione uma conta</option>
-                {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-              </select>
-            </label>
+            <AccountSelect
+              accounts={accounts}
+              value={payingAccountId}
+              onChange={setPayingAccountId}
+              label="Conta usada"
+              className="mt-3"
+              includeEmptyOption
+              emptyLabel="Selecione uma conta"
+            />
             <p className="mt-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 text-xs leading-relaxed text-emerald-100">
               A despesa será marcada como paga e o saldo da conta escolhida será atualizado.
             </p>

@@ -9,6 +9,8 @@ import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
 import { ExpenseFilterChips } from '../shared/ExpenseFilterChips';
 import { CollapsibleSearch } from '../shared/CollapsibleSearch';
 import { MonthNavigator } from '../shared/MonthNavigator';
+import { AccountSelect } from '../shared/EntitySelect';
+import { control, cx, screen, surface } from '../shared/visualTokens';
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -338,7 +340,7 @@ export function TransactionsView({
       : null;
 
   return (
-    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-7 md:pt-8">
+    <div className={screen.scrollWide}>
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">Movimentações</p>
@@ -354,7 +356,7 @@ export function TransactionsView({
         className="mt-4 shrink-0"
       />
 
-      <div className="premium-card-soft mt-5 grid shrink-0 grid-cols-3 gap-1 rounded-2xl p-1">
+      <div className={cx(surface.segmented, 'mt-5 grid shrink-0 grid-cols-3 gap-1')}>
         {tabs.map((item) => (
           <button key={item.id} type="button" onClick={() => setTab(item.id)} className={`h-11 rounded-xl text-xs font-bold transition sm:text-sm ${tab === item.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
             {item.label}
@@ -363,7 +365,7 @@ export function TransactionsView({
       </div>
 
       <p className="mt-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Filtro de movimentações</p>
-      <div className="premium-card-soft mt-1.5 grid shrink-0 grid-cols-4 gap-1 rounded-xl p-1">
+      <div className={cx(surface.segmentedCompact, 'mt-1.5 grid shrink-0 grid-cols-4 gap-1')}>
         {movementFilters.map((filter) => (
           <button
             key={filter.id}
@@ -418,7 +420,7 @@ export function TransactionsView({
       )}
 
       {movementFilter === 'all' && expenseScope === 'all' ? (
-        <section className="premium-card mt-4 shrink-0 overflow-hidden rounded-2xl">
+        <section className={cx(surface.summary, 'mt-4 shrink-0 overflow-hidden')}>
           <div className="flex items-end justify-between gap-4 px-4 pb-3 pt-3.5">
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Balanço do mês</p>
@@ -511,7 +513,7 @@ export function TransactionsView({
           ) : null}
         </section>
       ) : (
-        <section className="premium-card mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl px-4 py-3">
+        <section className={cx(surface.summary, 'mt-4 grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3')}>
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{totalLabel}</p>
             <p className="mt-0.5 text-xs text-slate-500">{visibleItemCount} item{visibleItemCount === 1 ? '' : 's'}</p>
@@ -543,13 +545,13 @@ export function TransactionsView({
         </section>
       ) : null}
 
-      <section className="premium-scroll mt-5 min-h-[220px] flex-1 space-y-3 overflow-y-auto pb-4">
+      <section className={screen.compactList}>
         {movementFilter === 'pending' && pendingInvoiceSummaries.length > 0 ? (
           <div className="space-y-3">
             {pendingInvoiceSummaries.map(({ card, invoice, itemCount, total }) => (
               <article
                 key={`${card.id}:${invoice.period}`}
-                className="cosmic-card cosmic-card-hover relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4"
+                className="relative flex items-center gap-3 overflow-hidden rounded-2xl border bg-white/[0.035] p-4 transition hover:border-white/20 hover:bg-white/[0.055]"
                 style={{
                   borderColor: `${card.color}55`,
                   backgroundImage: `linear-gradient(90deg, ${card.color}1f, transparent 62%)`,
@@ -584,7 +586,7 @@ export function TransactionsView({
                 key={group.id}
                 type="button"
                 onClick={() => onOpenReimbursements(group.id)}
-                className="cosmic-card cosmic-card-hover relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-amber-400/20 p-4 text-left"
+                className="relative flex w-full items-center gap-3 overflow-hidden rounded-2xl border border-amber-400/20 bg-amber-500/[0.04] p-4 text-left transition hover:border-amber-300/35 hover:bg-amber-500/[0.08]"
               >
                 <span className="absolute inset-y-0 left-0 w-1 bg-amber-400" />
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-100">
@@ -608,7 +610,7 @@ export function TransactionsView({
         ) : null}
 
         {visibleItemCount === 0 ? (
-          <div className="premium-card-soft rounded-2xl border-dashed p-6 text-center">
+          <div className={cx(surface.empty, 'p-6')}>
             <p className="text-sm font-bold text-white">Nenhum lançamento neste filtro</p>
             <p className="mt-1 text-xs text-slate-500">Escolha outro tipo de despesa ou limpe a busca.</p>
           </div>
@@ -626,10 +628,10 @@ export function TransactionsView({
           return (
             <article
               key={transaction.id}
-              className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4 ${
+              className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border bg-white/[0.03] p-4 transition hover:border-white/20 hover:bg-white/[0.055] ${
                 isCardEntry
-                  ? 'cosmic-card cosmic-card-hover border-violet-400/20'
-                  : 'cosmic-card cosmic-card-hover border-sky-400/15'
+                  ? 'border-violet-400/20'
+                  : 'border-sky-400/15'
               }`}
             >
               <span className={`absolute inset-y-0 left-0 w-1 ${isCardEntry ? 'bg-violet-500' : 'bg-sky-500'}`} />
@@ -729,7 +731,7 @@ export function TransactionsView({
 
       {paymentTransaction ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm md:items-center md:p-6">
-          <div className="premium-card w-full max-w-md rounded-t-2xl p-5 shadow-2xl md:rounded-2xl">
+          <div className={cx(surface.modal, 'w-full max-w-md rounded-t-2xl p-5 md:rounded-2xl')}>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">Confirmar pagamento</p>
@@ -739,31 +741,25 @@ export function TransactionsView({
               <button
                 type="button"
                 onClick={closePaymentAccountPicker}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                className={control.iconButton}
                 aria-label="Fechar"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <label className="mt-5 block text-xs font-bold text-slate-300">
-              De qual conta o saldo vai sair?
-              <select
-                value={paymentAccountId}
-                onChange={(event) => {
-                  setPaymentAccountId(event.target.value);
-                  setPaymentError('');
-                }}
-                className="mt-2 h-12 w-full rounded-xl border border-white/10 bg-black/25 px-3 text-sm font-semibold text-white outline-none focus:border-violet-300"
-              >
-                {accounts.length === 0 ? <option value="">Nenhuma conta cadastrada</option> : null}
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name} - {formatCurrency(account.balance)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AccountSelect
+              accounts={accounts}
+              value={paymentAccountId}
+              onChange={(nextAccountId) => {
+                setPaymentAccountId(nextAccountId);
+                setPaymentError('');
+              }}
+              label="De qual conta o saldo vai sair?"
+              className="mt-5 text-slate-300"
+              includeEmptyOption={accounts.length === 0}
+              emptyLabel="Nenhuma conta cadastrada"
+            />
 
             {paymentError ? <p className="mt-3 text-xs font-semibold text-rose-300">{paymentError}</p> : null}
 

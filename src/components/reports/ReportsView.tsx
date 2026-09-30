@@ -16,13 +16,9 @@ import {
   BarChart3,
   Briefcase,
   Car,
-  ChevronDown,
-  ChevronUp,
   Compass,
-  CreditCard,
   Download,
   Home,
-  Landmark,
   Laptop,
   MoreHorizontal,
   PiggyBank,
@@ -32,7 +28,6 @@ import {
   TrendingDown,
   TrendingUp,
   Utensils,
-  UserRound,
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -56,6 +51,7 @@ import {
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
 import { MonthNavigator } from '../shared/MonthNavigator';
+import { cx, screen, surface } from '../shared/visualTokens';
 import { BudgetSection } from './BudgetSection';
 
 interface ReportsViewProps {
@@ -105,6 +101,14 @@ const EXPENSE_BREAKDOWN_COLORS: Record<string, string> = {
   variable: '#38BDF8',
 };
 
+const reportViewOptions = [
+  { id: 'month', label: 'Mês' },
+  { id: 'year', label: 'Ano' },
+  { id: 'patrimony', label: 'Patrimônio' },
+] as const;
+
+type ReportView = typeof reportViewOptions[number]['id'];
+
 function getChange(current: number, previous: number) {
   if (previous === 0) return current === 0 ? 0 : null;
   return ((current - previous) / Math.abs(previous)) * 100;
@@ -139,8 +143,8 @@ export function ReportsView({
   onCurrentMonth,
 }: ReportsViewProps) {
   const [reportScope, setReportScope] = useState<'general' | 'personal'>('general');
-  const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
-  const [showOutflowBreakdown, setShowOutflowBreakdown] = useState(false);
+  const [reportView, setReportView] = useState<ReportView>('month');
+  const [showExpenseBreakdown, setShowExpenseBreakdown] = useState(false);
   const effectiveReportScope = reimbursementsEnabled ? reportScope : 'personal';
   const previousMonth = shiftMonthKey(month, -1);
   const report = useMemo(() => {
@@ -340,20 +344,24 @@ export function ReportsView({
 
   function downloadReport() {
     const rows = [
-      ['Indicador', 'Valor'],
-      ['Receitas', report.current.income],
-      ['Despesas pessoais', report.current.expenses],
-      ['Despesas parceladas', expenseBreakdown.find((item) => item.key === 'installment')?.total ?? 0],
-      ['Despesas fixas', expenseBreakdown.find((item) => item.key === 'fixed')?.total ?? 0],
-      ['Despesas variáveis', expenseBreakdown.find((item) => item.key === 'variable')?.total ?? 0],
-      ['Resultado', balance],
-      [`Receitas no ano ${reportYear}`, annualIncome],
-      [`Despesas no ano ${reportYear}`, annualExpenses],
-      [`Resultado no ano ${reportYear}`, annualResult],
-      ['Patrimônio atual em contas e caixinhas', currentPatrimony],
-      ['Meta mensal para investir', savingsGoal.target],
-      ['Economizado', savingsGoal.saved],
-      ['Taxa de economia (%)', savingsRate.toFixed(2)],
+      ['Bloco', 'Indicador', 'Valor'],
+      ['Mês', 'Escopo', scopeHint],
+      ['Mês', 'Entradas', visibleInflows],
+      ['Mês', 'Saídas', visibleOutflows],
+      ['Mês', 'Resultado', balance],
+      ['Mês', 'Meta mensal para investir', savingsGoal.target],
+      ['Mês', 'Economizado', savingsGoal.saved],
+      ['Mês', 'Taxa de economia (%)', savingsRate.toFixed(2)],
+      ...expenseBreakdown.map((item) => ['Mês', `Despesas ${item.label.toLowerCase()}`, item.total]),
+      ['Ano', `Receitas ${reportYear}`, annualIncome],
+      ['Ano', `Despesas ${reportYear}`, annualExpenses],
+      ['Ano', `Resultado ${reportYear}`, annualResult],
+      ['Ano', 'Média mensal', annualAverageResult],
+      ['Ano', 'Meses positivos', positiveMonths],
+      ['Ano', 'Meses negativos', negativeMonths],
+      ['Patrimônio', 'Total atual', currentPatrimony],
+      ['Patrimônio', 'Contas', accountPatrimony],
+      ['Patrimônio', 'Caixinhas', reservePatrimony],
     ];
     const csv = `\uFEFF${rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';')).join('\r\n')}`;
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -385,13 +393,24 @@ export function ReportsView({
   const scopeHint = effectiveReportScope === 'general'
     ? 'Geral: meu + terceiros'
     : 'Apenas meus valores';
+  const topExpenseBreakdown = expenseBreakdown.reduce((top, item) => (
+    item.total > top.total ? item : top
+  ), expenseBreakdown[0] ?? { key: 'variable', label: 'Variáveis', total: 0, count: 0 });
+  const monthResultLabel = balance >= 0 ? 'Sobrou no mês' : 'Faltou no mês';
+  const monthResultDescription = balance >= 0
+    ? `Você fechou ${formatMonthLabel(month)} com sobra de ${formatCurrency(balance)}.`
+    : `Você gastou ${formatCurrency(Math.abs(balance))} acima das entradas em ${formatMonthLabel(month)}.`;
+  const annualResultDescription = annualResult >= 0
+    ? `Até ${formatMonthLabel(month)}, o ano acumula sobra de ${formatCurrency(annualResult)}.`
+    : `Até ${formatMonthLabel(month)}, o ano acumula déficit de ${formatCurrency(Math.abs(annualResult))}.`;
+  const patrimonyDescription = `Contas representam ${formatCurrency(accountPatrimony)} e caixinhas somam ${formatCurrency(reservePatrimony)}.`;
 
   return (
-    <div className="premium-scroll app-page-gutters h-full w-full min-w-0 overflow-x-hidden overflow-y-auto pb-8 pt-7">
+    <div className={cx(screen.scrollWide, 'w-full min-w-0 overflow-x-hidden')}>
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm text-slate-400">Relatório</p>
-          <h1 className="font-display text-2xl font-bold text-white">Detalhado</h1>
+          <h1 className="font-display text-2xl font-bold text-white">Executivo</h1>
         </div>
         <button type="button" onClick={downloadReport} className="flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-3 text-xs font-bold text-slate-200 transition hover:bg-white hover:text-black">
           <Download size={16} /> Baixar
@@ -406,468 +425,405 @@ export function ReportsView({
         className="mt-4"
       />
 
-      {reimbursementsEnabled ? <div className="premium-card-soft mt-3 grid grid-cols-2 rounded-2xl p-1" role="tablist" aria-label="Escopo do relatório">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={reportScope === 'general'}
-          onClick={() => setReportScope('general')}
-          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'general' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-        >
-          Geral
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={reportScope === 'personal'}
-          onClick={() => setReportScope('personal')}
-          className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'personal' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-        >
-          Apenas meu
-        </button>
-      </div> : null}
-      <p className="mt-2 text-xs font-semibold text-slate-500">{scopeHint}</p>
-
-      {reportWidgets.length > 0 ? <section className="mt-5 grid min-w-0 grid-cols-2 gap-3">
-        {reportWidgets.map((widget) => {
-          const incomeLabel = effectiveReportScope === 'general' ? 'Total de entradas' : 'Receitas';
-          const expenseLabel = effectiveReportScope === 'general' ? 'Total de saídas' : 'Despesas pessoais';
-          const breakdown = widget === 'income'
-            ? effectiveReportScope === 'general'
-              ? [
-                ['Meu', report.current.income, 'text-emerald-200'],
-                ['Terceiros', reimbursementExpected, 'text-amber-200'],
-              ]
-              : [['Meu', report.current.income, 'text-emerald-200']]
-            : widget === 'expenses'
-              ? effectiveReportScope === 'general'
-                ? [
-                  ['Meu', report.current.expenses, 'text-rose-200'],
-                  ['Terceiros', currentMonthlyResult.thirdPartyExpenses, 'text-amber-200'],
-                ]
-                : [['Meu', report.current.expenses, 'text-rose-200']]
-              : null;
-          const item = widget === 'income'
-            ? [incomeLabel, formatCurrency(visibleInflows), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
-            : widget === 'expenses'
-              ? [expenseLabel, formatCurrency(visibleOutflows), 'border-rose-400/15 bg-rose-500/[0.07] text-rose-300']
-              : widget === 'savings_rate'
-                ? ['Taxa de economia', `${savingsRate.toFixed(1).replace('.', ',')}%`, 'border-sky-400/15 bg-sky-500/[0.07] text-sky-300']
-                : ['Média de gastos (6 meses)', formatCurrency(averageExpenses), 'border-amber-400/15 bg-amber-500/[0.07] text-amber-300'];
-          return (
-            <article key={widget} className={`premium-card min-w-0 overflow-hidden rounded-[22px] border p-3 ${item[2]}`}>
-              <p className="text-xs font-semibold text-slate-400">{item[0]}</p>
-              <p className="mt-2 font-display text-lg font-bold">{item[1]}</p>
-              {breakdown ? (
-                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-2">
-                  {breakdown.map(([label, value, tone]) => (
-                    <div key={label}>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
-                      <p className={`mt-1 truncate font-mono text-xs font-bold ${tone}`}>{formatCurrency(Number(value))}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
-      </section> : null}
-
-      <section className="premium-card mt-3 overflow-hidden rounded-[22px]">
-        <div className="grid grid-cols-2">
-          <div className="p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">Total de entradas</p>
-            <p className="mt-1 font-mono text-base font-bold text-white">{formatCurrency(visibleInflows)}</p>
-          </div>
-          <div className="border-l border-white/8 p-4 text-right">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-rose-300">Total de saídas</p>
-            <p className="mt-1 font-mono text-base font-bold text-white">{formatCurrency(visibleOutflows)}</p>
-          </div>
-        </div>
-        <div className="h-2 bg-rose-500/70">
-          <div
-            className="h-full bg-emerald-400"
-            style={{ width: `${visibleInflows + visibleOutflows > 0 ? (visibleInflows / (visibleInflows + visibleOutflows)) * 100 : 50}%` }}
-          />
-        </div>
-        <div className="flex items-center justify-between gap-3 border-t border-white/8 px-4 py-3">
-          <span className="flex items-center gap-2 text-sm font-semibold text-slate-400"><Scale size={17} /> Balanço</span>
-          <div className="text-right">
-            <p className={`font-mono text-base font-bold ${balance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {balance >= 0 ? '+' : '-'}{formatCurrency(Math.abs(balance))}
-            </p>
-            <ChangeBadge current={balance} previous={previousBalance} />
-          </div>
-        </div>
-      </section>
-
-      <section className="premium-card mt-3 rounded-[22px] p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-rose-300">Composição das despesas</p>
-            <h2 className="font-display text-lg font-bold text-white">Fixo, parcelado e variável</h2>
-          </div>
-          <TrendingDown size={20} className="shrink-0 text-rose-300" />
-        </div>
-        <div className="mt-4 space-y-3">
-          {expenseBreakdown.map((item) => {
-            const percentage = expenseBreakdownTotal > 0 ? (Math.max(0, item.total) / expenseBreakdownTotal) * 100 : 0;
-            return (
-              <div key={item.key} className="min-w-0">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-bold text-slate-100">{item.label}</span>
-                    <span className="block text-[10px] text-slate-500">
-                      {item.count} {item.count === 1 ? 'lançamento' : 'lançamentos'} · {percentage.toFixed(1).replace('.', ',')}%
-                    </span>
-                  </span>
-                  <span className="shrink-0 font-mono text-sm font-bold text-white">{formatCurrency(item.total)}</span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8">
-                  <div className="h-full rounded-full" style={{ width: `${percentage}%`, backgroundColor: EXPENSE_BREAKDOWN_COLORS[item.key] }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="premium-card mt-3 rounded-[22px] p-4">
-        <div className="flex items-start justify-between gap-3">
-          <span className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
-              <PiggyBank size={19} />
-            </span>
-            <span>
-              <span className="block text-xs font-semibold text-slate-400">Meta mensal para investir</span>
-              <span className="mt-0.5 block font-mono text-base font-bold text-white">{formatCurrency(savingsGoal.target)}</span>
-            </span>
-          </span>
-          <span className={`text-right text-xs font-bold ${savingsZone.text}`}>
-            <span className="block text-base">{savingsGoal.progress.toFixed(0)}%</span>
-            <span className="block text-[9px]">{savingsZone.label}</span>
-          </span>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
-          <div className={`h-full rounded-full ${savingsZone.bar}`} style={{ width: `${Math.min(100, savingsGoal.progress)}%` }} />
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-3 text-[10px]">
-          <span className="text-slate-500">Economizado <strong className="text-slate-300">{formatCurrency(savingsGoal.saved)}</strong></span>
-          <span className="text-slate-500">
-            {savingsGoal.remaining > 0 ? <>Falta <strong className={savingsZone.text}>{formatCurrency(savingsGoal.remaining)}</strong></> : 'Objetivo alcançado'}
-          </span>
-        </div>
-      </section>
-
-      <section className="premium-card mt-3 rounded-[22px] p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">Ano {reportYear}</p>
-            <h2 className="font-display text-lg font-bold text-white">Patrimônio e sobra</h2>
-            <p className="mt-1 text-xs text-slate-500">Patrimônio atual em contas e caixinhas, com evolução pelo resultado mensal registrado.</p>
-          </div>
-          <PiggyBank size={20} className="shrink-0 text-emerald-300" />
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-4">
-          <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Patrimônio atual</p>
-            <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(currentPatrimony)}</p>
-            <p className="mt-1 text-[10px] text-slate-500">Contas {formatCurrency(accountPatrimony)} · Caixinhas {formatCurrency(reservePatrimony)}</p>
-          </div>
-          <div className={`rounded-2xl border p-3 ${annualResult >= 0 ? 'border-sky-400/15 bg-sky-500/[0.07]' : 'border-rose-400/15 bg-rose-500/[0.07]'}`}>
-            <p className={`text-[10px] font-bold uppercase tracking-widest ${annualResult >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>Resultado acumulado</p>
-            <p className={`mt-1 font-mono text-sm font-bold ${annualResult >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>
-              {annualResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualResult))}
-            </p>
-            <p className="mt-1 text-[10px] text-slate-500">Até {formatMonthLabel(month)}</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Média mensal</p>
-            <p className={`mt-1 font-mono text-sm font-bold ${annualAverageResult >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {annualAverageResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualAverageResult))}
-            </p>
-            <p className="mt-1 text-[10px] text-slate-500">{positiveMonths} meses positivos · {negativeMonths} negativos</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Entradas vs. saídas</p>
-            <p className="mt-1 font-mono text-sm font-bold text-emerald-300">{formatCurrency(annualIncome)}</p>
-            <p className="mt-1 font-mono text-xs font-bold text-rose-300">{formatCurrency(annualExpenses)}</p>
-          </div>
-        </div>
-
-        <div className="mt-4 h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={annualEvolution}>
-              <defs>
-                <linearGradient id="annualPatrimonyGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#34D399" stopOpacity={0.28} />
-                  <stop offset="100%" stopColor="#34D399" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="annualResultGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#38BDF8" stopOpacity={0.24} />
-                  <stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="month" stroke="#64748B" fontSize={10} />
-              <YAxis hide />
-              <Tooltip
-                contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }}
-                formatter={(value: number) => formatCurrency(value)}
-              />
-              <Area type="monotone" dataKey="Patrimonio" name="Patrimônio estimado" stroke="#34D399" fill="url(#annualPatrimonyGradient)" strokeWidth={2.5} />
-              <Area type="monotone" dataKey="Acumulado" name="Resultado acumulado" stroke="#38BDF8" fill="url(#annualResultGradient)" strokeWidth={2} />
-              <Area type="monotone" dataKey="Resultado" name="Resultado mensal" stroke="#FACC15" fill="transparent" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-3 text-[10px] font-semibold">
-          <span className="text-emerald-300">● Patrimônio</span>
-          <span className="text-sky-300">● Acumulado</span>
-          <span className="text-amber-300">● Resultado mensal</span>
-        </div>
-      </section>
-
-      <div className="hidden">
-        <section>
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="font-display text-lg font-bold text-white">Entradas</h2>
-              <p className="mt-1 text-xs text-slate-500">{scopeHint}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Total</p>
-              <p className="font-mono text-sm font-bold text-emerald-300">{formatCurrency(visibleInflows)}</p>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-2">
-            <button
-              type="button"
-              onClick={() => setShowIncomeBreakdown((current) => !current)}
-              className="flex items-center justify-between rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-4 text-left"
-            >
-              <span className="min-w-0">
-                <span className="block text-sm font-bold text-emerald-100">Total de entradas</span>
-                <span className="mt-1 block text-xs text-slate-500">
-                  {effectiveReportScope === 'general' ? 'Receitas + reembolsos de terceiros' : 'Somente receitas pessoais'}
-                </span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="font-mono text-sm font-bold text-white">{formatCurrency(visibleInflows)}</span>
-                {showIncomeBreakdown ? <ChevronUp size={16} className="text-emerald-300" /> : <ChevronDown size={16} className="text-emerald-300" />}
-              </span>
-            </button>
-            {showIncomeBreakdown ? <>
-            <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
-              <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300"><Wallet size={18} /></span>
-                Receitas
-              </span>
-              <span className="font-mono font-bold text-white">{formatCurrency(report.current.income)}</span>
-            </article>
-            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="cosmic-card rounded-2xl border border-white/8 p-4">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
-                  Reembolsos
-                </span>
-                <span className="font-mono font-bold text-white">{formatCurrency(reimbursementExpected)}</span>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/8 pt-3 text-xs">
-                <div><p className="text-slate-500">Concluídos</p><p className="mt-1 font-mono font-bold text-emerald-300">{formatCurrency(reimbursementReceived)}</p></div>
-                <div><p className="text-slate-500">Pendentes</p><p className="mt-1 font-mono font-bold text-amber-300">{formatCurrency(reimbursementPending)}</p></div>
-              </div>
-            </article> : null}
-            </> : null}
-          </div>
-        </section>
-
-        <section>
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h2 className="font-display text-lg font-bold text-white">Saídas</h2>
-              <p className="mt-1 text-xs text-slate-500">{scopeHint}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Total</p>
-              <p className="font-mono text-sm font-bold text-rose-300">{formatCurrency(visibleOutflows)}</p>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-2">
-            <button
-              type="button"
-              onClick={() => setShowOutflowBreakdown((current) => !current)}
-              className="flex items-center justify-between rounded-2xl border border-rose-400/15 bg-rose-500/[0.07] p-4 text-left"
-            >
-              <span className="min-w-0">
-                <span className="block text-sm font-bold text-rose-100">Total de saídas</span>
-                <span className="mt-1 block text-xs text-slate-500">
-                  {effectiveReportScope === 'general' ? 'Meus gastos + valores de terceiros' : 'Somente meus gastos'}
-                </span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="font-mono text-sm font-bold text-white">{formatCurrency(visibleOutflows)}</span>
-                {showOutflowBreakdown ? <ChevronUp size={16} className="text-rose-300" /> : <ChevronDown size={16} className="text-rose-300" />}
-              </span>
-            </button>
-            {showOutflowBreakdown ? <>
-            {effectiveReportScope === 'general' || !reimbursementsEnabled ? <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
-              <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300"><Landmark size={18} /></span>
-                Gastos em contas
-              </span>
-              <span className="font-mono font-bold text-white">{formatCurrency(report.current.accountExpenses)}</span>
-            </article> : null}
-            <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
-              <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300"><CreditCard size={18} /></span>
-                Gastos no cartão
-              </span>
-              <span className="font-mono font-bold text-white">{formatCurrency(report.current.cardExpenses)}</span>
-            </article>
-            {reimbursementsEnabled && effectiveReportScope === 'general' ? <article className="cosmic-card flex items-center justify-between rounded-2xl border border-white/8 p-4">
-              <span className="flex items-center gap-3 text-sm font-semibold text-slate-200">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><UserRound size={18} /></span>
-                Valores de terceiros
-              </span>
-              <span className="font-mono font-bold text-white">{formatCurrency(currentMonthlyResult.thirdPartyExpenses)}</span>
-            </article> : null}
-            </> : null}
-          </div>
-        </section>
+      <div className={cx(surface.segmented, 'mt-3 grid grid-cols-3 gap-1')} role="tablist" aria-label="Visão do relatório">
+        {reportViewOptions.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="tab"
+            aria-selected={reportView === option.id}
+            onClick={() => setReportView(option.id)}
+            className={`h-10 rounded-xl text-xs font-bold transition ${reportView === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
 
-      <section className="premium-card mt-6 rounded-[24px] p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-300">Últimos 6 meses</p>
-            <h2 className="font-display text-lg font-bold text-white">Evolução financeira</h2>
-            <p className="mt-1 text-xs text-slate-500">Compare receitas, despesas pessoais e o resultado de cada mês.</p>
-          </div>
-          <TrendingUp size={20} className="shrink-0 text-sky-300" />
+      {reimbursementsEnabled ? (
+        <div className={cx(surface.segmentedCompact, 'mt-3 grid grid-cols-2 gap-1')} role="tablist" aria-label="Escopo do relatório">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={reportScope === 'general'}
+            onClick={() => setReportScope('general')}
+            className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'general' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+          >
+            Geral
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={reportScope === 'personal'}
+            onClick={() => setReportScope('personal')}
+            className={`h-10 rounded-xl text-xs font-bold transition ${reportScope === 'personal' ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+          >
+            Apenas meu
+          </button>
         </div>
-        <div className="mt-4 h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={monthlyEvolution}>
-              <defs>
-                <linearGradient id="monthlyIncomeGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10B981" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="monthlyExpenseGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F43F5E" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="#F43F5E" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="month" stroke="#64748B" fontSize={10} />
-              <YAxis hide />
-              <Tooltip
-                contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }}
-                formatter={(value: number) => formatCurrency(value)}
-              />
-              <Area type="monotone" dataKey="Receitas" stroke="#10B981" fill="url(#monthlyIncomeGradient)" strokeWidth={2} />
-              <Area type="monotone" dataKey="Despesas" stroke="#F43F5E" fill="url(#monthlyExpenseGradient)" strokeWidth={2} />
-              <Area type="monotone" dataKey="Resultado" stroke="#38BDF8" fill="transparent" strokeWidth={2.5} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-3 text-[10px] font-semibold">
-          <span className="text-emerald-300">● Receitas</span>
-          <span className="text-rose-300">● Despesas</span>
-          <span className="text-sky-300">● Resultado</span>
-        </div>
-      </section>
+      ) : null}
+      <p className="mt-2 text-xs font-semibold text-slate-500">{scopeHint}</p>
 
-      <section className="premium-card mt-6 rounded-[24px] p-5">
-        <div className="flex items-center gap-2">
-          <BarChart3 size={18} className="text-sky-300" />
-          <h2 className="font-display text-lg font-bold text-white">Receitas vs. despesas</h2>
-        </div>
-        <div className="mt-4 h-64">
-          {hasDailyData ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyData}>
-                <defs>
-                  <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10B981" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#F43F5E" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#F43F5E" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="day" stroke="#64748B" fontSize={10} />
-                <YAxis hide />
-                <Tooltip contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }} formatter={(value: number) => formatCurrency(value)} />
-                <Area type="monotone" dataKey="income" name="Receitas" stroke="#10B981" fill="url(#incomeGradient)" strokeWidth={2} />
-                <Area type="monotone" dataKey="expenses" name="Despesas" stroke="#F43F5E" fill="url(#expenseGradient)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
-              <BarChart3 size={34} className="text-slate-700" />
-              <p className="mt-3 text-sm font-semibold">Sem movimentações no período</p>
+      {reportView === 'month' ? (
+        <>
+          <section className={cx(surface.summary, 'mt-5 p-5')}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">{formatMonthLabel(month)}</p>
+                <h2 className="mt-1 font-display text-2xl font-bold text-white">{monthResultLabel}</h2>
+                <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-400">{monthResultDescription}</p>
+              </div>
+              <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${balance >= 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'}`}>
+                {balance >= 0 ? <TrendingUp size={22} /> : <TrendingDown size={22} />}
+              </span>
             </div>
-          )}
-        </div>
-      </section>
-
-      <BudgetSection month={month} transactions={transactions} categories={categories} />
-
-      <section className="premium-card mt-5 rounded-[24px] p-5">
-        <div>
-          <p className="text-xs text-slate-500">Maior gasto</p>
-          <h2 className="font-display text-lg font-bold text-white">{largestCategory?.name ?? 'Gastos por categoria'}</h2>
-          {largestCategory ? <p className="mt-1 font-mono text-xl font-bold text-rose-300">{formatCurrency(largestCategory.value)}</p> : null}
-        </div>
-        {categoryData.length > 0 ? (
-          <>
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86} paddingAngle={4}>
-                    {categoryData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }} formatter={(value: number) => formatCurrency(value)} />
-                </PieChart>
-              </ResponsiveContainer>
+            <div className="mt-5 grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Entradas</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(visibleInflows)}</p>
+              </div>
+              <div className="rounded-2xl border border-rose-400/15 bg-rose-500/[0.07] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-rose-200">Saídas</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(visibleOutflows)}</p>
+              </div>
+              <div className={`rounded-2xl border p-3 ${balance >= 0 ? 'border-sky-400/15 bg-sky-500/[0.07]' : 'border-rose-400/15 bg-rose-500/[0.07]'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${balance >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>Resultado</p>
+                <p className={`mt-1 font-mono text-sm font-bold ${balance >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>{balance >= 0 ? '+' : '-'}{formatCurrency(Math.abs(balance))}</p>
+                <ChangeBadge current={balance} previous={previousBalance} />
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Maior pressão</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{topExpenseBreakdown.label}</p>
+                <p className="mt-1 text-[10px] text-slate-500">{formatCurrency(topExpenseBreakdown.total)}</p>
+              </div>
             </div>
-            <div className="space-y-2">
-              {categoryData.map((item) => {
-                const percentage = categoryTotal > 0 ? (item.value / categoryTotal) * 100 : 0;
+          </section>
+
+          {reportWidgets.length > 0 ? (
+            <section className="mt-4 grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
+              {reportWidgets.map((widget) => {
+                const incomeLabel = effectiveReportScope === 'general' ? 'Total de entradas' : 'Receitas';
+                const expenseLabel = effectiveReportScope === 'general' ? 'Total de saídas' : 'Despesas pessoais';
+                const item = widget === 'income'
+                  ? [incomeLabel, formatCurrency(visibleInflows), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
+                  : widget === 'expenses'
+                    ? [expenseLabel, formatCurrency(visibleOutflows), 'border-rose-400/15 bg-rose-500/[0.07] text-rose-300']
+                    : widget === 'savings_rate'
+                      ? ['Taxa de economia', `${savingsRate.toFixed(1).replace('.', ',')}%`, 'border-sky-400/15 bg-sky-500/[0.07] text-sky-300']
+                      : ['Média de gastos (6 meses)', formatCurrency(averageExpenses), 'border-amber-400/15 bg-amber-500/[0.07] text-amber-300'];
                 return (
-                  <div key={item.name} className="rounded-2xl border border-white/8 bg-white/[0.025] p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="flex min-w-0 items-center gap-3 text-slate-200">
-                        <span
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                          style={{ backgroundColor: `${item.color}20`, color: item.color }}
-                        >
-                          <item.Icon size={17} />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm font-bold">{item.name}</span>
-                          <span className="text-[10px] text-slate-500">{percentage.toFixed(1).replace('.', ',')}% dos gastos</span>
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-mono text-sm font-bold text-white">{formatCurrency(item.value)}</span>
-                    </div>
-                    <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/5">
-                      <div className="h-full rounded-full" style={{ width: `${percentage}%`, backgroundColor: item.color }} />
-                    </div>
-                  </div>
+                  <article key={widget} className={`min-w-0 overflow-hidden rounded-2xl border p-3 ${item[2]}`}>
+                    <p className="text-xs font-semibold text-slate-400">{item[0]}</p>
+                    <p className="mt-2 font-display text-lg font-bold">{item[1]}</p>
+                  </article>
                 );
               })}
+            </section>
+          ) : null}
+
+          <section className={cx(surface.panel, 'mt-4 p-4')}>
+            <button type="button" onClick={() => setShowExpenseBreakdown((current) => !current)} className="flex w-full items-center justify-between gap-3 text-left">
+              <span className="min-w-0">
+                <span className="block text-[10px] font-semibold uppercase tracking-widest text-rose-300">Composição das despesas</span>
+                <span className="mt-1 block font-display text-lg font-bold text-white">Fixo, parcelado e variável</span>
+              </span>
+              <span className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200">{showExpenseBreakdown ? 'Ocultar' : 'Detalhar'}</span>
+            </button>
+            <div className="mt-4 grid gap-2 md:grid-cols-3">
+              {expenseBreakdown.map((item) => (
+                <div key={item.key} className="rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+                  <p className="text-xs font-bold text-slate-200">{item.label}</p>
+                  <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(item.total)}</p>
+                  <p className="mt-1 text-[10px] text-slate-500">{item.count} lançamento{item.count === 1 ? '' : 's'}</p>
+                </div>
+              ))}
             </div>
-          </>
-        ) : (
-          <div className="flex h-48 flex-col items-center justify-center text-center text-slate-500">
-            <Wallet size={34} className="text-slate-700" />
-            <p className="mt-3 text-sm font-semibold">Sem gastos pessoais no período</p>
-          </div>
-        )}
-      </section>
+            {showExpenseBreakdown ? (
+              <div className="mt-4 space-y-3">
+                {expenseBreakdown.map((item) => {
+                  const percentage = expenseBreakdownTotal > 0 ? (Math.max(0, item.total) / expenseBreakdownTotal) * 100 : 0;
+                  return (
+                    <div key={item.key} className="min-w-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-bold text-slate-100">{item.label}</span>
+                        <span className="font-mono text-sm font-bold text-white">{percentage.toFixed(1).replace('.', ',')}%</span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/8">
+                        <div className="h-full rounded-full" style={{ width: `${percentage}%`, backgroundColor: EXPENSE_BREAKDOWN_COLORS[item.key] }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+
+          <section className={cx(surface.panel, 'mt-4 p-4')}>
+            <div className="flex items-start justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+                  <PiggyBank size={19} />
+                </span>
+                <span>
+                  <span className="block text-xs font-semibold text-slate-400">Meta mensal para investir</span>
+                  <span className="mt-0.5 block font-mono text-base font-bold text-white">{formatCurrency(savingsGoal.target)}</span>
+                </span>
+              </span>
+              <span className={`text-right text-xs font-bold ${savingsZone.text}`}>
+                <span className="block text-base">{savingsGoal.progress.toFixed(0)}%</span>
+                <span className="block text-[9px]">{savingsZone.label}</span>
+              </span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
+              <div className={`h-full rounded-full ${savingsZone.bar}`} style={{ width: `${Math.min(100, savingsGoal.progress)}%` }} />
+            </div>
+          </section>
+
+          <section className={cx(surface.panel, 'mt-5 p-5')}>
+            <div className="flex items-center gap-2">
+              <BarChart3 size={18} className="text-sky-300" />
+              <h2 className="font-display text-lg font-bold text-white">Receitas vs. despesas</h2>
+            </div>
+            <div className="mt-4 h-64">
+              {hasDailyData ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={dailyData}>
+                    <defs>
+                      <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10B981" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#F43F5E" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#F43F5E" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="day" stroke="#64748B" fontSize={10} />
+                    <YAxis hide />
+                    <Tooltip contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }} formatter={(value: number) => formatCurrency(value)} />
+                    <Area type="monotone" dataKey="income" name="Receitas" stroke="#10B981" fill="url(#incomeGradient)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="expenses" name="Despesas" stroke="#F43F5E" fill="url(#expenseGradient)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
+                  <BarChart3 size={34} className="text-slate-700" />
+                  <p className="mt-3 text-sm font-semibold">Sem movimentações no período</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <BudgetSection month={month} transactions={transactions} categories={categories} />
+
+          <section className={cx(surface.panel, 'mt-5 p-5')}>
+            <div>
+              <p className="text-xs text-slate-500">Maior gasto</p>
+              <h2 className="font-display text-lg font-bold text-white">{largestCategory?.name ?? 'Gastos por categoria'}</h2>
+              {largestCategory ? <p className="mt-1 font-mono text-xl font-bold text-rose-300">{formatCurrency(largestCategory.value)}</p> : null}
+            </div>
+            {categoryData.length > 0 ? (
+              <>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={categoryData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86} paddingAngle={4}>
+                        {categoryData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }} formatter={(value: number) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-2">
+                  {categoryData.map((item) => {
+                    const percentage = categoryTotal > 0 ? (item.value / categoryTotal) * 100 : 0;
+                    return (
+                      <div key={item.name} className="rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex min-w-0 items-center gap-3 text-slate-200">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `${item.color}20`, color: item.color }}>
+                              <item.Icon size={17} />
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-bold">{item.name}</span>
+                              <span className="text-[10px] text-slate-500">{percentage.toFixed(1).replace('.', ',')}% dos gastos</span>
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-mono text-sm font-bold text-white">{formatCurrency(item.value)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="flex h-48 flex-col items-center justify-center text-center text-slate-500">
+                <Wallet size={34} className="text-slate-700" />
+                <p className="mt-3 text-sm font-semibold">Sem gastos pessoais no período</p>
+              </div>
+            )}
+          </section>
+        </>
+      ) : null}
+
+      {reportView === 'year' ? (
+        <>
+          <section className={cx(surface.summary, 'mt-5 p-5')}>
+            <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">Ano {reportYear}</p>
+            <h2 className="mt-1 font-display text-2xl font-bold text-white">{annualResult >= 0 ? 'Ano positivo' : 'Ano pressionado'}</h2>
+            <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-400">{annualResultDescription}</p>
+            <div className="mt-5 grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Entradas</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(annualIncome)}</p>
+              </div>
+              <div className="rounded-2xl border border-rose-400/15 bg-rose-500/[0.07] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-rose-200">Saídas</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(annualExpenses)}</p>
+              </div>
+              <div className={`rounded-2xl border p-3 ${annualResult >= 0 ? 'border-sky-400/15 bg-sky-500/[0.07]' : 'border-rose-400/15 bg-rose-500/[0.07]'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${annualResult >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>Resultado</p>
+                <p className={`mt-1 font-mono text-sm font-bold ${annualResult >= 0 ? 'text-sky-200' : 'text-rose-200'}`}>{annualResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualResult))}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Média mensal</p>
+                <p className={`mt-1 font-mono text-sm font-bold ${annualAverageResult >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{annualAverageResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualAverageResult))}</p>
+                <p className="mt-1 text-[10px] text-slate-500">{positiveMonths} positivos · {negativeMonths} negativos</p>
+              </div>
+            </div>
+          </section>
+
+          <section className={cx(surface.panel, 'mt-5 p-5')}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-sky-300">Tendência</p>
+                <h2 className="font-display text-lg font-bold text-white">Sobra acumulada no ano</h2>
+              </div>
+              <TrendingUp size={20} className="shrink-0 text-sky-300" />
+            </div>
+            <div className="mt-4 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={annualEvolution}>
+                  <defs>
+                    <linearGradient id="annualResultGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#38BDF8" stopOpacity={0.24} />
+                      <stop offset="100%" stopColor="#38BDF8" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" stroke="#64748B" fontSize={10} />
+                  <YAxis hide />
+                  <Tooltip contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }} formatter={(value: number) => formatCurrency(value)} />
+                  <Area type="monotone" dataKey="Acumulado" name="Resultado acumulado" stroke="#38BDF8" fill="url(#annualResultGradient)" strokeWidth={2.5} />
+                  <Area type="monotone" dataKey="Resultado" name="Resultado mensal" stroke="#FACC15" fill="transparent" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          <section className={cx(surface.panel, 'mt-5 p-4')}>
+            <h2 className="font-display text-lg font-bold text-white">Meses do ano</h2>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {annualMonthsToDate.map((item) => (
+                <article key={item.period} className="rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold text-white">{item.month}</span>
+                    <span className={`font-mono text-sm font-bold ${item.Resultado >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{item.Resultado >= 0 ? '+' : '-'}{formatCurrency(Math.abs(item.Resultado))}</span>
+                  </div>
+                  <p className="mt-2 text-[10px] text-slate-500">Entradas {formatCurrency(item.Receitas)} · Saídas {formatCurrency(item.Despesas)}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      {reportView === 'patrimony' ? (
+        <>
+          <section className={cx(surface.summary, 'mt-5 p-5')}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Patrimônio atual</p>
+                <h2 className="mt-1 font-display text-2xl font-bold text-white">{formatCurrency(currentPatrimony)}</h2>
+                <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-400">{patrimonyDescription}</p>
+              </div>
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
+                <PiggyBank size={22} />
+              </span>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Contas</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(accountPatrimony)}</p>
+              </div>
+              <div className="rounded-2xl border border-sky-400/15 bg-sky-500/[0.07] p-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-sky-200">Caixinhas</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(reservePatrimony)}</p>
+              </div>
+              <div className={`rounded-2xl border p-3 ${annualResult >= 0 ? 'border-violet-400/15 bg-violet-500/[0.07]' : 'border-rose-400/15 bg-rose-500/[0.07]'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${annualResult >= 0 ? 'text-violet-200' : 'text-rose-200'}`}>Sobra no ano</p>
+                <p className={`mt-1 font-mono text-sm font-bold ${annualResult >= 0 ? 'text-violet-200' : 'text-rose-200'}`}>{annualResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualResult))}</p>
+              </div>
+            </div>
+          </section>
+
+          <section className={cx(surface.panel, 'mt-5 p-5')}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300">Evolução</p>
+                <h2 className="font-display text-lg font-bold text-white">Patrimônio estimado no ano</h2>
+              </div>
+              <Scale size={20} className="shrink-0 text-emerald-300" />
+            </div>
+            <div className="mt-4 h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={annualEvolution}>
+                  <defs>
+                    <linearGradient id="annualPatrimonyGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#34D399" stopOpacity={0.28} />
+                      <stop offset="100%" stopColor="#34D399" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" stroke="#64748B" fontSize={10} />
+                  <YAxis hide />
+                  <Tooltip contentStyle={{ background: '#0B0E14', border: '1px solid rgba(255,255,255,.1)', borderRadius: 16 }} formatter={(value: number) => formatCurrency(value)} />
+                  <Area type="monotone" dataKey="Patrimonio" name="Patrimônio estimado" stroke="#34D399" fill="url(#annualPatrimonyGradient)" strokeWidth={2.5} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          <section className="mt-5 grid gap-4 xl:grid-cols-2">
+            <div className={cx(surface.panel, 'p-4')}>
+              <h2 className="font-display text-lg font-bold text-white">Contas</h2>
+              <div className="mt-3 space-y-2">
+                {accounts.filter((account) => account.isActive).map((account) => (
+                  <article key={account.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-bold text-white">{account.name}</span>
+                      <span className="text-[10px] text-slate-500">{account.institution}</span>
+                    </span>
+                    <span className="font-mono text-sm font-bold text-white">{formatCurrency(account.balance)}</span>
+                  </article>
+                ))}
+              </div>
+            </div>
+            <div className={cx(surface.panel, 'p-4')}>
+              <h2 className="font-display text-lg font-bold text-white">Caixinhas</h2>
+              <div className="mt-3 space-y-2">
+                {reserveBoxes.filter((box) => box.isActive).map((box) => (
+                  <article key={box.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.025] p-3">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-bold text-white">{box.name}</span>
+                      <span className="text-[10px] text-slate-500">{box.institution}</span>
+                    </span>
+                    <span className="font-mono text-sm font-bold text-white">{formatCurrency(box.currentBalance)}</span>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { CalendarClock } from 'lucide-react';
 import { Account, Card, MoneyFlow } from '../../types';
 import { CardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr } from '../../lib/utils/date';
+import { AccountSelect, CardSelect } from '../shared/EntitySelect';
 import { PaymentSourceType } from './addEntryRules';
 
 interface SourceSelectorProps {
@@ -74,38 +75,18 @@ export function SourceSelector({
             </div>
           )}
           {sourceType === 'account' ? (
-            <select value={accountId} onChange={(event) => onAccountChange(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-            </select>
+            <AccountSelect accounts={accounts} value={accountId} onChange={onAccountChange} />
           ) : (
-            <select value={cardId} onChange={(event) => onCardChange(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-white outline-none transition focus:border-violet-300">
-              <option value="">Selecione</option>
-              {cards.map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}
-            </select>
+            <CardSelect cards={cards} value={cardId} onChange={onCardChange} emptyLabel="Selecione" />
           )}
         </div>
       ) : flow === 'transfer' ? (
         <>
-          <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-            Conta de origem
-            <select value={fromAccountId} onChange={(event) => onFromAccountChange(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
-              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-            </select>
-          </label>
-          <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-            Conta de destino
-            <select value={toAccountId} onChange={(event) => onToAccountChange(event.target.value)} className="h-12 min-w-0 w-full rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
-              {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-            </select>
-          </label>
+          <AccountSelect accounts={accounts} value={fromAccountId} label="Conta de origem" onChange={onFromAccountChange} className="text-sm text-slate-200 md:col-span-6" />
+          <AccountSelect accounts={accounts} value={toAccountId} label="Conta de destino" onChange={onToAccountChange} className="text-sm text-slate-200 md:col-span-6" />
         </>
       ) : (
-        <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
-          Conta
-          <select value={accountId} onChange={(event) => onAccountChange(event.target.value)} className="h-12 rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-white outline-none transition focus:border-violet-300">
-            {accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
-          </select>
-        </label>
+        <AccountSelect accounts={accounts} value={accountId} label="Conta" onChange={onAccountChange} className="text-sm text-slate-200 md:col-span-6" />
       )}
 
       {flow === 'expense' && sourceType === 'card' && cards.length === 0 ? (

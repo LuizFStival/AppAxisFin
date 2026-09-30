@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Archive, ArrowLeft, ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Calendar, Check, CreditCard, Pencil, PiggyBank, Plus, RotateCcw, TrendingDown, TrendingUp, Wallet, X } from 'lucide-react';
 import { Account, Card, Category, ReserveBox, ReserveBoxMovement, Transaction } from '../../types';
 import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCategoryName, getPaymentSource, shiftMonthKey } from '../../lib/utils/finance';
@@ -8,6 +8,7 @@ import { MonthNavigator } from '../shared/MonthNavigator';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { formatLocalDate } from '../../lib/utils/date';
 import { formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
+import { control, cx, screen, surface } from '../shared/visualTokens';
 
 interface AccountsViewProps {
   accounts: Account[];
@@ -21,7 +22,7 @@ interface AccountsViewProps {
   onSelectAccount: (accountId: string) => void;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
-  onUpdateAccountBalance: (account: Account, balance: number, date: string) => Promise<void>;
+  onUpdateAccountBalance: (account: Account, balance: number, date: string, adjustmentDescription?: string) => Promise<void>;
   onArchiveAccount: (account: Account) => void;
   onRestoreAccount: (account: Account) => void;
   onOpenInvoice: (cardId: string, period: string) => void;
@@ -36,6 +37,12 @@ const accountTypeLabels: Record<Account['type'], string> = {
   cash: 'Dinheiro',
   investment: 'Investimento',
 };
+
+function getDefaultBalanceAdjustmentDescription(difference: number) {
+  if (difference > 0) return 'Rendimento / ajuste positivo de saldo';
+  if (difference < 0) return 'Ajuste negativo de saldo';
+  return '';
+}
 
 function isAccountTransaction(transaction: Transaction, accountId: string) {
   return transaction.accountId === accountId
@@ -192,7 +199,7 @@ export function AccountsView({
   }, 0));
 
   return (
-    <div className="premium-scroll app-page-gutters flex h-full min-h-0 flex-col overflow-y-auto pb-8 pt-7 text-white">
+    <div className={screen.scroll}>
       <header className="flex shrink-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-slate-400">{selectedAccount ? 'Resumo da conta' : 'Contas'}</p>
@@ -230,7 +237,7 @@ export function AccountsView({
 
       {!selectedAccount ? (
         <>
-          <section className="premium-card mt-5 shrink-0 overflow-hidden rounded-2xl">
+          <section className={cx(surface.summary, 'mt-5 shrink-0 overflow-hidden')}>
             <div className="px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo atual em contas</p>
               <p className="mt-2 font-display text-3xl font-bold text-white">{formatCurrency(totalBalance)}</p>
@@ -307,13 +314,13 @@ export function AccountsView({
               <button
                 type="button"
                 onClick={() => setShowArchived((current) => !current)}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+                className={control.ghostButton}
               >
                 {showArchived ? 'Ver ativas' : `Arquivadas ${archivedAccounts.length}`}
               </button>
             </div>
             {visibleAccounts.length === 0 ? (
-              <div className="premium-card-soft rounded-2xl border-dashed p-5 text-center">
+              <div className={cx(surface.empty, 'p-5')}>
                 <Wallet size={22} className="mx-auto mb-2 text-slate-500" />
                 <p className="text-sm font-semibold text-slate-300">{showArchived ? 'Nenhuma conta arquivada' : 'Nenhuma conta cadastrada'}</p>
                 <p className="mt-1 text-xs text-slate-500">{showArchived ? 'Contas que você parar de usar aparecerão aqui.' : 'Adicione suas contas reais para o saldo do app nascer correto.'}</p>
@@ -322,7 +329,7 @@ export function AccountsView({
               accountMonthlySummaries.map(({ account, net, count }) => (
                 <article
                   key={account.id}
-                  className="cosmic-card cosmic-card-hover relative flex items-center gap-3 overflow-hidden rounded-2xl border p-4"
+                  className="relative flex items-center gap-3 overflow-hidden rounded-2xl border bg-white/[0.035] p-4 transition hover:border-white/20 hover:bg-white/[0.055]"
                   style={{
                     borderColor: `${account.color}44`,
                     backgroundImage: `linear-gradient(135deg, ${account.color}18, transparent 58%)`,
@@ -395,7 +402,7 @@ export function AccountsView({
 
       {selectedAccount ? (
         <>
-          <section className="premium-card mt-5 shrink-0 rounded-2xl p-4">
+          <section className={cx(surface.summary, 'mt-5 shrink-0 p-4')}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo atual</p>
@@ -438,7 +445,7 @@ export function AccountsView({
 
           <section className="premium-scroll mt-5 min-h-[260px] flex-1 space-y-3 overflow-y-auto pb-4">
             {selectedMovements.length === 0 ? (
-              <div className="premium-card-soft rounded-2xl border-dashed p-5 text-center">
+              <div className={cx(surface.empty, 'p-5')}>
                 <Wallet size={22} className="mx-auto mb-2 text-slate-500" />
                 <p className="text-sm font-semibold text-slate-300">Sem movimentações nesta conta</p>
                 <p className="mt-1 text-xs text-slate-500">Transações, transferências e caixinhas respeitam o mês selecionado no app.</p>
@@ -455,7 +462,7 @@ export function AccountsView({
                       ? () => onOpenInvoice(meta.invoicePaymentCardId!, meta.invoicePaymentPeriod!)
                       : undefined}
                     disabled={!isInvoicePayment}
-                    className={`cosmic-card flex w-full items-center gap-3 rounded-2xl border p-4 text-left ${
+                    className={`flex w-full items-center gap-3 rounded-2xl border bg-white/[0.03] p-4 text-left ${
                       isInvoicePayment
                         ? 'cursor-pointer border-violet-400/20 transition hover:border-violet-400/40 hover:bg-violet-500/[0.07]'
                         : 'cursor-default border-white/8'
@@ -489,8 +496,8 @@ export function AccountsView({
         <AccountBalanceModal
           account={balanceAccount}
           onClose={() => setBalanceAccount(null)}
-          onSave={async (balance, date) => {
-            await onUpdateAccountBalance(balanceAccount, balance, date);
+          onSave={async (balance, date, adjustmentDescription) => {
+            await onUpdateAccountBalance(balanceAccount, balance, date, adjustmentDescription);
             setBalanceAccount(null);
           }}
         />
@@ -506,14 +513,22 @@ function AccountBalanceModal({
 }: {
   account: Account;
   onClose: () => void;
-  onSave: (balance: number, date: string) => Promise<void>;
+  onSave: (balance: number, date: string, adjustmentDescription?: string) => Promise<void>;
 }) {
   const [balance, setBalance] = useState(formatCurrencyInput(account.balance));
   const [date, setDate] = useState(formatLocalDate(new Date()));
+  const [adjustmentDescription, setAdjustmentDescription] = useState('');
+  const [isAdjustmentDescriptionTouched, setIsAdjustmentDescriptionTouched] = useState(false);
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const parsedBalance = parseCurrencyInput(balance);
   const difference = parsedBalance - account.balance;
+  const hasDifference = Math.abs(difference) >= 0.01;
+
+  useEffect(() => {
+    if (isAdjustmentDescriptionTouched) return;
+    setAdjustmentDescription(getDefaultBalanceAdjustmentDescription(difference));
+  }, [difference, isAdjustmentDescriptionTouched]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -531,7 +546,7 @@ function AccountBalanceModal({
 
     setIsSaving(true);
     try {
-      await onSave(parsedBalance, date);
+      await onSave(parsedBalance, date, hasDifference ? adjustmentDescription : undefined);
     } catch {
       setError('Não foi possível atualizar o saldo. Tente novamente.');
     } finally {
@@ -541,7 +556,7 @@ function AccountBalanceModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <form onSubmit={handleSubmit} className="premium-card w-full max-w-md rounded-t-[28px] p-5 shadow-2xl sm:rounded-[28px]">
+      <form onSubmit={handleSubmit} className={cx(surface.modal, 'w-full max-w-md rounded-t-[28px] p-5 sm:rounded-[28px]')}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Conta corrente</p>
@@ -587,6 +602,21 @@ function AccountBalanceModal({
               <Calendar className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
             </div>
           </label>
+
+          {hasDifference ? (
+            <label className="grid gap-1 text-xs font-semibold text-slate-400">
+              Lançamento do ajuste
+              <input
+                value={adjustmentDescription}
+                onChange={(event) => {
+                  setIsAdjustmentDescriptionTouched(true);
+                  setAdjustmentDescription(event.target.value);
+                }}
+                placeholder={getDefaultBalanceAdjustmentDescription(difference)}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none placeholder:text-slate-600 focus:border-sky-400"
+              />
+            </label>
+          ) : null}
         </div>
 
         <div className="mt-4 rounded-2xl border border-white/8 bg-black/20 p-3">
@@ -594,7 +624,11 @@ function AccountBalanceModal({
           <p className={`mt-1 font-mono text-sm font-bold ${difference >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
             {difference >= 0 ? '+' : '-'}{formatCurrency(Math.abs(difference))}
           </p>
-          <p className="mt-1 text-xs text-slate-500">Isso atualiza só a conta corrente. Caixinhas e reservas continuam separadas.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {hasDifference
+              ? `Será criado um lançamento de ${difference > 0 ? 'entrada' : 'saída'} para explicar a diferença e a conta ficará no saldo conferido.`
+              : 'Sem diferença: será atualizada apenas a data da conferência.'}
+          </p>
         </div>
 
         <button
