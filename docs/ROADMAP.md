@@ -98,22 +98,27 @@ Critérios de aceite:
 
 ### Fase 6 - Substituir dialogs nativos
 
-- [ ] Trocar `window.confirm` por modal visual interno.
-- [ ] Trocar `window.prompt` por fluxo controlado.
-- [ ] Trocar `alert` por feedback inline/toast/modal.
-- [ ] Padronizar acoes perigosas.
+- [x] Trocar `window.confirm` por modal visual interno.
+- [x] Trocar `window.prompt` por fluxo controlado.
+- [x] Trocar `alert` por feedback inline/toast/modal.
+- [x] Padronizar acoes perigosas.
+- [x] Adicionar feedback visual curto para acoes financeiras bem sucedidas.
 
 Critérios de aceite:
 
 - Nenhuma acao financeira critica depende de confirmacao nativa do navegador.
 - Usuario entende impacto antes de excluir, arquivar ou alterar serie.
+- Observacao: o `prompt()` remanescente em PWA e a API nativa de instalacao (`installEvent.prompt()`), nao um dialog financeiro.
 
 ### Fase 7 - Refatoracao orientada pelo Graphify
 
 - [ ] Reduzir centralidade de `App.tsx` extraindo orquestradores por dominio.
+- [x] Iniciar reducao de centralidade extraindo dialogs/toasts para `useAppFeedback`.
+- [x] Extrair `Cartões do mês` da Home para `DashboardCardsSection`.
 - [ ] Reduzir complexidade de `AddEntryModal`.
 - [ ] Quebrar `ReportsView`, `CardsView`, `MonthCenterView` e `AccountsView` em subcomponentes/hook menores.
 - [ ] Atualizar Graphify apos cada bloco de refatoracao.
+- [x] Atualizar Graphify apos a Fase 7A.
 - [ ] Registrar mudancas de centralidade em `CHANGELOG_EVIDENCES.md`.
 
 Critérios de aceite:
@@ -143,9 +148,11 @@ Critérios de aceite:
 - [x] Uniformizar selects ricos para contas/cartoes.
 - [x] Melhorar listas densas no desktop para Cartoes, Transacoes e Contas.
 - [x] Refinar cartoes fisicos e faturas.
+- [x] Adicionar toasts de feedback para estimular uso e confirmar acoes.
 
 ### P3 - Tecnico
 
+- [x] Criar primeiro hook transversal para feedback/dialogs do App.
 - [ ] Criar hooks por dominio para App.
 - [ ] Criar componentes menores para telas grandes.
 - [ ] Adicionar testes para importacao de fatura e ajustes de saldo.
@@ -161,7 +168,7 @@ Critérios de aceite:
 
 - `AddEntryModal` com muitos estados locais.
 - `App.tsx` com muitos handlers financeiros.
-- Uso de dialogs nativos.
+- Dialogs nativos financeiros substituidos; manter auditoria para nao reintroduzir `window.confirm`, `window.prompt` ou `window.alert`.
 - Varios documentos historicos ainda fora do padrao D.N.E.E.
 - Graphify deve ser atualizado apos cada bloco de mudanca de codigo.
 
@@ -177,8 +184,9 @@ Critérios de aceite:
 1. Validar a navegacao reorganizada no uso real.
 2. Validar Fase 4A em uso real: leitura de Mes, Ano, Patrimonio e CSV.
 3. Validar Fase 5 no uso real: resolver faturas, contas, reembolsos e fixas sem sair da Central.
-4. Avancar para Fase 6: substituir dialogs nativos por modais internos.
-5. Executar uma tarefa por vez seguindo Descobrir, Nortear, Especificar e Evidenciar.
+4. Validar Fase 6 no uso real: exclusoes, arquivamentos, series fixas e metas devem usar modal interno.
+5. Continuar Fase 7: extrair blocos grandes sem mudar regra financeira.
+6. Executar uma tarefa por vez seguindo Descobrir, Nortear, Especificar e Evidenciar.
 
 ## Pontos a complementar
 

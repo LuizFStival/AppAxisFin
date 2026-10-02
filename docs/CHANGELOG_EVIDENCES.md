@@ -24,6 +24,8 @@ Usar D.N.E.E. Docs como processo de governanca para mudancas relevantes no AxisF
 - `npm.cmd run lint` passou.
 - `npm.cmd run build` passou.
 - `npm.cmd run graphify:src` falhou pelo bloqueio conhecido de socket/rede no Windows.
+- `uvx.exe --no-cache --python 3.12 --from graphifyy graphify src` falhou por politica de Controle de Aplicativo bloqueando o Python do `uv` (`os error 4551`).
+- `npm.cmd run graphify:src` falhou pelo bloqueio conhecido de socket/rede no Windows.
 - `uvx.exe --no-cache --python 3.12 --from graphifyy graphify src` passou: 843 nos, 3026 arestas e 38 comunidades.
 - `uvx.exe --no-cache --python 3.12 --from graphifyy graphify cluster-only src` passou e atualizou `GRAPH_REPORT.md`, `graph.json` e `graph.html`.
 - `npm.cmd run graphify:src` falhou pelo bloqueio conhecido de socket/rede no Windows.
@@ -401,6 +403,109 @@ Consolidar a Central como cockpit operacional, preservando Home como leitura de 
 
 Validar a Fase 5 no uso real e depois avancar para Fase 6: substituir dialogs nativos por modais internos.
 
+## 2026-09-30 - Fase 6A: dialogs nativos substituidos
+
+### Antes
+
+Acoes destrutivas e financeiras ainda dependiam de `window.confirm`, `window.prompt` e `alert`, principalmente em exclusao de lancamentos, series fixas, contas, cartoes, categorias, metas e compromissos. O fluxo de excluir serie tambem exigia digitar `1` ou `2`.
+
+### Depois
+
+Foi criado um `ActionDialog` compartilhado para confirmacao, escolha de escopo e aviso. O app passou a usar modal interno em exclusoes, arquivamentos, erros controlados e escolhas de serie/recorrencia. As opcoes de escopo agora sao botoes explicitos.
+
+### Decisao
+
+Tratar dialogs nativos como debito de UX e seguranca operacional. O `prompt()` remanescente em PWA e mantido porque pertence a API nativa de instalacao do navegador, nao a um fluxo financeiro.
+
+### Evidencia
+
+- `src/components/shared/ActionDialog.tsx`
+- `src/App.tsx`
+- `src/components/goals/GoalsView.tsx`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `npm.cmd run lint` passou.
+- `npm.cmd run build` passou.
+- `rg "window\\.(confirm|prompt|alert)" src` nao encontrou dialogs financeiros.
+- `npm.cmd run graphify:src` falhou pelo bloqueio conhecido de socket/rede no Windows.
+- `uvx.exe --no-cache --python 3.12 --from graphifyy graphify src` passou: 858 nos, 3071 arestas e 27 comunidades.
+- `uvx.exe --no-cache --python 3.12 --from graphifyy graphify cluster-only src` passou e atualizou `GRAPH_REPORT.md`, `graph.json` e `graph.html`.
+
+### Impacto observado
+
+[A VALIDAR] Usuario deve entender melhor o impacto antes de excluir, arquivar ou alterar serie fixa/parcelada, sem depender de prompt textual do navegador.
+
+### Proximos passos
+
+Validar visualmente os modais internos e avancar para Fase 7: refatoracao orientada pelo Graphify.
+
+## 2026-09-30 - Feedback visual para acoes importantes
+
+### Antes
+
+Muitas acoes importantes eram tecnicamente concluídas, mas silenciosas: pagar fatura, receber reembolso, ignorar fixa, salvar lancamento, atualizar saldo, criar conta/cartao/categoria ou arquivar/excluir entidades. Isso podia deixar duvida se a acao realmente aconteceu.
+
+### Depois
+
+Foi criado `FeedbackToast`, um aviso visual curto no rodape, usado por fluxos financeiros e de configuracao importantes. As mensagens mostram o resultado da acao e, quando util, o valor movimentado.
+
+### Decisao
+
+Usar feedback visual com moderação para reforçar progresso e confiança sem poluir o app. O toast confirma sucesso; erros continuam com `appError` ou `ActionDialog`, conforme o caso.
+
+### Evidencia
+
+- `src/components/shared/FeedbackToast.tsx`
+- `src/App.tsx`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `npm.cmd run lint` passou.
+- `npm.cmd run build` passou.
+
+### Impacto observado
+
+[A VALIDAR] Usuario deve sentir mais resposta do app depois de salvar, pagar, receber, arquivar ou excluir, reduzindo necessidade de conferir manualmente se a ação pegou.
+
+### Proximos passos
+
+Validar os feedbacks no uso real e seguir para a refatoracao orientada pelo Graphify, com cuidado especial em `App.tsx`.
+
+## 2026-10-01 - Fase 7A: primeira refatoracao guiada pelo Graphify
+
+### Antes
+
+`App.tsx` ainda concentrava estado transversal de dialogs/toasts, enquanto `DashboardView` misturava composicao da Home com calculo e renderizacao de `Cartões do mês`. O cartao fisico da Home tambem podia apertar rodape, fatura e bandeira em telas menores.
+
+### Depois
+
+Dialogs e toasts foram extraidos para `useAppFeedback`. O bloco `Cartões do mês` foi movido para `DashboardCardsSection`, mantendo os calculos da fatura junto do componente que renderiza a secao. `CardPhysicalPreview` passou a usar grid interna para manter cabecalho, chip/contato e rodape alinhados sem cortar fatura ou bandeira.
+
+### Decisao
+
+Iniciar a Fase 7 por extrações pequenas e de baixo risco, sem mudar regra financeira. Isso reduz centralidade aos poucos e cria pontos melhores para novos ajustes visuais.
+
+### Evidencia
+
+- `src/components/app/useAppFeedback.tsx`
+- `src/components/dashboard/DashboardCardsSection.tsx`
+- `src/components/dashboard/DashboardView.tsx`
+- `src/components/cards/CardPhysicalPreview.tsx`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 16 arquivos de teste.
+- `npm.cmd run build` passou.
+- `git diff --check` passou.
+- `npm.cmd run graphify:src` passou fora do sandbox e atualizou o grafo: 872 nos, 3140 arestas, 37 comunidades e nenhum ciclo de importacao.
+
+### Impacto observado
+
+[A VALIDAR] Home deve ficar mais facil de manter, e os cartoes do mes devem preservar melhor o alinhamento do rodape em tamanhos menores.
+
+### Proximos passos
+
+Continuar a Fase 7 em outro bloco de alta centralidade, provavelmente `AddEntryModal`, `ReportsView` ou `MonthCenterView`.
+
 ## Changelog
 
 - 2026-09-30 - Estrutura D.N.E.E. criada para o AxisFin.
@@ -415,14 +520,17 @@ Validar a Fase 5 no uso real e depois avancar para Fase 6: substituir dialogs na
 - 2026-09-30 - Fase 3D concluiu selects ricos de conta/cartao e refinou cartoes fisicos/faturas.
 - 2026-09-30 - Fase 4A separou Relatorios em Mes, Ano e Patrimonio com resumo executivo e CSV agrupado.
 - 2026-09-30 - Fase 5A consolidou Central do Mes como cockpit de acao.
+- 2026-09-30 - Fase 6A substituiu dialogs nativos financeiros por modal interno compartilhado.
+- 2026-09-30 - FeedbackToast adicionou respostas visuais para acoes importantes.
+- 2026-10-01 - Fase 7A iniciou refatoracao guiada pelo Graphify com `useAppFeedback` e `DashboardCardsSection`.
 
 ## Metricas observadas ou sugeridas
 
-Metricas tecnicas atuais extraidas do Graphify em 2026-09-30:
+Metricas tecnicas atuais extraidas do Graphify em 2026-10-01:
 
-- 843 nos.
-- 3026 arestas.
-- 38 comunidades.
+- 872 nos.
+- 3140 arestas.
+- 37 comunidades.
 - 0 ciclos de importacao detectados.
 
 Metricas sugeridas:

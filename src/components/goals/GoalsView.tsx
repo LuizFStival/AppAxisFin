@@ -9,10 +9,12 @@ import { formatCurrency } from '../../lib/utils/finance';
 import { formatDatePtBr } from '../../lib/utils/date';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { cx, screen, surface } from '../shared/visualTokens';
+import { ActionDialogRequest } from '../shared/ActionDialog';
 
 interface GoalsViewProps {
   categories: Category[];
   reimbursementPeople: ReimbursementPerson[];
+  onConfirmAction: (dialog: ActionDialogRequest) => Promise<boolean>;
 }
 
 const COLORS = ['#38BDF8', '#8B5CF6', '#10B981', '#F59E0B', '#F43F5E'];
@@ -26,7 +28,7 @@ function clampPercent(value: number) {
   return Math.min(100, Math.max(1, value));
 }
 
-export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
+export function GoalsView({ categories, reimbursementPeople, onConfirmAction }: GoalsViewProps) {
   const [section, setSection] = useState<'goals' | 'commitments'>('goals');
   const [goalStatus, setGoalStatus] = useState<'active' | 'completed'>('active');
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -194,7 +196,14 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
   }
 
   async function handleDeleteGoal(goal: Goal) {
-    if (!window.confirm(`Excluir a meta "${goal.name}" e todo o historico de valores?`)) return;
+    const confirmed = await onConfirmAction({
+      title: 'Excluir meta?',
+      description: `A meta "${goal.name}" e todo o historico de valores serão removidos.`,
+      details: 'Esta ação não pode ser desfeita.',
+      tone: 'danger',
+      confirmLabel: 'Excluir meta',
+    });
+    if (!confirmed) return;
     try {
       await goalRepository.remove(goal);
       setGoals((current) => current.filter((item) => item.id !== goal.id));
@@ -204,7 +213,14 @@ export function GoalsView({ categories, reimbursementPeople }: GoalsViewProps) {
   }
 
   async function handleDeleteCommitment(commitment: Commitment) {
-    if (!window.confirm(`Excluir o compromisso "${commitment.name}"?`)) return;
+    const confirmed = await onConfirmAction({
+      title: 'Excluir compromisso?',
+      description: `O compromisso "${commitment.name}" será removido.`,
+      details: 'Esta ação não pode ser desfeita.',
+      tone: 'danger',
+      confirmLabel: 'Excluir compromisso',
+    });
+    if (!confirmed) return;
     try {
       await commitmentRepository.remove(commitment);
       setCommitments((current) => current.filter((item) => item.id !== commitment.id));

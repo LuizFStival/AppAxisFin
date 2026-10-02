@@ -53,19 +53,19 @@ export function CardPhysicalPreview({ card, displayStatus, invoiceLabel, total, 
         <div className="absolute inset-x-0 top-0 h-px bg-white/35" />
         <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full border border-white/10 bg-white/5" />
         <div className="absolute bottom-0 left-0 h-20 w-full bg-gradient-to-t from-black/30 to-transparent" />
-        <div className="relative z-10 flex h-full flex-col justify-between">
+        <div className="relative z-10 grid h-full grid-rows-[auto_minmax(0,1fr)_auto]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-[10px] font-semibold text-white/65">Total da fatura</p>
-              <p className="mt-1 truncate font-display text-xl font-black text-white">{totalDisplay ?? formatCurrency(total)}</p>
+              <p className="mt-1 truncate font-display text-lg font-black text-white sm:text-xl">{totalDisplay ?? formatCurrency(total)}</p>
             </div>
-            <span className="rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-bold text-white">
+            <span className="shrink-0 rounded-full border border-white/15 bg-black/25 px-2.5 py-1 text-[10px] font-bold text-white">
               {displayStatus}
             </span>
           </div>
 
-          <div>
-            <div className="mb-4 flex items-center gap-3">
+          <div className="flex min-h-0 items-center">
+            <div className="flex items-center gap-3">
               <span className="h-7 w-9 rounded-md border border-amber-200/30 bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 shadow-inner" />
               <span className="relative h-7 w-8" aria-hidden="true">
                 <span className="absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 rounded-r-full border-y border-r border-white/45" />
@@ -73,14 +73,19 @@ export function CardPhysicalPreview({ card, displayStatus, invoiceLabel, total, 
                 <span className="absolute left-3 top-1/2 h-6 w-6 -translate-y-1/2 rounded-r-full border-y border-r border-white/20" />
               </span>
             </div>
-            <p className="font-mono text-sm font-bold text-white sm:text-base">{getMaskedCardNumber(card)}</p>
-            <div className="mt-4 flex items-end justify-between gap-3">
+          </div>
+
+          <div>
+            <p className="font-mono text-[13px] font-bold text-white sm:text-sm">{getMaskedCardNumber(card)}</p>
+            <div className="mt-3 flex items-end justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold text-white/60">Titular</p>
                 <p className="truncate text-sm font-black text-white">{card.name}</p>
-                <p className="mt-1 truncate text-[11px] font-semibold text-white/55">{invoiceLabel}</p>
+                <p className="mt-0.5 truncate text-[10px] font-semibold text-white/55 sm:text-[11px]">{invoiceLabel}</p>
               </div>
-              <CardNetworkMark network={card.network} />
+              <span className="mb-0.5 shrink-0">
+                <CardNetworkMark network={card.network} />
+              </span>
             </div>
           </div>
         </div>

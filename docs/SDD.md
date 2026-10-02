@@ -170,9 +170,9 @@ Uso esperado:
 
 Estado conhecido em 2026-09-30:
 
-- 843 nos;
-- 3026 arestas;
-- 38 comunidades;
+- 858 nos;
+- 3071 arestas;
+- 27 comunidades;
 - nenhum ciclo de importacao detectado;
 - pontos centrais: `App()`, `getUserFriendlyError()`, `readTransactionMeta()`, `Transaction`, `Card`, `MonthCenterView()`, `Account`.
 
@@ -195,6 +195,14 @@ Cartoes, Transacoes e Contas usam tokens compartilhados de tela, superficie, lis
 
 Perfil, Metas, Caixinhas e Reembolsos seguem o mesmo padrao visual: paineis neutros para configuracao e listas, destaque apenas para alertas, chamadas de acao e objetos de valor financeiro.
 
+Acoes destrutivas ou sensiveis usam modal interno compartilhado (`ActionDialog`) em vez de `window.confirm`, `window.prompt` ou `window.alert`. Escolhas com escopo financeiro, como excluir uma ocorrencia fixa ou uma serie, devem ser botoes explicitos, nao texto digitado.
+
+Acoes bem sucedidas devem responder visualmente com feedback curto (`FeedbackToast`) quando a mudanca altera caixa, patrimonio, faturas, reembolsos ou configuracoes importantes. O objetivo e reduzir duvida depois do clique e estimular uso continuo sem transformar o app em uma tela barulhenta.
+
+O controle transversal de dialogs e toasts vive em `useAppFeedback`, evitando que `App.tsx` concentre estado de UI global. Novos feedbacks devem usar esse hook em vez de recriar estado local no componente raiz.
+
+Na Home, blocos densos devem ser extraidos quando acumularem regra, calculo e renderizacao. `Cartões do mês` fica em `DashboardCardsSection`, mantendo `DashboardView` mais focada em composicao da pagina.
+
 ## Riscos e pontos de atencao
 
 - `AddEntryModal` concentra fluxo demais.
@@ -207,7 +215,7 @@ Perfil, Metas, Caixinhas e Reembolsos seguem o mesmo padrao visual: paineis neut
 ## Debitos estruturais
 
 - Quebrar telas grandes em componentes/hook menores.
-- Criar modais internos no lugar de `window.confirm`, `prompt` e `alert`.
+- Manter modais internos no lugar de `window.confirm`, `window.prompt` e `window.alert` para acoes financeiras.
 - Reorganizar navegacao por intencao de uso.
 - Consolidar tokens visuais para reduzir classes soltas.
 - Tornar o fluxo de importacao de fatura mais investigavel e auditavel.

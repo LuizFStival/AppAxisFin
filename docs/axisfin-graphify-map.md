@@ -6,9 +6,9 @@ Atualizado em 2026-09-30 a partir de `src/graphify-out/GRAPH_REPORT.md`.
 
 - Escopo analisado: `src/`
 - Arquivos de código: 101
-- Nós no grafo: 843
-- Conexões: 3026
-- Comunidades: 38
+- Nós no grafo: 858
+- Conexões: 3071
+- Comunidades: 27
 - Custo de tokens: 0 input / 0 output
 - Ciclos de importação: nenhum detectado
 
@@ -91,6 +91,15 @@ Prioridades sugeridas:
 - Checklist de fechamento passou a priorizar resolução dentro da própria Central quando a pendência pertence ao cockpit.
 - Modais de pagamento e reembolso da Central passaram a usar seletor visual compartilhado de conta.
 - Regerado o grafo incremental via workaround `uvx.exe --no-cache`: 843 nós, 3026 conexões e 38 comunidades.
+- Fase 6 substituiu dialogs nativos financeiros por `ActionDialog` compartilhado.
+- Regerado o grafo incremental via workaround `uvx.exe --no-cache`: 858 nós, 3071 conexões e 27 comunidades.
+
+### 2026-10-01
+
+- Fase 7 iniciada com extracao de feedback/dialogs para `useAppFeedback`.
+- `Cartões do mês` saiu de `DashboardView` para `DashboardCardsSection`, reduzindo responsabilidade da Home sem alterar regra financeira.
+- `CardPhysicalPreview` passou a usar grade interna para preservar alinhamento de numero, titular, fatura e bandeira no cartao fisico.
+- Regerado o grafo incremental via `npm.cmd run graphify:src`: 872 nós, 3140 conexões, 37 comunidades e nenhum ciclo de importacao detectado.
 
 ## Funcionalidades Para Reorganizar
 

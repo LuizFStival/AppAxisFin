@@ -33,12 +33,13 @@ import { useNotifications } from './features/notifications/useNotifications';
 import { recurringRepository } from './features/recurring/recurringRepository';
 import { transactionRepository } from './features/transactions/transactionRepository';
 import { AccountType, AppView, CardNetwork, Category, DashboardTransactionFilter, FinanceSnapshot, ReserveBoxMovementType, Transaction, TransactionMeta } from './types';
-import { getCurrentMonthKey, getTransactionReimbursementBaseAmount, getTransactionReimbursementReceivedAmount, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
+import { formatCurrency, getCurrentMonthKey, getTransactionReimbursementBaseAmount, getTransactionReimbursementReceivedAmount, shiftMonthKey, summarizeDashboard } from './lib/utils/finance';
 import { getCardInvoiceClosingMonth } from './lib/utils/cardInvoices';
 import { addMonths, formatLocalDate } from './lib/utils/date';
 import { getVisibleNotes, readTransactionMeta, writeTransactionNotes } from './lib/utils/transactionMeta';
 import { getUserFriendlyError } from './lib/utils/userFriendlyError';
 import { buildAccountBalanceAdjustmentTransaction } from './lib/utils/accountBalanceAdjustment';
+import { useAppFeedback } from './components/app/useAppFeedback';
 
 const emptyFinanceSnapshot: FinanceSnapshot = {
   accounts: [],
@@ -98,6 +99,13 @@ export default function App() {
   const [showBalances, setShowBalances] = useState(true);
   const [activeMonth, setActiveMonth] = useState(getCurrentMonthKey);
   const [appError, setAppError] = useState('');
+  const {
+    chooseAction,
+    confirmAction,
+    feedbackOverlays,
+    showActionMessage,
+    showFeedback,
+  } = useAppFeedback();
 
   async function loadSnapshot() {
     try {
@@ -203,6 +211,7 @@ export default function App() {
         accounts: current.accounts.map((account) => account.id === saved.id ? saved : account),
       }));
       setEditingAccount(null);
+      showFeedback({ title: 'Conta atualizada', description: `${saved.name} foi salva.`, tone: 'success' });
       return;
     }
 
@@ -211,6 +220,7 @@ export default function App() {
       ...current,
       accounts: [...current.accounts, saved],
     }));
+    showFeedback({ title: 'Conta criada', description: `${saved.name} entrou no seu patrimônio.`, tone: 'success' });
   }
 
   async function handleUpdateAccountBalance(account: FinanceSnapshot['accounts'][number], balance: number, date: string = formatLocalDate(new Date()), adjustmentDescription?: string) {
@@ -229,6 +239,11 @@ export default function App() {
         ? [savedAdjustment, ...current.transactions].sort((left, right) => right.date.localeCompare(left.date))
         : current.transactions,
     }));
+    showFeedback({
+      title: 'Saldo atualizado',
+      description: adjustment ? `Diferença registrada em ${formatCurrency(Math.abs(adjustment.amount))}.` : 'Saldo conferido sem diferença.',
+      tone: 'success',
+    });
   }
 
   async function handleSaveCard(input: {
@@ -247,6 +262,7 @@ export default function App() {
         cards: current.cards.map((card) => card.id === saved.id ? saved : card),
       }));
       setEditingCard(null);
+      showFeedback({ title: 'Cartão atualizado', description: `${saved.name} foi salvo.`, tone: 'success' });
       return;
     }
 
@@ -255,6 +271,7 @@ export default function App() {
       ...current,
       cards: [...current.cards, saved],
     }));
+    showFeedback({ title: 'Cartão criado', description: `${saved.name} já pode receber lançamentos.`, tone: 'success' });
   }
 
   async function handleCreateReserveBox(input: {
@@ -272,6 +289,7 @@ export default function App() {
       ...current,
       reserveBoxes: [...current.reserveBoxes, saved],
     }));
+    showFeedback({ title: 'Caixinha criada', description: `${saved.name} foi adicionada às reservas.`, tone: 'success' });
   }
 
   async function handleAddReserveBoxMovement(input: {
@@ -292,6 +310,7 @@ export default function App() {
         ? loaded.reserveBoxMovements
         : [result.movement, ...loaded.reserveBoxMovements],
     });
+    showFeedback({ title: 'Movimento registrado', description: `${formatCurrency(input.amount)} em ${result.box.name}.`, tone: 'success' });
   }
 
   function assignInvoiceSortOrderToNewTransactions(transactions: Array<Omit<Transaction, 'id'>>): Array<Omit<Transaction, 'id'>> {
@@ -343,6 +362,7 @@ export default function App() {
         transactions: [...saved, ...current.transactions].sort((left, right) => right.date.localeCompare(left.date)),
       }));
       await refreshAccounts();
+      showFeedback({ title: 'Lançamentos criados', description: `${saved.length} item(ns) entraram no mês.`, tone: 'success' });
       return;
     }
 
@@ -387,6 +407,7 @@ export default function App() {
         await loadSnapshot();
         await refreshAccounts();
         setEditingTransaction(null);
+        showFeedback({ title: 'Série atualizada', description: 'Esta e as próximas ocorrências foram ajustadas.', tone: 'success' });
         return;
       }
 
@@ -407,6 +428,7 @@ export default function App() {
         await loadSnapshot();
         await refreshAccounts();
         setEditingTransaction(null);
+        showFeedback({ title: 'Ocorrência ajustada', description: 'A despesa fixa deste mês virou lançamento avulso.', tone: 'success' });
         return;
       }
 
@@ -419,6 +441,7 @@ export default function App() {
         }));
         await refreshAccounts();
         setEditingTransaction(null);
+        showFeedback({ title: 'Lançamento criado', description: `${saved.description} foi salvo.`, tone: 'success' });
         return;
       }
 
@@ -453,6 +476,7 @@ export default function App() {
         }));
         await refreshAccounts();
         setEditingTransaction(null);
+        showFeedback({ title: 'Série atualizada', description: `${saved.length} lançamento(s) foram ajustados.`, tone: 'success' });
         return;
       }
 
@@ -463,6 +487,7 @@ export default function App() {
       }));
       await refreshAccounts();
       setEditingTransaction(null);
+      showFeedback({ title: 'Lançamento atualizado', description: `${saved.description} foi salvo.`, tone: 'success' });
       return;
     }
 
@@ -473,11 +498,13 @@ export default function App() {
       transactions: [saved, ...current.transactions],
     }));
     await refreshAccounts();
+    showFeedback({ title: 'Lançamento salvo', description: `${saved.description} entrou no mês.`, tone: 'success' });
   }
 
   async function handleCreateRecurring(transaction: Omit<Transaction, 'id'>, endDate?: string) {
     await recurringRepository.createFromTransaction(transaction, endDate);
     await loadSnapshot();
+    showFeedback({ title: 'Fixa criada', description: `${transaction.description} entrou na rotina mensal.`, tone: 'success' });
   }
 
   async function handleSaveCategory(input: Omit<Category, 'id' | 'isSystem'>) {
@@ -488,6 +515,7 @@ export default function App() {
         categories: current.categories.map((category) => category.id === saved.id ? saved : category),
       }));
       setEditingCategory(null);
+      showFeedback({ title: 'Categoria atualizada', description: `${saved.name} foi salva.`, tone: 'success' });
       return;
     }
 
@@ -496,6 +524,7 @@ export default function App() {
       ...current,
       categories: [...current.categories, saved].sort((left, right) => left.name.localeCompare(right.name)),
     }));
+    showFeedback({ title: 'Categoria criada', description: `${saved.name} está disponível nos lançamentos.`, tone: 'success' });
   }
 
   async function handleCreateCategoryFromEntry(input: Omit<Category, 'id' | 'isSystem'>) {
@@ -536,6 +565,11 @@ export default function App() {
         transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
       }));
       await refreshAccounts();
+      showFeedback({
+        title: nextStatus === 'paid' ? 'Lançamento pago' : 'Lançamento reaberto',
+        description: saved.description,
+        tone: nextStatus === 'paid' ? 'success' : 'info',
+      });
       return;
     }
 
@@ -547,6 +581,11 @@ export default function App() {
       transactions: current.transactions.map((item) => item.id === transaction.id ? saved : item),
     }));
     await refreshAccounts();
+    showFeedback({
+      title: nextStatus === 'paid' ? 'Lançamento pago' : 'Lançamento reaberto',
+      description: saved.description,
+      tone: nextStatus === 'paid' ? 'success' : 'info',
+    });
   }
 
   async function handleMarkAccountExpensePaid(transaction: Transaction, input: { accountId: string; paymentDate: string }) {
@@ -568,6 +607,7 @@ export default function App() {
         transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
       }));
       await refreshAccounts();
+      showFeedback({ title: 'Despesa paga', description: `${saved.description} saiu da conta escolhida.`, tone: 'success' });
       return;
     }
 
@@ -578,6 +618,7 @@ export default function App() {
       transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
     }));
     await refreshAccounts();
+    showFeedback({ title: 'Despesa paga', description: `${saved.description} saiu da conta escolhida.`, tone: 'success' });
   }
 
   async function handleMarkReimbursementReceived(transaction: Transaction, accountId: string, receivedAmount?: number) {
@@ -617,6 +658,11 @@ export default function App() {
         transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
       }));
       await refreshAccounts();
+      showFeedback({
+        title: nextReimbursementStatus === 'received' ? 'Reembolso recebido' : 'Reembolso parcial registrado',
+        description: `${formatCurrency(normalizedReceivedAmount)} entrou na conta escolhida.`,
+        tone: 'success',
+      });
       return;
     }
 
@@ -634,6 +680,11 @@ export default function App() {
       transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
     }));
     await refreshAccounts();
+    showFeedback({
+      title: nextReimbursementStatus === 'received' ? 'Reembolso recebido' : 'Reembolso parcial registrado',
+      description: `${formatCurrency(normalizedReceivedAmount)} entrou na conta escolhida.`,
+      tone: 'success',
+    });
   }
 
   async function handleCarryReimbursement(transaction: Transaction, targetMonth = shiftMonthKey(activeMonth, 1)) {
@@ -651,6 +702,7 @@ export default function App() {
         transactions: [saved, ...current.transactions.filter((item) => item.id !== transaction.id)],
       }));
       await refreshAccounts();
+      showFeedback({ title: 'Reembolso carregado', description: `Pendência movida para ${targetMonth}.`, tone: 'info' });
       return;
     }
 
@@ -659,6 +711,7 @@ export default function App() {
       ...current,
       transactions: current.transactions.map((item) => item.id === saved.id ? saved : item),
     }));
+    showFeedback({ title: 'Reembolso carregado', description: `Pendência movida para ${targetMonth}.`, tone: 'info' });
   }
 
   async function handleSkipFixedOccurrence(transaction: Transaction): Promise<boolean> {
@@ -673,7 +726,13 @@ export default function App() {
       throw new Error('Não foi possível localizar a regra desta despesa fixa.');
     }
 
-    const confirmed = window.confirm(`Marcar "${transaction.description}" como não usada neste mês? Apenas esta ocorrência será removida.`);
+    const confirmed = await confirmAction({
+      title: 'Marcar fixa como não usada?',
+      description: `A ocorrência "${transaction.description}" será removida apenas deste mês.`,
+      details: 'A regra fixa continua ativa para os próximos meses.',
+      tone: 'warning',
+      confirmLabel: 'Marcar como não usada',
+    });
     if (!confirmed) return false;
 
     const recurringRuleMeta = readTransactionMeta(recurringRule.notes);
@@ -695,6 +754,7 @@ export default function App() {
       transactions: current.transactions.filter((item) => !isSameRecurringOccurrence(item, recurringTransactionId, recurringOccurrenceDate)),
     }));
     await refreshAccounts();
+    showFeedback({ title: 'Fixa ignorada neste mês', description: `${transaction.description} saiu da fila de pagamento.`, tone: 'success' });
     return true;
   }
 
@@ -730,6 +790,7 @@ export default function App() {
           .map((transaction) => savedById.get(transaction.id) ?? transaction),
       ],
     }));
+    showFeedback({ title: 'Fatura paga', description: `${input.card.name}: ${formatCurrency(input.amount)} saiu da conta.`, tone: 'success' });
   }
 
   async function handleUpdateCardClosingDay(card: FinanceSnapshot['cards'][number], closingDay: number) {
@@ -756,6 +817,7 @@ export default function App() {
       setSnapshot(emptySnapshot);
       setCurrentView('home');
       setAppError('');
+      showFeedback({ title: 'Dados limpos', description: 'Seu app voltou ao estado inicial.', tone: 'warning' });
       return true;
     } catch (error) {
       setAppError(getUserFriendlyError(error, 'Não foi possível limpar seus dados. Tente novamente.'));
@@ -797,12 +859,30 @@ export default function App() {
       : undefined;
 
     if (recurringRule && recurringOccurrenceDate) {
-      const choice = window.prompt(
-        `Excluir "${transaction.description}"?\n\nDigite 1 para excluir somente esta ocorrência.\nDigite 2 para excluir esta e todas as próximas ocorrências da despesa fixa.`,
-      );
+      const choice = await chooseAction({
+        title: 'Excluir despesa fixa?',
+        description: `Escolha o alcance da exclusão para "${transaction.description}".`,
+        details: 'Esta ação altera uma regra recorrente. Confira se quer mexer só neste mês ou daqui para frente.',
+        tone: 'danger',
+        cancelLabel: 'Manter despesa',
+        choices: [
+          {
+            value: 'single',
+            label: 'Excluir somente esta ocorrência',
+            description: 'Remove apenas este mês e mantém a despesa fixa ativa.',
+            tone: 'warning',
+          },
+          {
+            value: 'future',
+            label: 'Excluir esta e as próximas',
+            description: 'Encerra a recorrência a partir desta data.',
+            tone: 'danger',
+          },
+        ],
+      });
       if (choice === null) return;
 
-      if (choice.trim() === '1') {
+      if (choice === 'single') {
         await recurringRepository.excludeOccurrence(recurringRule, recurringOccurrenceDate);
         if (!transaction.isProjected) {
           await transactionRepository.remove(transaction.id);
@@ -827,10 +907,11 @@ export default function App() {
         }));
         await loadSnapshot();
         await refreshAccounts();
+        showFeedback({ title: 'Ocorrência excluída', description: `${transaction.description} saiu apenas deste mês.`, tone: 'success' });
         return;
       }
 
-      if (choice.trim() === '2') {
+      if (choice === 'future') {
         await recurringRepository.stopFrom(recurringRule, recurringOccurrenceDate);
         const forwardMaterializedIds = snapshot.transactions
           .filter((item) => !item.isProjected)
@@ -846,6 +927,7 @@ export default function App() {
         await transactionRepository.removeMany(forwardMaterializedIds);
         await loadSnapshot();
         await refreshAccounts();
+        showFeedback({ title: 'Recorrência encerrada', description: 'Esta e as próximas ocorrências foram removidas.', tone: 'success' });
         return;
       }
 
@@ -853,7 +935,11 @@ export default function App() {
     }
 
     if (transaction.isProjected) {
-      alert('Não foi possível localizar a regra desta ocorrência fixa. Recarregue o aplicativo e tente novamente.');
+      await showActionMessage({
+        title: 'Regra fixa não encontrada',
+        description: 'Não foi possível localizar a regra desta ocorrência fixa. Recarregue o aplicativo e tente novamente.',
+        tone: 'warning',
+      });
       return;
     }
 
@@ -863,12 +949,30 @@ export default function App() {
 
     if (groupedTransactions.length > 1) {
       const forwardTransactions = groupedTransactions.filter((item) => item.date >= transaction.date);
-      const choice = window.prompt(
-        `Excluir "${transaction.description}"?\n\nDigite 1 para excluir apenas este lançamento.\nDigite 2 para excluir este e os próximos ${forwardTransactions.length - 1} lançamento(s) da série.`,
-      );
+      const choice = await chooseAction({
+        title: 'Excluir série parcelada?',
+        description: `Escolha o alcance da exclusão para "${transaction.description}".`,
+        details: `Existem ${forwardTransactions.length} lançamento(s) desta série a partir desta data.`,
+        tone: 'danger',
+        cancelLabel: 'Manter lançamentos',
+        choices: [
+          {
+            value: 'single',
+            label: 'Excluir apenas este lançamento',
+            description: 'Remove só o item selecionado.',
+            tone: 'warning',
+          },
+          {
+            value: 'future',
+            label: 'Excluir este e os próximos',
+            description: 'Remove este item e os lançamentos seguintes da série.',
+            tone: 'danger',
+          },
+        ],
+      });
       if (choice === null) return;
 
-      if (choice.trim() === '2') {
+      if (choice === 'future') {
         const ids = forwardTransactions.map((item) => item.id);
         await transactionRepository.removeMany(ids);
         setSnapshot((current) => ({
@@ -876,12 +980,17 @@ export default function App() {
           transactions: current.transactions.filter((item) => !ids.includes(item.id)),
         }));
         await refreshAccounts();
+        showFeedback({ title: 'Série ajustada', description: `${ids.length} lançamento(s) foram removidos.`, tone: 'success' });
         return;
       }
-
-      if (choice.trim() !== '1') return;
     } else {
-      const confirmed = window.confirm(`Excluir o lançamento "${transaction.description}"? Esta ação não pode ser desfeita.`);
+      const confirmed = await confirmAction({
+        title: 'Excluir lançamento?',
+        description: `O lançamento "${transaction.description}" será removido.`,
+        details: 'Esta ação não pode ser desfeita.',
+        tone: 'danger',
+        confirmLabel: 'Excluir lançamento',
+      });
       if (!confirmed) return;
     }
 
@@ -891,10 +1000,17 @@ export default function App() {
       transactions: current.transactions.filter((item) => item.id !== transaction.id),
     }));
     await refreshAccounts();
+    showFeedback({ title: 'Lançamento excluído', description: `${transaction.description} foi removido.`, tone: 'success' });
   }
 
   async function handleDeleteAccount(account: FinanceSnapshot['accounts'][number]) {
-    const confirmed = window.confirm(`Excluir a conta "${account.name}"? Contas com lançamentos vinculados não podem ser excluídas.`);
+    const confirmed = await confirmAction({
+      title: 'Excluir conta?',
+      description: `A conta "${account.name}" será excluída se não houver lançamentos vinculados.`,
+      details: 'Contas com histórico financeiro não podem ser excluídas. Para manter histórico fora das listas principais, use arquivar.',
+      tone: 'danger',
+      confirmLabel: 'Excluir conta',
+    });
     if (!confirmed) return;
 
     try {
@@ -904,17 +1020,26 @@ export default function App() {
         accounts: current.accounts.filter((item) => item.id !== account.id),
         cards: current.cards.map((card) => card.accountId === account.id ? { ...card, accountId: '' } : card),
       }));
+      showFeedback({ title: 'Conta excluída', description: `${account.name} foi removida.`, tone: 'success' });
     } catch (error) {
-      alert(
-        error instanceof Error && error.message.includes('lançamentos vinculados')
+      await showActionMessage({
+        title: 'Conta não excluída',
+        description: error instanceof Error && error.message.includes('lançamentos vinculados')
           ? error.message
           : getUserFriendlyError(error, 'Não foi possível excluir a conta. Tente novamente.'),
-      );
+        tone: 'warning',
+      });
     }
   }
 
   async function handleSetAccountActive(account: FinanceSnapshot['accounts'][number], isActive: boolean) {
-    const confirmed = window.confirm(`${isActive ? 'Desarquivar' : 'Arquivar'} a conta "${account.name}"? ${isActive ? 'Ela voltará para listas e lançamentos.' : 'Ela sairá das listas principais, mas o histórico será mantido.'}`);
+    const confirmed = await confirmAction({
+      title: `${isActive ? 'Desarquivar' : 'Arquivar'} conta?`,
+      description: `${isActive ? 'A conta voltará para listas e lançamentos.' : 'A conta sairá das listas principais, mas o histórico será mantido.'}`,
+      details: account.name,
+      tone: isActive ? 'success' : 'warning',
+      confirmLabel: isActive ? 'Desarquivar conta' : 'Arquivar conta',
+    });
     if (!confirmed) return;
 
     try {
@@ -924,14 +1049,29 @@ export default function App() {
         accounts: current.accounts.map((item) => item.id === saved.id ? saved : item),
       }));
       if (!isActive && selectedAccountId === account.id) setSelectedAccountId('');
+      showFeedback({
+        title: isActive ? 'Conta desarquivada' : 'Conta arquivada',
+        description: saved.name,
+        tone: isActive ? 'success' : 'info',
+      });
     } catch (error) {
-      alert(getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} a conta. Tente novamente.`));
+      await showActionMessage({
+        title: 'Conta não alterada',
+        description: getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} a conta. Tente novamente.`),
+        tone: 'warning',
+      });
     }
   }
 
   async function handleDeleteCard(card: FinanceSnapshot['cards'][number]) {
     const linkedTransactions = snapshot.transactions.filter((transaction) => transaction.cardId === card.id).length;
-    const confirmed = window.confirm(`Excluir o cartão "${card.name}"? Esta ação apaga o cartão e ${linkedTransactions} lançamento(s) das faturas vinculadas. Não pode ser desfeita.`);
+    const confirmed = await confirmAction({
+      title: 'Excluir cartão?',
+      description: `O cartão "${card.name}" e ${linkedTransactions} lançamento(s) das faturas vinculadas serão removidos.`,
+      details: 'Esta ação não pode ser desfeita. Se quiser preservar histórico, prefira arquivar o cartão.',
+      tone: 'danger',
+      confirmLabel: 'Excluir cartão',
+    });
     if (!confirmed) return;
 
     try {
@@ -941,13 +1081,24 @@ export default function App() {
         cards: current.cards.filter((item) => item.id !== card.id),
         transactions: current.transactions.filter((transaction) => transaction.cardId !== card.id),
       }));
+      showFeedback({ title: 'Cartão excluído', description: `${card.name} foi removido.`, tone: 'success' });
     } catch (error) {
-      alert(getUserFriendlyError(error, 'Não foi possível excluir o cartão. Tente novamente.'));
+      await showActionMessage({
+        title: 'Cartão não excluído',
+        description: getUserFriendlyError(error, 'Não foi possível excluir o cartão. Tente novamente.'),
+        tone: 'warning',
+      });
     }
   }
 
   async function handleSetCardActive(card: FinanceSnapshot['cards'][number], isActive: boolean) {
-    const confirmed = window.confirm(`${isActive ? 'Desarquivar' : 'Arquivar'} o cartão "${card.name}"? ${isActive ? 'Ele voltará para listas e lançamentos.' : 'Ele sairá das listas principais, mas as faturas antigas serão mantidas.'}`);
+    const confirmed = await confirmAction({
+      title: `${isActive ? 'Desarquivar' : 'Arquivar'} cartão?`,
+      description: `${isActive ? 'O cartão voltará para listas e lançamentos.' : 'O cartão sairá das listas principais, mas as faturas antigas serão mantidas.'}`,
+      details: card.name,
+      tone: isActive ? 'success' : 'warning',
+      confirmLabel: isActive ? 'Desarquivar cartão' : 'Arquivar cartão',
+    });
     if (!confirmed) return;
 
     try {
@@ -957,13 +1108,28 @@ export default function App() {
         cards: current.cards.map((item) => item.id === saved.id ? saved : item),
       }));
       if (!isActive && selectedCardId === card.id) setSelectedCardId('');
+      showFeedback({
+        title: isActive ? 'Cartão desarquivado' : 'Cartão arquivado',
+        description: saved.name,
+        tone: isActive ? 'success' : 'info',
+      });
     } catch (error) {
-      alert(getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} o cartão. Tente novamente.`));
+      await showActionMessage({
+        title: 'Cartão não alterado',
+        description: getUserFriendlyError(error, `Não foi possível ${isActive ? 'desarquivar' : 'arquivar'} o cartão. Tente novamente.`),
+        tone: 'warning',
+      });
     }
   }
 
   async function handleDeleteCategory(category: Category) {
-    const confirmed = window.confirm(`Excluir a categoria "${category.name}"? Lançamentos vinculados ficarão como "Outros".`);
+    const confirmed = await confirmAction({
+      title: 'Excluir categoria?',
+      description: `A categoria "${category.name}" será removida.`,
+      details: 'Lançamentos vinculados ficarão como "Outros".',
+      tone: 'danger',
+      confirmLabel: 'Excluir categoria',
+    });
     if (!confirmed) return;
 
     try {
@@ -972,8 +1138,13 @@ export default function App() {
         ...current,
         categories: current.categories.filter((item) => item.id !== category.id),
       }));
+      showFeedback({ title: 'Categoria excluída', description: `${category.name} foi removida.`, tone: 'success' });
     } catch (error) {
-      alert(getUserFriendlyError(error, 'Não foi possível excluir a categoria. Tente novamente.'));
+      await showActionMessage({
+        title: 'Categoria não excluída',
+        description: getUserFriendlyError(error, 'Não foi possível excluir a categoria. Tente novamente.'),
+        tone: 'warning',
+      });
     }
   }
 
@@ -1305,7 +1476,11 @@ export default function App() {
       ) : null}
 
       {currentView === 'goals' ? (
-        <GoalsView categories={snapshot.categories} reimbursementPeople={snapshot.reimbursementPeople} />
+        <GoalsView
+          categories={snapshot.categories}
+          reimbursementPeople={snapshot.reimbursementPeople}
+          onConfirmAction={confirmAction}
+        />
       ) : null}
 
         {currentView === 'profile' ? (
@@ -1432,6 +1607,8 @@ export default function App() {
           />
         ) : null}
       </Suspense>
+
+      {feedbackOverlays}
     </AppShell>
   );
 }
