@@ -43,3 +43,23 @@ export function getReserveBoxMovements(box: ReserveBox, movements: ReserveBoxMov
     .filter((movement) => movement.reserveBoxId === box.id)
     .sort((left, right) => right.date.localeCompare(left.date) || (right.createdAt ?? '').localeCompare(left.createdAt ?? ''));
 }
+
+export function getReserveMovementAccountProjection(
+  movementType: ReserveBoxMovement['type'],
+  amount: number,
+  accountBalance?: number | null,
+) {
+  if (accountBalance === undefined || accountBalance === null) return null;
+  if (movementType === 'deposit') return roundMoney(accountBalance - amount);
+  if (movementType === 'withdrawal') return roundMoney(accountBalance + amount);
+  return roundMoney(accountBalance);
+}
+
+export function isReserveDepositAccountOverdrawn(
+  movementType: ReserveBoxMovement['type'],
+  amount: number,
+  accountBalance?: number | null,
+) {
+  const projectedBalance = getReserveMovementAccountProjection(movementType, amount, accountBalance);
+  return movementType === 'deposit' && projectedBalance !== null && projectedBalance < 0;
+}

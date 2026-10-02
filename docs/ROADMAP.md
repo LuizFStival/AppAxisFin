@@ -115,11 +115,14 @@ Critérios de aceite:
 - [ ] Reduzir centralidade de `App.tsx` extraindo orquestradores por dominio.
 - [x] Iniciar reducao de centralidade extraindo dialogs/toasts para `useAppFeedback`.
 - [x] Extrair `Cartões do mês` da Home para `DashboardCardsSection`.
-- [ ] Reduzir complexidade de `AddEntryModal`.
+- [x] Extrair apresentacao, labels e resumo de impacto do `AddEntryModal` para helper puro.
+- [x] Extrair contexto derivado de fluxo do `AddEntryModal` para helper puro.
+- [x] Extrair regras de submit, criacao de categoria/pessoa e categorias de sistema para helper puro.
+- [ ] Continuar reducao de complexidade de `AddEntryModal` separando handlers assíncronos em hook de orquestracao.
 - [ ] Quebrar `ReportsView`, `CardsView`, `MonthCenterView` e `AccountsView` em subcomponentes/hook menores.
-- [ ] Atualizar Graphify apos cada bloco de refatoracao.
+- [x] Atualizar Graphify apos cada bloco de refatoracao concluido nesta rodada.
 - [x] Atualizar Graphify apos a Fase 7A.
-- [ ] Registrar mudancas de centralidade em `CHANGELOG_EVIDENCES.md`.
+- [x] Registrar mudancas de centralidade em `CHANGELOG_EVIDENCES.md`.
 
 Critérios de aceite:
 
@@ -131,9 +134,10 @@ Critérios de aceite:
 
 ### P0 - Critico
 
-- [ ] Resolver bloqueio de ambiente do Graphify/uv no Windows ou documentar workaround confiavel.
-- [ ] Revalidar todos os fluxos de parcelamento, reembolso e importacao CSV apos mudancas recentes.
-- [ ] Garantir que ajuste manual de saldo sempre cria lancamento explicativo quando houver diferenca.
+- [x] Documentar workaround confiavel do Graphify/uv no Windows.
+- [x] Revalidar fluxos de parcelamento, reembolso e importacao CSV cobertos por testes automatizados.
+- [x] Confirmar que ajuste manual de saldo cria lancamento explicativo quando houver diferenca.
+- [x] Permitir aplicacao em caixinha mesmo quando o saldo cadastrado da conta estiver defasado, com aviso de conta negativa no app.
 
 ### P1 - Produto
 
@@ -155,18 +159,18 @@ Critérios de aceite:
 - [x] Criar primeiro hook transversal para feedback/dialogs do App.
 - [ ] Criar hooks por dominio para App.
 - [ ] Criar componentes menores para telas grandes.
-- [ ] Adicionar testes para importacao de fatura e ajustes de saldo.
+- [x] Revalidar testes existentes para importacao de fatura e ajustes de saldo.
 - [ ] Revisar metadata em `notes` e criar helpers sempre que surgir regra nova.
 
 ## Bugs conhecidos
 
-- [A VALIDAR] Ambiente local pode bloquear Graphify por `uv`/Python/cache.
+- [A VALIDAR] Sandbox pode bloquear Graphify por `_socket`; workaround Windows usa `uvx.exe --no-cache` via `npm.cmd run graphify:src` fora do sandbox/aprovado.
 - [A VALIDAR] Fluxos importados de fatura com reembolso precisam de mais testes de ponta a ponta.
 - [A VALIDAR] Visual de algumas telas pode estar muito denso em telas pequenas.
 
 ## Debitos tecnicos
 
-- `AddEntryModal` com muitos estados locais.
+- `AddEntryModal` ainda tem muitos estados locais e handlers assíncronos, apesar de ja ter helpers para regras, salvamento, apresentacao, contexto de fluxo, validacao de submit e subcomponentes visuais.
 - `App.tsx` com muitos handlers financeiros.
 - Dialogs nativos financeiros substituidos; manter auditoria para nao reintroduzir `window.confirm`, `window.prompt` ou `window.alert`.
 - Varios documentos historicos ainda fora do padrao D.N.E.E.

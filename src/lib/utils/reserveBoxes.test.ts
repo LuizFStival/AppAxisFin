@@ -5,6 +5,8 @@ import {
   getReserveBoxExpectedBalance,
   getReserveBoxMovements,
   getReserveInstitutions,
+  getReserveMovementAccountProjection,
+  isReserveDepositAccountOverdrawn,
   summarizeReserveBoxes,
 } from './reserveBoxes';
 
@@ -70,5 +72,13 @@ const movements: ReserveBoxMovement[] = [
 ];
 
 assert.deepEqual(getReserveBoxMovements(boxes[0], movements).map((movement) => movement.id), ['two', 'one']);
+
+assert.equal(getReserveMovementAccountProjection('deposit', 100, 60), -40);
+assert.equal(getReserveMovementAccountProjection('withdrawal', 100, 60), 160);
+assert.equal(getReserveMovementAccountProjection('yield', 100, 60), 60);
+assert.equal(getReserveMovementAccountProjection('deposit', 100, null), null);
+assert.equal(isReserveDepositAccountOverdrawn('deposit', 100, 60), true);
+assert.equal(isReserveDepositAccountOverdrawn('deposit', 40, 60), false);
+assert.equal(isReserveDepositAccountOverdrawn('withdrawal', 100, 60), false);
 
 console.log('reserve box tests passed');

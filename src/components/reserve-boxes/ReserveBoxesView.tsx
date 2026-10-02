@@ -31,6 +31,8 @@ import {
   getReserveBoxExpectedBalance,
   getReserveBoxMovements,
   getReserveInstitutions,
+  getReserveMovementAccountProjection,
+  isReserveDepositAccountOverdrawn,
   summarizeReserveBoxes,
 } from '../../lib/utils/reserveBoxes';
 import { DuplicateNameError, hasDuplicateName } from '../../lib/utils/validation';
@@ -480,10 +482,16 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
   const isDeposit = type === 'deposit';
   const requiresAccount = isDeposit || isWithdrawal;
   const selectedAccount = accounts.find((account) => account.id === accountId) ?? null;
+  const parsedAmount = parseCurrencyInput(amount);
+  const projectedAccountBalance = selectedAccount
+    ? getReserveMovementAccountProjection(type, parsedAmount, selectedAccount.balance)
+    : null;
+  const willOverdrawAccount = selectedAccount
+    ? isReserveDepositAccountOverdrawn(type, parsedAmount, selectedAccount.balance)
+    : false;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    const parsedAmount = parseCurrencyInput(amount);
     if (parsedAmount <= 0) {
       setError('Informe um valor válido.');
       return;
@@ -494,10 +502,6 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
     }
     if (requiresAccount && !accountId) {
       setError(isDeposit ? 'Selecione a conta de origem da aplicação.' : 'Selecione a conta que recebeu o resgate.');
-      return;
-    }
-    if (isDeposit && selectedAccount && parsedAmount > selectedAccount.balance) {
-      setError('A aplicação não pode ser maior que o saldo atual da conta de origem.');
       return;
     }
     setIsSaving(true);
@@ -532,6 +536,11 @@ function ReserveMovementModal({ box, type, accounts, onClose, onSave }: {
             <p className="mt-2 text-xs text-slate-500">
               {isDeposit ? 'O valor sai da conta escolhida e entra nesta caixinha.' : 'O valor sai desta caixinha e entra na conta escolhida.'}
             </p>
+            {willOverdrawAccount && projectedAccountBalance !== null ? (
+              <div className="mt-3 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs font-semibold leading-relaxed text-amber-100">
+                A conta {selectedAccount?.name} ficará negativa no app em {formatCurrency(Math.abs(projectedAccountBalance))}. Use isso quando o saldo real existir fora do app e depois confira ou atualize o saldo da conta.
+              </div>
+            ) : null}
           </div>
         ) : null}
         <button type="submit" disabled={isSaving} className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200 disabled:opacity-60">{type === 'withdrawal' ? <ArrowUpFromLine size={18} /> : <ArrowDownToLine size={18} />}{isSaving ? 'Salvando...' : isDeposit ? 'Aplicar na caixinha' : isWithdrawal ? 'Resgatar para conta' : 'Salvar movimento'}</button>

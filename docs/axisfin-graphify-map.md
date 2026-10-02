@@ -1,14 +1,14 @@
 # AxisFin Graphify Map
 
-Atualizado em 2026-09-30 a partir de `src/graphify-out/GRAPH_REPORT.md`.
+Atualizado em 2026-10-02 a partir de `src/graphify-out/GRAPH_REPORT.md`.
 
 ## Resultado do Mapeamento
 
 - Escopo analisado: `src/`
-- Arquivos de código: 101
-- Nós no grafo: 858
-- Conexões: 3071
-- Comunidades: 27
+- Arquivos de código: 112
+- Nós no grafo: 918
+- Conexões: 3317
+- Comunidades: 32
 - Custo de tokens: 0 input / 0 output
 - Ciclos de importação: nenhum detectado
 
@@ -18,7 +18,7 @@ O Graphify foi aplicado apenas em `src/` para evitar leitura de arquivos sensív
 
 1. `readTransactionMeta()` concentra regras transversais de lançamentos, reembolsos, parcelas, natureza da despesa e metadados financeiros.
 2. `Transaction`, `Card` e `Account` continuam sendo as entidades centrais do produto.
-3. `AddEntryModal()` é um ponto de complexidade alto, porque mistura captura, classificação, origem, parcelamento, reembolso, estorno e persistência.
+3. `AddEntryModal()` melhorou como nó central depois das extrações de apresentação, contexto de fluxo e regras de handlers, mas ainda concentra orquestracao assíncrona.
 4. `MonthCenterView()` virou um segundo núcleo operacional, conectado a pagamentos, vencimentos, reembolsos e fechamento mensal.
 5. `getUserFriendlyError()` cruza muitas áreas e deve continuar padronizando mensagens para não expor erro técnico ao usuário.
 
@@ -101,6 +101,25 @@ Prioridades sugeridas:
 - `CardPhysicalPreview` passou a usar grade interna para preservar alinhamento de numero, titular, fatura e bandeira no cartao fisico.
 - Regerado o grafo incremental via `npm.cmd run graphify:src`: 872 nós, 3140 conexões, 37 comunidades e nenhum ciclo de importacao detectado.
 
+### 2026-10-02
+
+- `AddEntryModal` passou a delegar labels, subtitulos, resumo de impacto, preview de parcelas e criterio de contexto avancado para `addEntryPresentation`.
+- Fluxos sensiveis foram revalidados por testes: parcelamento, reembolso/divisao, importacao CSV e ajuste manual de saldo com lancamento explicativo.
+- `scripts/run-graphify-src.mjs` passou a usar `uvx.exe --no-cache`, evitando travas de cache do `uv` no Windows.
+- Dentro do sandbox ainda pode haver bloqueio de `_socket`; nesses casos, usar `npm.cmd run graphify:src` em terminal local/aprovado.
+- Regerado o grafo incremental via workaround Windows: 886 nos, 3192 conexoes, 42 comunidades e nenhum ciclo de importacao detectado.
+- `AddEntryModal` passou a delegar contexto derivado de cartao, conta, receita, transferencia, reembolso e edicao para `addEntryFlowContext`.
+- `addEntryFlowContext.test.ts` cobre compra no cartao parcelada, despesa em conta, receita, transferencia, reembolso dividido e edicao de parcela futura.
+- Regerado o grafo incremental via workaround Windows: 903 nos, 3255 conexoes, 36 comunidades e nenhum ciclo de importacao detectado.
+- `AddEntryModal()` saiu do top 10 de god nodes; o proximo alvo sao handlers de submit/criacao ainda dentro do modal.
+- `AddEntryModal` passou a delegar validacao de submit, criacao de categoria customizada, categorias de sistema e validacao de pessoa para `addEntryHandlers`.
+- `addEntryHandlers.test.ts` cobre categoria customizada, duplicidade, categorias de sistema, pessoa de reembolso, reembolso recebido, transferencia e receita.
+- Regerado o grafo incremental via workaround Windows: 916 nos, 3306 conexoes, 43 comunidades e nenhum ciclo de importacao detectado.
+- `AddEntryModal()` ficou com 43 edges e voltou ao top 10 como #9; o proximo alvo e tirar a orquestracao assíncrona para hook ou modulo dedicado.
+- Caixinhas passaram a permitir aplicacao mesmo que a conta de origem fique negativa no app quando o saldo cadastrado estiver defasado.
+- `reserveBoxes.ts` ganhou helper para projetar o saldo da conta em aplicacao/resgate, coberto por teste.
+- Regerado o grafo incremental via workaround Windows: 918 nos, 3317 conexoes, 32 comunidades e nenhum ciclo de importacao detectado.
+
 ## Funcionalidades Para Reorganizar
 
 ### Lançamentos
@@ -140,6 +159,8 @@ Para atualizar o mapa local:
 ```bash
 npm.cmd run graphify:src
 ```
+
+No Windows, esse comando ja chama `uvx.exe --no-cache --python 3.12 --from graphifyy graphify` por meio de `scripts/run-graphify-src.mjs`. Se o sandbox bloquear `_socket` com `os error 10013`, rode o mesmo comando em um terminal local/aprovado e registre a evidencia no changelog.
 
 Saídas locais:
 

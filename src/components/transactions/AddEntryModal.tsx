@@ -5,31 +5,28 @@ import { CurrencyInput } from '../shared/CurrencyInput';
 import { DateInput } from '../shared/DateInput';
 import { DEFAULT_CURRENCY_INPUT, formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { formatLocalDate } from '../../lib/utils/date';
-import { formatCurrency } from '../../lib/utils/finance';
-import { getCardInvoiceInfo } from '../../lib/utils/cardInvoices';
 import { getVisibleNotes, readTransactionMeta } from '../../lib/utils/transactionMeta';
-import { hasDuplicateName } from '../../lib/utils/validation';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
 import { parseMathExpression } from '../../lib/utils/mathExpression';
 import { parseQuickEntries } from '../../lib/utils/quickEntryParser';
 import {
-  buildMonthlyDates,
-  buildOpenEndedMonthlyDates,
   expenseNeedOptions,
-  INVOICE_ADJUSTMENT_CATEGORY_NAME,
   isInvoiceAdjustmentCategory,
   isReimbursementCategory,
   normalizeCategoryName,
-  parseEntryCount,
   PaymentSourceType,
-  REIMBURSEMENT_CATEGORY_NAME,
 } from './addEntryRules';
 import {
-  AddEntryDraft,
   buildQuickEntryTransactions,
-  splitAmountIntoInstallments,
 } from './addEntryBuilder';
 import { AddEntrySavePlan, buildAddEntrySavePlan } from './addEntrySavePlan';
+import { buildAddEntryFlowContext } from './addEntryFlowContext';
+import {
+  buildCustomCategoryCreationRequest,
+  buildSystemCategoryCreationRequest,
+  validateAddEntrySubmission,
+  validateReimbursementPersonName,
+} from './addEntryHandlers';
 import { ExpenseOptions } from './ExpenseOptions';
 import { QuickEntry, type QuickReviewItem } from './QuickEntry';
 import { ReimbursementFields } from './ReimbursementFields';
@@ -199,9 +196,6 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     quickRecognitionRef.current = null;
   }, [accounts, cards, categories, isOpen, isRecurringOccurrence, preferredCardId, transaction, transactionMeta.entryMode, transactionMeta.expenseNeed, transactionMeta.generatedUntil, transactionMeta.invoiceAdjustment, transactionMeta.totalInstallments]);
 
-  const selectedCard = sourceType === 'card' ? cards.find((card) => card.id === cardId) : undefined;
-  const invoiceInfo = selectedCard && flow === 'expense' ? getCardInvoiceInfo(selectedCard, date) : null;
-  const isEditingClosedInvoice = Boolean(transaction && invoiceInfo && invoiceInfo.status !== 'aberta');
   const todayValue = formatLocalDate(new Date());
 
   useEffect(() => {
@@ -282,152 +276,69 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setIsCalculatorOpen(false);
   }
 
-  const filteredCategories = categories.filter((category) => category.flow === flow);
-  const isInstallmentExpense = flow === 'expense' && expenseMode === 'installment' && !isInvoiceCredit;
-  const fixedDates = expenseMode === 'fixed'
-    ? hasFixedEndDate ? buildMonthlyDates(date, fixedEndDate) : buildOpenEndedMonthlyDates(date)
-    : [];
-  const cannotSubmit = flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && cards.length === 0;
-  const parsedAmount = parseCurrencyInput(amount);
-  const selectedAccount = accounts.find((account) => account.id === accountId);
-  const selectedFromAccount = accounts.find((account) => account.id === fromAccountId);
-  const selectedToAccount = accounts.find((account) => account.id === toAccountId);
-  const selectedSourceName = flow === 'transfer'
-    ? [selectedFromAccount?.name, selectedToAccount?.name].filter(Boolean).join(' → ')
-    : sourceType === 'card' || isInvoiceCredit
-      ? selectedCard?.name
-      : selectedAccount?.name;
-  const installmentPreview = (() => {
-    if (!isInstallmentExpense || transaction || parsedAmount <= 0) return null;
-    const count = parseEntryCount(installmentCount, 2);
-    const amounts = splitAmountIntoInstallments(parsedAmount, count);
-    const firstAmount = amounts[0] ?? 0;
-    const lastAmount = amounts[amounts.length - 1] ?? firstAmount;
-    const hasAdjustment = amounts.some((item) => item !== firstAmount);
-    return hasAdjustment
-      ? `${count} parcelas: ${formatCurrency(firstAmount)} nas primeiras e ${formatCurrency(lastAmount)} na última. Total ${formatCurrency(parsedAmount)}.`
-      : `${count}x de ${formatCurrency(firstAmount)}. Total ${formatCurrency(parsedAmount)}.`;
-  })();
-  const parsedSplitPercent = Math.min(100, Math.max(0, Number.parseFloat(splitPercent.replace(',', '.')) || 0));
-  const parsedSplitFixedAmount = parseCurrencyInput(splitFixedAmount);
-  const reimbursementAmount = flow === 'expense' && splitMode === 'third_party_full'
-    ? parsedAmount
-    : flow === 'expense' && splitMode === 'shared'
-      ? Math.round((splitType === 'fixed' ? parsedSplitFixedAmount : parsedAmount * parsedSplitPercent / 100) * 100) / 100
-      : 0;
-  const personalAmount = Math.round(Math.max(0, parsedAmount - reimbursementAmount) * 100) / 100;
-  const hasPersonalExpenseShare = flow === 'expense' && !isInvoiceCredit && splitMode !== 'third_party_full';
-  const shouldCreateSharedEntries = flow === 'expense'
-    && splitMode === 'shared'
-    && !isInvoiceCredit
-    && personalAmount > 0
-    && reimbursementAmount > 0;
-  const entrySummary = (() => {
-    if (parsedAmount <= 0) return 'Informe o valor para ver o impacto antes de salvar.';
-
-    if (transaction && canEditForwardEntries) {
-      const modeLabel = transactionMeta.entryMode === 'installment' ? 'parcela' : 'fixa';
-      return editScope === 'single'
-        ? `Você está editando só esta ${modeLabel}; as demais ocorrências continuam como estão.`
-        : `Você está editando esta ${modeLabel} e as próximas; meses anteriores não mudam.`;
-    }
-
-    if (flow === 'transfer') {
-      return `Transferência de ${formatCurrency(parsedAmount)}${selectedSourceName ? `: ${selectedSourceName}` : ''}. O patrimônio total não muda.`;
-    }
-
-    if (flow === 'income') {
-      return `Receita de ${formatCurrency(parsedAmount)}${selectedSourceName ? ` em ${selectedSourceName}` : ''}. Entra como ganho no mês.`;
-    }
-
-    if (isInvoiceCredit) {
-      return `Crédito de ${formatCurrency(parsedAmount)} na fatura${selectedSourceName ? ` ${selectedSourceName}` : ''}. Reduz a fatura e não vira receita.`;
-    }
-
-    if (expenseMode === 'installment' && !transaction) {
-      const count = parseEntryCount(installmentCount, 2);
-      const amounts = splitAmountIntoInstallments(parsedAmount, count);
-      const firstAmount = amounts[0] ?? 0;
-      const reimbursementText = shouldCreateSharedEntries
-        ? ` Também cria ${count} registro${count === 1 ? '' : 's'} de reembolso para ${formatCurrency(reimbursementAmount)} no total.`
-        : '';
-      return `Compra total de ${formatCurrency(parsedAmount)} será dividida em ${count} parcela${count === 1 ? '' : 's'} de aproximadamente ${formatCurrency(firstAmount)}.${reimbursementText}`;
-    }
-
-    if (expenseMode === 'fixed' && !transaction) {
-      const projection = hasFixedEndDate && fixedEndDate
-        ? `${fixedDates.length} ocorrência${fixedDates.length === 1 ? '' : 's'} até ${fixedEndDate}`
-        : 'regra mensal recorrente';
-      return `Despesa fixa de ${formatCurrency(parsedAmount)}: será salva como ${projection}.`;
-    }
-
-    if (splitMode === 'third_party_full') {
-      return `Despesa de ${formatCurrency(parsedAmount)} é 100% de terceiro. Fica em reembolsos e não pesa como gasto pessoal.`;
-    }
-
-    if (shouldCreateSharedEntries) {
-      return `Divisão: sua parte será ${formatCurrency(personalAmount)} e o reembolso será ${formatCurrency(reimbursementAmount)}.`;
-    }
-
-    return `Despesa de ${formatCurrency(parsedAmount)}${selectedSourceName ? ` em ${selectedSourceName}` : ''}.`;
-  })();
-  const submitLabel = transaction
-    ? editScope === 'forward' && canEditForwardEntries ? 'Salvar esta e próximas' : 'Salvar alteração'
-    : expenseMode === 'installment' && flow === 'expense' && !isInvoiceCredit
-      ? 'Criar parcelas'
-      : expenseMode === 'fixed' && flow === 'expense' && !isInvoiceCredit
-        ? 'Criar fixa'
-        : 'Salvar lançamento';
-  const flowLabel = transaction
-    ? 'Edição'
-    : flow === 'income'
-      ? 'Receita'
-      : flow === 'transfer'
-        ? 'Transferência'
-        : lockedSourceType === 'card'
-          ? 'Compra no cartão'
-          : lockedSourceType === 'account'
-            ? 'Despesa em conta'
-            : 'Despesa';
-  const flowSubtitle = transaction
-    ? 'Revise os campos e escolha o escopo antes de salvar.'
-    : flow === 'income'
-      ? 'Entrada de dinheiro em uma conta.'
-      : flow === 'transfer'
-        ? 'Movimento entre contas, sem impacto no patrimônio total.'
-        : lockedSourceType === 'card'
-          ? 'Compra entra na fatura do cartão selecionado.'
-          : lockedSourceType === 'account'
-            ? 'Débito, Pix ou saída direta de uma conta.'
-            : 'Escolha origem, categoria e detalhes da despesa.';
-  const hasAdvancedContext = expenseMode !== 'variable'
-    || isInvoiceCredit
-    || splitMode !== 'none'
-    || hasPersonalExpenseShare
-    || Boolean(transaction && isGroupedTransaction)
-    || hasFixedEndDate
-    || Boolean(isReimbursable)
-    || Boolean(newCategoryName.trim());
-  const entryDraft: AddEntryDraft = {
+  const {
+    selectedCard,
+    invoiceInfo,
+    isEditingClosedInvoice,
+    filteredCategories,
+    isInstallmentExpense,
+    fixedDates,
+    cannotSubmit,
+    parsedAmount,
+    selectedAccount,
+    selectedFromAccount,
+    selectedToAccount,
+    installmentPreview,
+    parsedSplitPercent,
+    parsedSplitFixedAmount,
+    reimbursementAmount,
+    personalAmount,
+    hasPersonalExpenseShare,
+    shouldCreateSharedEntries,
+    entrySummary,
+    submitLabel,
+    flowLabel,
+    flowSubtitle,
+    hasAdvancedContext,
+    entryDraft,
+  } = buildAddEntryFlowContext({
+    accounts,
+    cards,
+    categories,
+    reimbursementPeople,
+    transaction,
+    transactionMeta,
+    isGroupedTransaction,
+    canEditForwardEntries,
     flow,
-    amount: parsedAmount,
+    expenseMode,
+    expenseNeed,
+    amount,
     status,
     notes,
     categoryId,
     sourceType,
+    lockedSourceType,
     accountId,
     cardId,
+    fromAccountId,
+    toAccountId,
+    date,
     splitMode,
-    expenseNeed,
+    splitType,
+    splitPercent,
+    splitFixedAmount,
     isInvoiceCredit,
-    hasPersonalExpenseShare,
-    personalAmount,
-    reimbursementAmount,
+    isReimbursable,
     reimbursementPersonId,
     reimbursementStatus,
     reimbursementReceivedAccountId,
-    reimbursementPeople,
-  };
+    hasFixedEndDate,
+    fixedEndDate,
+    installmentCount,
+    editScope,
+    newCategoryName,
+  });
   const quickDrafts = useMemo(() => parseQuickEntries(quickText), [quickText]);
   const quickReviewDrafts = quickDrafts.filter((draft) => !quickDeletedDraftIds.includes(draft.id));
 
@@ -594,26 +505,16 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   }
 
   async function handleCreateCategory() {
-    const name = newCategoryName.trim();
     setCategoryError('');
-    if (!name) {
-      setCategoryError('Informe o nome da categoria.');
-      return;
-    }
-
-    if (hasDuplicateName(name, categories.filter((category) => category.flow === flow).map((category) => category.name))) {
-      setCategoryError('Já existe uma categoria com esse nome.');
+    const request = buildCustomCategoryCreationRequest({ name: newCategoryName, flow, categories });
+    if (request.ok === false) {
+      setCategoryError(request.error);
       return;
     }
 
     setIsCreatingCategory(true);
     try {
-      const saved = await onCreateCategory({
-        name,
-        flow: flow === 'income' ? 'income' : 'expense',
-        icon: 'MoreHorizontal',
-        color: flow === 'income' ? '#10B981' : '#F43F5E',
-      });
+      const saved = await onCreateCategory(request.draft);
       setCategoryId(saved.id);
       setNewCategoryName('');
     } catch (error) {
@@ -632,12 +533,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setIsPreparingReimbursementCategory(true);
     setFormError('');
     try {
-      const saved = await onCreateCategory({
-        name: REIMBURSEMENT_CATEGORY_NAME,
-        flow: 'expense',
-        icon: 'HandCoins',
-        color: '#F59E0B',
-      });
+      const saved = await onCreateCategory(buildSystemCategoryCreationRequest('reimbursement'));
       setCategoryId(saved.id);
       return saved;
     } catch (error) {
@@ -657,12 +553,7 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
     setIsCreatingCategory(true);
     setFormError('');
     try {
-      const saved = await onCreateCategory({
-        name: INVOICE_ADJUSTMENT_CATEGORY_NAME,
-        flow: 'expense',
-        icon: 'ReceiptText',
-        color: '#22C55E',
-      });
+      const saved = await onCreateCategory(buildSystemCategoryCreationRequest('invoiceAdjustment'));
       setCategoryId(saved.id);
       return saved;
     } catch (error) {
@@ -713,13 +604,9 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
   async function handleCreatePerson() {
     const name = newPersonName.trim();
     setPersonError('');
-    if (!name) {
-      setPersonError('Informe o nome da pessoa.');
-      return;
-    }
-
-    if (hasDuplicateName(name, reimbursementPeople.map((person) => person.name))) {
-      setPersonError('Já existe uma pessoa com esse nome.');
+    const validationError = validateReimbursementPersonName(name, reimbursementPeople);
+    if (validationError) {
+      setPersonError(validationError);
       return;
     }
 
@@ -747,68 +634,35 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
         formRef.current?.scrollTo({ top: 150, behavior: 'smooth' });
       });
     };
-    if (parsedAmount <= 0) {
-      reportMissingField('Informe um valor maior que zero para salvar o lançamento.');
-      return;
-    }
-    if (!description.trim()) {
-      reportMissingField('Informe um título para identificar o lançamento.');
-      return;
-    }
-    if (!date) {
-      reportMissingField('Selecione a data do lançamento.');
-      return;
-    }
-    if (isInvoiceCredit && !invoiceAdjustmentCategory && !categoryId) {
-      reportMissingField('Crie ou mantenha a categoria Ajustes de fatura para salvar descontos da fatura.');
-      return;
-    }
-    if (flow === 'expense' && splitMode === 'third_party_full' && !reimbursementCategory && !categoryId) {
-      reportMissingField('Crie ou mantenha a categoria Reembolsos para salvar despesas de terceiros.');
-      return;
-    }
-    if (flow !== 'transfer' && !categoryId) {
-      reportMissingField('Selecione uma categoria para salvar o lançamento.');
-      return;
-    }
-    if (hasPersonalExpenseShare && !expenseNeed) {
-      reportMissingField('Selecione se a despesa é essencial ou supérflua.');
-      return;
-    }
-    if (flow === 'expense' && splitMode === 'shared' && (reimbursementAmount <= 0 || reimbursementAmount >= parsedAmount)) {
-      reportMissingField('Informe uma divisao maior que zero e menor que o valor total.');
-      return;
-    }
-    if (flow === 'expense' && isReimbursable && !isInvoiceCredit && !reimbursementPersonId) {
-      reportMissingField('Selecione quem deve esse reembolso.');
-      return;
-    }
-    if (flow === 'expense' && isReimbursable && reimbursementStatus === 'received' && !reimbursementReceivedAccountId) {
-      reportMissingField('Selecione a conta onde o reembolso entrou.');
-      return;
-    }
-    if (flow === 'expense' && sourceType === 'account' && !accountId) {
-      reportMissingField('Selecione uma conta para salvar a despesa.');
-      return;
-    }
-    if (flow === 'expense' && (sourceType === 'card' || isInvoiceCredit) && !cardId) {
-      reportMissingField('Selecione um cartão para salvar a despesa.');
-      return;
-    }
-    if (flow === 'expense' && expenseMode === 'fixed' && !transaction && hasFixedEndDate && fixedDates.length === 0) {
-      reportMissingField('A data final precisa ser igual ou posterior à data inicial.');
-      return;
-    }
-    if (flow === 'income' && !accountId) {
-      reportMissingField('Selecione uma conta para salvar a receita.');
-      return;
-    }
-    if (flow === 'transfer' && (!fromAccountId || !toAccountId)) {
-      reportMissingField('Selecione as contas de origem e destino da transferência.');
-      return;
-    }
-    if (flow === 'transfer' && fromAccountId === toAccountId) {
-      reportMissingField('As contas de origem e destino precisam ser diferentes.');
+    const validationError = validateAddEntrySubmission({
+      parsedAmount,
+      description,
+      date,
+      flow,
+      categoryId,
+      accountId,
+      cardId,
+      fromAccountId,
+      toAccountId,
+      sourceType,
+      expenseMode,
+      expenseNeed,
+      splitMode,
+      reimbursementAmount,
+      reimbursementPersonId,
+      reimbursementStatus,
+      reimbursementReceivedAccountId,
+      isInvoiceCredit,
+      isReimbursable,
+      hasPersonalExpenseShare,
+      hasReimbursementCategory: Boolean(reimbursementCategory),
+      hasInvoiceAdjustmentCategory: Boolean(invoiceAdjustmentCategory),
+      hasFixedEndDate,
+      fixedDatesCount: fixedDates.length,
+      transaction,
+    });
+    if (validationError) {
+      reportMissingField(validationError);
       return;
     }
 

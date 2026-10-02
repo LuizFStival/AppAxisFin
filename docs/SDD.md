@@ -52,6 +52,8 @@ O modal deve mostrar um resumo "Ao salvar" antes da confirmacao, explicando o im
 
 O formulario manual deve ser organizado em blocos progressivos: identificacao, detalhes da despesa quando aplicavel, origem/estado e avancado. Importacao em lote de fatura fica no fluxo de Cartoes, dentro da fatura.
 
+As regras puras de criacao ficam em `addEntryRules`, `addEntryBuilder` e `addEntrySavePlan`; textos, labels, preview de parcelas e resumo de impacto ficam em `addEntryPresentation`; contexto derivado de cartao, conta, receita, transferencia, reembolso e edicao fica em `addEntryFlowContext`; validacao de submit, criacao de categoria/pessoa e categorias de sistema ficam em `addEntryHandlers`. O `AddEntryModal` deve ficar cada vez mais restrito a estado local, handlers assíncronos e composicao visual.
+
 Risco atual: excesso de estados e condicionais no mesmo componente.
 
 ### Cartao e fatura
@@ -71,6 +73,8 @@ Contas exibem saldo real, movimentos do mes e detalhe por conta. Ajuste manual d
 ### Caixinhas
 
 Caixinhas sao reservas separadas do saldo disponivel. Movimentos podem representar aplicacao, retirada, rendimento e atualizacao de saldo. Aplicacao/retirada vinculada a conta deve movimentar tambem a conta correspondente.
+
+Quando uma aplicacao em caixinha usa uma conta com saldo cadastrado insuficiente, o app permite continuar e exibe aviso de que a conta ficara negativa no sistema. Essa regra cobre casos em que o saldo real existe fora do app, mas a conta ainda nao foi conferida/atualizada. Resgates continuam limitados pelo saldo real da caixinha.
 
 ### Reembolsos
 
@@ -168,15 +172,15 @@ Uso esperado:
 - usar `npm.cmd run graphify:src` apos mudancas de codigo para atualizar o mapa;
 - registrar no changelog quando o Graphify indicar mudanca relevante de centralidade, comunidade ou gargalo.
 
-Estado conhecido em 2026-09-30:
+Estado conhecido em 2026-10-02:
 
-- 858 nos;
-- 3071 arestas;
-- 27 comunidades;
+- 918 nos;
+- 3317 arestas;
+- 32 comunidades;
 - nenhum ciclo de importacao detectado;
-- pontos centrais: `App()`, `getUserFriendlyError()`, `readTransactionMeta()`, `Transaction`, `Card`, `MonthCenterView()`, `Account`.
+- pontos centrais: `App()`, `getUserFriendlyError()`, `Transaction`, `readTransactionMeta()`, `Card`, `Account`, `formatCurrency()`, `MonthCenterView()`, `AddEntryModal()`, `Category`.
 
-Observacao: nas ultimas tentativas o Graphify foi bloqueado por politicas/cache do Windows/uv. Quando isso ocorrer, registrar a falha e usar o ultimo `graph.json` como referencia ate o ambiente permitir atualizar.
+Observacao Windows: o script `scripts/run-graphify-src.mjs` usa `uvx.exe --no-cache --python 3.12 --from graphifyy graphify` para evitar travas de cache do `uv`. Dentro do sandbox ainda pode ocorrer bloqueio de `_socket` (`os error 10013`); nesse caso, executar `npm.cmd run graphify:src` em terminal local/aprovado e registrar a evidencia.
 
 ## Criterios de qualidade
 
@@ -205,12 +209,13 @@ Na Home, blocos densos devem ser extraidos quando acumularem regra, calculo e re
 
 ## Riscos e pontos de atencao
 
-- `AddEntryModal` concentra fluxo demais.
+- `AddEntryModal` ainda aparece como god node por handlers assíncronos, embora regras, apresentacao, contexto derivado e validacoes ja estejam fora do componente.
 - `App.tsx` concentra orquestracao demais.
 - Muitas telas usam visual premium em excesso, reduzindo hierarquia.
 - Relatorios podem ficar completos, mas pouco escaneaveis.
 - Reembolso, fatura e competencia mensal sao regras sensiveis e devem evitar dupla contagem.
 - Graphify pode ficar stale quando o ambiente bloquear atualizacao.
+- Ajuste manual de saldo deve continuar criando lancamento de entrada/saida quando houver diferenca, pois esse registro explica rendimento, tarifa, correcao ou saida nao lancada.
 
 ## Debitos estruturais
 

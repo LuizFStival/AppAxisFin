@@ -506,6 +506,148 @@ Iniciar a Fase 7 por extrações pequenas e de baixo risco, sem mudar regra fina
 
 Continuar a Fase 7 em outro bloco de alta centralidade, provavelmente `AddEntryModal`, `ReportsView` ou `MonthCenterView`.
 
+## 2026-10-02 - Fase 7B: AddEntryModal com apresentacao extraida
+
+### Antes
+
+`AddEntryModal` ainda concentrava textos, labels, preview de parcelamento, resumo de impacto, estado local, regras de formulario e orquestracao de salvamento. Isso aumentava o risco de regressao em fluxos sensiveis como compra parcelada, reembolso/divisao e edicao de parcelas/fixas.
+
+### Depois
+
+Textos de apresentacao, labels, subtitulos, preview de parcelas, resumo "Ao salvar" e criterio de contexto avancado foram extraidos para `addEntryPresentation`. O modal passou a delegar essa camada para helper puro, preservando a composicao visual e o plano de salvamento existente.
+
+### Decisao
+
+Continuar a Fase 7 em fatias pequenas e testaveis. Nesta rodada, a reducao de centralidade atacou apresentacao e explicacao de impacto, sem alterar persistencia financeira.
+
+### Evidencia
+
+- `src/components/transactions/AddEntryModal.tsx`
+- `src/components/transactions/addEntryPresentation.ts`
+- `src/components/transactions/addEntryPresentation.test.ts`
+- `scripts/run-graphify-src.mjs`
+- `src/lib/utils/accountBalanceAdjustment.test.ts`
+- `src/lib/utils/invoiceImport.test.ts`
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 17 arquivos de teste.
+- `npm.cmd run build` passou.
+- `git diff --check` passou.
+- `npm.cmd run graphify:src` falhou dentro do sandbox por bloqueio de `_socket` (`os error 10013`), mas passou em execucao aprovada com `uvx.exe --no-cache`.
+- Graphify atualizado: 886 nos, 3192 arestas, 42 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+Parcelamento, reembolso/divisao, importacao CSV e ajuste manual de saldo foram revalidados por testes automatizados. O ajuste manual de saldo continua criando lancamento explicativo de entrada ou saida quando existe diferenca entre saldo anterior e saldo conferido.
+
+O `AddEntryModal()` ainda aparece como god node com 48 conexoes no Graphify, entao o proximo passo e separar estado/orquestracao por fluxo, nao apenas textos e apresentacao.
+
+### Proximos passos
+
+Extrair a orquestracao de estado de `AddEntryModal` por fluxo financeiro e continuar reduzindo a centralidade de `App.tsx` com hooks por dominio.
+
+## 2026-10-02 - Fase 7C: contexto de fluxo do AddEntryModal extraido
+
+### Antes
+
+Mesmo apos a extracao de apresentacao, `AddEntryModal` ainda calculava dentro do componente o contexto derivado de cartao, conta, receita, transferencia, reembolso e edicao: valor parseado, origem selecionada, datas fixas, divisao, reembolso, resumo, labels e `entryDraft`.
+
+### Depois
+
+Foi criado `addEntryFlowContext`, um helper puro que monta esse contexto e devolve os valores que o modal precisa para renderizar, validar e montar o plano de salvamento. O modal continua controlando estado local e handlers, mas deixou de misturar derivacao financeira com JSX.
+
+### Decisao
+
+Separar a orquestracao por fluxo em uma camada testavel antes de extrair handlers de submit/criacao. Isso preserva o comportamento atual e reduz risco nos fluxos sensiveis.
+
+### Evidencia
+
+- `src/components/transactions/addEntryFlowContext.ts`
+- `src/components/transactions/addEntryFlowContext.test.ts`
+- `src/components/transactions/AddEntryModal.tsx`
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 18 arquivos de teste.
+- `npm.cmd run build` passou.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`) e passou fora do sandbox/aprovado.
+- Graphify atualizado: 903 nos, 3255 arestas, 36 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+Os testes cobrem explicitamente compra no cartao parcelada, despesa em conta, receita, transferencia, reembolso dividido e edicao de parcela futura. No Graphify, `AddEntryModal()` saiu do top 10 de god nodes; `addEntryFlowContext.ts` apareceu como comunidade propria com coesao 0.21.
+
+### Proximos passos
+
+Extrair handlers de criacao/submissao por fluxo, principalmente `handleSubmit`, criacao de categoria/pessoa e preparacao de categoria de reembolso/ajuste de fatura.
+
+## 2026-10-02 - Fase 7D: regras de handlers do AddEntryModal extraidas
+
+### Antes
+
+`AddEntryModal` ainda mantinha dentro dos handlers regras de validacao do submit, criacao de categoria customizada, criacao de pessoa de reembolso e rascunhos das categorias de sistema `Reembolsos` e `Ajustes de fatura`.
+
+### Depois
+
+Foi criado `addEntryHandlers`, concentrando validacao pura de submissao, preparacao de categorias de sistema, validacao de pessoa e montagem de categoria customizada. O modal manteve os efeitos assíncronos e setters de estado, mas deixou de carregar as regras desses handlers inline.
+
+### Decisao
+
+Extrair primeiro as regras puras dos handlers antes de mover os handlers assíncronos para um hook. Essa ordem reduz risco porque preserva `onCreateCategory`, `onCreateReimbursementPerson`, `onSave` e os setters atuais no componente.
+
+### Evidencia
+
+- `src/components/transactions/addEntryHandlers.ts`
+- `src/components/transactions/addEntryHandlers.test.ts`
+- `src/components/transactions/AddEntryModal.tsx`
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 19 arquivos de teste.
+- `npm.cmd run build` passou.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`) e passou fora do sandbox/aprovado.
+- Graphify atualizado: 916 nos, 3306 arestas, 43 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+`AddEntryModal()` caiu de 48 para 43 edges em relacao a Fase 7B, mas ainda aparece como god node (#9). Isso indica que a proxima reducao precisa sair da camada de regras puras e ir para um hook de orquestracao dos handlers assíncronos.
+
+### Proximos passos
+
+Extrair um hook de handlers do modal ou dividir a orquestracao assíncrona por subfluxo: submit principal, categorias de sistema, reembolso/pessoa e lancamento rapido.
+
+## 2026-10-02 - Aplicacao em caixinha com saldo cadastrado defasado
+
+### Antes
+
+O modal de aplicacao em caixinha bloqueava a operacao quando o valor informado era maior que o saldo cadastrado da conta de origem. Isso impedia registrar uma aplicacao real quando o saldo bancario existia, mas o saldo da conta no app ainda estava desatualizado.
+
+### Depois
+
+A aplicacao pode ser salva mesmo que a conta de origem fique negativa no app. O modal mostra um aviso com a diferenca projetada e orienta conferir ou atualizar o saldo da conta depois.
+
+### Decisao
+
+Tratar saldo cadastrado insuficiente como divergencia operacional, nao como bloqueio, somente no fluxo de aplicacao em caixinha. Resgates continuam bloqueados quando passam do saldo atual da caixinha.
+
+### Evidencia
+
+- `src/components/reserve-boxes/ReserveBoxesView.tsx`
+- `src/lib/utils/reserveBoxes.ts`
+- `src/lib/utils/reserveBoxes.test.ts`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `npm.cmd test -- reserveBoxes` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 19 arquivos de teste.
+- `npm.cmd run build` passou.
+- `git diff --check` passou com apenas avisos LF/CRLF conhecidos do Windows.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`) e passou fora do sandbox/aprovado.
+- Graphify atualizado: 918 nos, 3317 arestas, 32 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+[A VALIDAR] Usuario deve conseguir registrar aplicacao real em caixinha mesmo quando a conta ainda precisa de conferencia de saldo, sem perder o alerta de divergencia.
+
+### Proximos passos
+
+Validar no uso real se o aviso e suficiente ou se o fluxo deve oferecer atalho direto para atualizar saldo da conta apos aplicar.
+
 ## Changelog
 
 - 2026-09-30 - Estrutura D.N.E.E. criada para o AxisFin.
@@ -523,14 +665,18 @@ Continuar a Fase 7 em outro bloco de alta centralidade, provavelmente `AddEntryM
 - 2026-09-30 - Fase 6A substituiu dialogs nativos financeiros por modal interno compartilhado.
 - 2026-09-30 - FeedbackToast adicionou respostas visuais para acoes importantes.
 - 2026-10-01 - Fase 7A iniciou refatoracao guiada pelo Graphify com `useAppFeedback` e `DashboardCardsSection`.
+- 2026-10-02 - Fase 7B extraiu apresentacao do `AddEntryModal`, revalidou fluxos sensiveis e documentou workaround Graphify no Windows.
+- 2026-10-02 - Fase 7C extraiu contexto de fluxo do `AddEntryModal` e cobriu cartao, conta, receita, transferencia, reembolso e edicao.
+- 2026-10-02 - Fase 7D extraiu regras de submit, categorias e pessoa de reembolso do `AddEntryModal`.
+- 2026-10-02 - Aplicacao em caixinha passou a permitir conta negativa no app quando o saldo cadastrado esta defasado.
 
 ## Metricas observadas ou sugeridas
 
-Metricas tecnicas atuais extraidas do Graphify em 2026-10-01:
+Metricas tecnicas atuais extraidas do Graphify em 2026-10-02:
 
-- 872 nos.
-- 3140 arestas.
-- 37 comunidades.
+- 918 nos.
+- 3317 arestas.
+- 32 comunidades.
 - 0 ciclos de importacao detectados.
 
 Metricas sugeridas:
@@ -546,7 +692,7 @@ Metricas sugeridas:
 
 - [A VALIDAR] Se a documentacao D.N.E.E. sera revisada antes de cada implementacao grande.
 - [A VALIDAR] Se a pagina visual deve ser versionada como artefato estatico ou publicada.
-- [A VALIDAR] Workaround definitivo para Graphify quando o Windows bloquear `_socket` ou cache do `uv`; nesta rodada `uvx.exe --no-cache` funcionou.
+- [A VALIDAR] Sandbox ainda pode bloquear Graphify por `_socket`; no Windows local/aprovado, `npm.cmd run graphify:src` usa `uvx.exe --no-cache` para evitar o problema de cache do `uv`.
 
 ## Pontos a complementar
 
