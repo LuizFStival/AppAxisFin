@@ -138,12 +138,14 @@ Critérios de aceite:
 - [x] Revalidar fluxos de parcelamento, reembolso e importacao CSV cobertos por testes automatizados.
 - [x] Confirmar que ajuste manual de saldo cria lancamento explicativo quando houver diferenca.
 - [x] Permitir aplicacao em caixinha mesmo quando o saldo cadastrado da conta estiver defasado, com aviso de conta negativa no app.
+- [x] Corrigir filtros e breakdowns para pagamento de fatura nao duplicar gasto pessoal da competencia.
 
 ### P1 - Produto
 
 - [x] Reorganizar navegacao.
 - [x] Simplificar modal de lancamento.
 - [x] Reformatar Relatorios.
+- [x] Transformar download de Relatorios em prova real mensal com faturas, debitos, entradas, reembolsos e patrimonio.
 - [x] Consolidar Central do Mes.
 
 ### P2 - Visual

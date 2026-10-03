@@ -1,5 +1,5 @@
 import { ExpenseEntryMode, Transaction } from '../../types';
-import { getExpenseSignedAmount, isInvoiceCredit } from './finance';
+import { getExpenseSignedAmount, isInvoiceCredit, isInvoicePayment } from './finance';
 import { readTransactionMeta } from './transactionMeta';
 
 export type ExpenseBreakdownKey = ExpenseEntryMode;
@@ -45,6 +45,7 @@ export function summarizeExpenseBreakdown(
   transactions
     .filter((transaction) => transaction.flow === 'expense')
     .filter((transaction) => !isInvoiceCredit(transaction))
+    .filter((transaction) => !isInvoicePayment(transaction))
     .forEach((transaction) => {
       const meta = readTransactionMeta(transaction.notes);
       const key = meta.entryMode ?? 'variable';

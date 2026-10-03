@@ -60,6 +60,8 @@ Risco atual: excesso de estados e condicionais no mesmo componente.
 
 Despesa de cartao entra na fatura pelo ciclo de fechamento/vencimento. A fatura mostra total, valor pessoal, valor de terceiros, pendencias de reembolso, estornos, status e lista reordenavel.
 
+Pagamento de fatura e uma baixa de caixa da conta escolhida, nao um novo gasto de competencia. Telas de transacoes, relatorios, breakdown fixo/parcelado/variavel e filtros de "meus gastos" devem ignorar `invoicePayment` para evitar dupla contagem com as compras da fatura.
+
 O visual de cartao fisico e compartilhado entre a tela Cartoes e a Home para manter consistencia em total de fatura, bandeira, status e ciclo. Selects de conta/cartao tambem devem usar o seletor visual compartilhado, mantendo o select nativo por baixo para acessibilidade e dando contexto de saldo, limite e instituicao.
 
 ### Importacao de fatura
@@ -89,6 +91,8 @@ A tela funciona como cockpit de acao: no topo, a faixa "Resolver agora" concentr
 ### Relatorios
 
 Relatorios sao separados em `Mes`, `Ano` e `Patrimonio`. Cada visao deve responder primeiro a pergunta executiva antes dos graficos: se o mes sobrou ou faltou, se o ano acumula sobra ou deficit, e qual e a composicao atual do patrimonio. O detalhamento fixo/parcelado/variavel fica progressivo para nao competir com o resumo.
+
+O download CSV de Relatorios funciona como prova real mensal do sistema. Para o mes selecionado, ele deve organizar resumo financeiro, despesas por categoria e tipo, faturas do mes, itens de cada fatura, entradas, debitos de conta, pagamentos de fatura, reembolsos e patrimonio atual. Pagamento de fatura aparece como baixa de caixa explicativa, mas nao como novo gasto de competencia, evitando dupla contagem com as compras do cartao.
 
 ## Arquitetura e stack identificadas
 
@@ -140,7 +144,7 @@ Entradas:
 Saidas:
 
 - UI do app;
-- CSV/exportacoes;
+- CSV/exportacoes, incluindo a prova real mensal de Relatorios;
 - relatorios visuais;
 - grafo Graphify local;
 - documentos D.N.E.E.
@@ -150,6 +154,7 @@ Saidas:
 - Saldo atual e caixa real confirmado.
 - Despesa no cartao nao reduz conta ate o pagamento da fatura.
 - Pagamento de fatura reduz a conta escolhida.
+- Pagamento de fatura nao deve compor gasto pessoal, gasto variavel/fixo/parcelado nem resultado por competencia, para nao somar a baixa da conta com as compras ja registradas na fatura.
 - Transferencia move saldo entre contas e nao altera patrimonio total.
 - Despesa pessoal pesa no resultado pessoal.
 - Despesa de terceiro deve ser separada de gasto pessoal.
@@ -174,13 +179,13 @@ Uso esperado:
 
 Estado conhecido em 2026-10-02:
 
-- 918 nos;
-- 3317 arestas;
-- 32 comunidades;
+- 942 nos;
+- 3431 arestas;
+- 36 comunidades;
 - nenhum ciclo de importacao detectado;
 - pontos centrais: `App()`, `getUserFriendlyError()`, `Transaction`, `readTransactionMeta()`, `Card`, `Account`, `formatCurrency()`, `MonthCenterView()`, `AddEntryModal()`, `Category`.
 
-Observacao Windows: o script `scripts/run-graphify-src.mjs` usa `uvx.exe --no-cache --python 3.12 --from graphifyy graphify` para evitar travas de cache do `uv`. Dentro do sandbox ainda pode ocorrer bloqueio de `_socket` (`os error 10013`); nesse caso, executar `npm.cmd run graphify:src` em terminal local/aprovado e registrar a evidencia.
+Observacao Windows: o script `scripts/run-graphify-src.mjs` usa `uvx.exe --no-cache --python 3.12 --from graphifyy graphify` para evitar travas de cache do `uv`. Dentro do sandbox ainda pode ocorrer bloqueio de `_socket` (`os error 10013`). Se o terminal aprovado baixar o pacote mas a politica do Windows bloquear o wrapper `graphify` (`os error 4551`), usar o fallback `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify src` e depois `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify cluster-only src`.
 
 ## Criterios de qualidade
 

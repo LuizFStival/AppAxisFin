@@ -648,6 +648,83 @@ Tratar saldo cadastrado insuficiente como divergencia operacional, nao como bloq
 
 Validar no uso real se o aviso e suficiente ou se o fluxo deve oferecer atalho direto para atualizar saldo da conta apos aplicar.
 
+## 2026-10-02 - Pagamento de fatura fora dos gastos de competencia
+
+### Antes
+
+O helper `getTransactionPersonalAmount()` retornava o valor cheio de uma transacao de pagamento de fatura por ela ser uma despesa nao reembolsavel. Isso permitia que filtros/listas e breakdowns de "meus gastos" tratassem a baixa da fatura como gasto pessoal, mesmo quando as compras da fatura ja estavam registradas.
+
+### Depois
+
+Pagamentos de fatura passaram a valer zero como gasto pessoal de competencia e tambem foram excluidos do breakdown fixo/parcelado/variavel e dos filtros de despesa pessoal. Eles continuam existindo como baixa de caixa da conta e seguem sendo usados no fluxo de pagamento da fatura.
+
+### Decisao
+
+Separar explicitamente competencia de gasto e baixa de caixa: compras de cartao explicam o gasto; pagamento de fatura explica a saida real da conta. Somar ambos no mesmo indicador gera dupla contagem.
+
+### Evidencia
+
+- `src/lib/utils/finance.ts`
+- `src/lib/utils/expenseFilters.ts`
+- `src/lib/utils/expenseBreakdown.ts`
+- `src/lib/utils/finance.test.ts`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `npm.cmd test -- finance` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 19 arquivos de teste.
+- `npm.cmd run build` passou.
+- `git diff --check` passou com apenas avisos LF/CRLF conhecidos do Windows.
+
+### Impacto observado
+
+[A VALIDAR] Na tela Transacoes, o filtro "Meus gastos" de setembro deve deixar de listar/somar pagamentos de fatura como gasto pessoal. Os pagamentos continuam visiveis em fluxos de conta/caixa quando o objetivo for auditar saida real.
+
+### Proximos passos
+
+Validar visualmente setembro de 2026 no app local e confirmar se o total bate com a soma das compras da competencia sem os pagamentos de fatura.
+
+## 2026-10-02 - Relatorio baixado como prova real mensal
+
+### Antes
+
+O botao "Baixar" em Relatorios exportava um CSV resumido com indicadores de mes, ano e patrimonio. Ele ajudava a guardar totais, mas nao explicava suficientemente a origem dos numeros nem separava em detalhe faturas, debitos, entradas, reembolsos e pagamentos de fatura.
+
+### Depois
+
+O CSV passou a ser uma prova real do mes selecionado. O arquivo organiza resumo do mes, despesas por categoria, despesas por tipo, faturas, itens de fatura, entradas, debitos de conta, pagamentos de fatura, reembolsos e patrimonio atual. Pagamentos de fatura aparecem como baixa de caixa, sem contar novamente como gasto de competencia.
+
+### Decisao
+
+Manter o download de Relatorios como artefato de auditoria mensal, nao apenas como exportacao visual. A regra principal e separar competencia de caixa: compras de cartao explicam gasto; pagamento de fatura explica saida real da conta.
+
+### Evidencia
+
+- `src/lib/utils/monthlyProofReport.ts`
+- `src/lib/utils/monthlyProofReport.test.ts`
+- `src/components/reports/ReportsView.tsx`
+- `src/App.tsx`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `npm.cmd test -- monthlyProofReport finance` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 20 arquivos de teste.
+- `npm.cmd run build` passou.
+- `git diff --check` passou com apenas avisos LF/CRLF conhecidos do Windows.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`).
+- `npm.cmd run graphify:src` em terminal aprovado baixou o pacote, mas a politica do Windows bloqueou o wrapper `graphify` (`os error 4551`).
+- `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify src` passou.
+- `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify cluster-only src` passou.
+- Graphify atualizado: 942 nos, 3431 arestas, 36 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+[A VALIDAR] O usuario deve conseguir baixar o mes selecionado e conferir, linha a linha, por que o resultado, as faturas, os debitos, as entradas e os reembolsos chegaram aos totais exibidos.
+
+### Proximos passos
+
+Validar o CSV exportado em um mes real com faturas pagas, reembolsos e despesas de conta para confirmar se a leitura esta clara fora do app.
+
 ## Changelog
 
 - 2026-09-30 - Estrutura D.N.E.E. criada para o AxisFin.
@@ -669,14 +746,16 @@ Validar no uso real se o aviso e suficiente ou se o fluxo deve oferecer atalho d
 - 2026-10-02 - Fase 7C extraiu contexto de fluxo do `AddEntryModal` e cobriu cartao, conta, receita, transferencia, reembolso e edicao.
 - 2026-10-02 - Fase 7D extraiu regras de submit, categorias e pessoa de reembolso do `AddEntryModal`.
 - 2026-10-02 - Aplicacao em caixinha passou a permitir conta negativa no app quando o saldo cadastrado esta defasado.
+- 2026-10-02 - Pagamento de fatura deixou de contar como gasto pessoal de competencia para evitar dupla contagem.
+- 2026-10-02 - Download de Relatorios virou prova real mensal com faturas, debitos, entradas, reembolsos e patrimonio.
 
 ## Metricas observadas ou sugeridas
 
 Metricas tecnicas atuais extraidas do Graphify em 2026-10-02:
 
-- 918 nos.
-- 3317 arestas.
-- 32 comunidades.
+- 942 nos.
+- 3431 arestas.
+- 36 comunidades.
 - 0 ciclos de importacao detectados.
 
 Metricas sugeridas:

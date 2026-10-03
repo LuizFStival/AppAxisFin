@@ -17,7 +17,7 @@ export function roundMoney(value: number): number {
 }
 
 export function getTransactionPersonalAmount(transaction: Transaction): number {
-  if (transaction.flow !== 'expense' || isInvoiceCredit(transaction)) return 0;
+  if (transaction.flow !== 'expense' || isInvoiceCredit(transaction) || isInvoicePayment(transaction)) return 0;
   if (!transaction.isReimbursable) return transaction.amount;
   if (typeof transaction.personalAmount === 'number') return roundMoney(transaction.personalAmount);
   return 0;

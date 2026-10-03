@@ -1456,6 +1456,7 @@ export default function App() {
           cards={snapshot.cards}
           transactions={snapshot.transactions}
           categories={snapshot.categories}
+          reimbursementPeople={snapshot.reimbursementPeople}
           savingsPreferences={user}
           reportWidgets={user.reportWidgets}
           reimbursementsEnabled={user.reimbursementsEnabled}

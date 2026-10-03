@@ -31,7 +31,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Account, Card, Category, ReportWidgetId, ReserveBox, Transaction, UserProfile } from '../../types';
+import { Account, Card, Category, ReimbursementPerson, ReportWidgetId, ReserveBox, Transaction, UserProfile } from '../../types';
 import {
   expensesByCategory,
   formatCurrency,
@@ -49,6 +49,7 @@ import {
   roundMoney,
 } from '../../lib/utils/finance';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
+import { buildMonthlyProofReportCsv } from '../../lib/utils/monthlyProofReport';
 import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { cx, screen, surface } from '../shared/visualTokens';
@@ -61,6 +62,7 @@ interface ReportsViewProps {
   accounts: Account[];
   reserveBoxes: ReserveBox[];
   cards: Card[];
+  reimbursementPeople: ReimbursementPerson[];
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
   reportWidgets: ReportWidgetId[];
   reimbursementsEnabled: boolean;
@@ -135,6 +137,7 @@ export function ReportsView({
   accounts,
   reserveBoxes,
   cards,
+  reimbursementPeople,
   savingsPreferences,
   reportWidgets,
   reimbursementsEnabled,
@@ -343,27 +346,17 @@ export function ReportsView({
   const averageExpenses = monthlyEvolution.reduce((sum, item) => sum + item.Despesas, 0) / monthlyEvolution.length;
 
   function downloadReport() {
-    const rows = [
-      ['Bloco', 'Indicador', 'Valor'],
-      ['Mês', 'Escopo', scopeHint],
-      ['Mês', 'Entradas', visibleInflows],
-      ['Mês', 'Saídas', visibleOutflows],
-      ['Mês', 'Resultado', balance],
-      ['Mês', 'Meta mensal para investir', savingsGoal.target],
-      ['Mês', 'Economizado', savingsGoal.saved],
-      ['Mês', 'Taxa de economia (%)', savingsRate.toFixed(2)],
-      ...expenseBreakdown.map((item) => ['Mês', `Despesas ${item.label.toLowerCase()}`, item.total]),
-      ['Ano', `Receitas ${reportYear}`, annualIncome],
-      ['Ano', `Despesas ${reportYear}`, annualExpenses],
-      ['Ano', `Resultado ${reportYear}`, annualResult],
-      ['Ano', 'Média mensal', annualAverageResult],
-      ['Ano', 'Meses positivos', positiveMonths],
-      ['Ano', 'Meses negativos', negativeMonths],
-      ['Patrimônio', 'Total atual', currentPatrimony],
-      ['Patrimônio', 'Contas', accountPatrimony],
-      ['Patrimônio', 'Caixinhas', reservePatrimony],
-    ];
-    const csv = `\uFEFF${rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(';')).join('\r\n')}`;
+    const csv = buildMonthlyProofReportCsv({
+      month,
+      transactions,
+      categories,
+      accounts,
+      reserveBoxes,
+      cards,
+      reimbursementPeople,
+      reimbursementsEnabled,
+      visualScopeLabel: scopeHint,
+    });
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;

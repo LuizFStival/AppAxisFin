@@ -5,10 +5,10 @@ Atualizado em 2026-10-02 a partir de `src/graphify-out/GRAPH_REPORT.md`.
 ## Resultado do Mapeamento
 
 - Escopo analisado: `src/`
-- Arquivos de código: 112
-- Nós no grafo: 918
-- Conexões: 3317
-- Comunidades: 32
+- Arquivos de código: 113
+- Nós no grafo: 942
+- Conexões: 3431
+- Comunidades: 36
 - Custo de tokens: 0 input / 0 output
 - Ciclos de importação: nenhum detectado
 
@@ -119,6 +119,11 @@ Prioridades sugeridas:
 - Caixinhas passaram a permitir aplicacao mesmo que a conta de origem fique negativa no app quando o saldo cadastrado estiver defasado.
 - `reserveBoxes.ts` ganhou helper para projetar o saldo da conta em aplicacao/resgate, coberto por teste.
 - Regerado o grafo incremental via workaround Windows: 918 nos, 3317 conexoes, 32 comunidades e nenhum ciclo de importacao detectado.
+- Pagamentos de fatura passaram a ser excluidos do gasto pessoal de competencia, filtros de despesa e breakdown fixo/parcelado/variavel para evitar dupla contagem.
+- Regerado o grafo incremental via workaround Windows: 918 nos, 3325 conexoes, 32 comunidades e nenhum ciclo de importacao detectado.
+- Download de Relatorios passou a gerar prova real mensal com resumo, faturas, itens, entradas, debitos, pagamentos de fatura, reembolsos e patrimonio atual.
+- O comando `npm.cmd run graphify:src` falhou no sandbox por `_socket` e o wrapper `graphify` falhou no terminal aprovado por politica do Windows (`os error 4551`).
+- Regerado o grafo incremental via fallback `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify src` e `cluster-only src`: 942 nos, 3431 conexoes, 36 comunidades e nenhum ciclo de importacao detectado.
 
 ## Funcionalidades Para Reorganizar
 
@@ -160,7 +165,12 @@ Para atualizar o mapa local:
 npm.cmd run graphify:src
 ```
 
-No Windows, esse comando ja chama `uvx.exe --no-cache --python 3.12 --from graphifyy graphify` por meio de `scripts/run-graphify-src.mjs`. Se o sandbox bloquear `_socket` com `os error 10013`, rode o mesmo comando em um terminal local/aprovado e registre a evidencia no changelog.
+No Windows, esse comando ja chama `uvx.exe --no-cache --python 3.12 --from graphifyy graphify` por meio de `scripts/run-graphify-src.mjs`. Se o sandbox bloquear `_socket` com `os error 10013`, rode o mesmo comando em um terminal local/aprovado e registre a evidencia no changelog. Se a politica do Windows bloquear o wrapper `graphify` com `os error 4551`, use o fallback:
+
+```bash
+uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify src
+uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify cluster-only src
+```
 
 Saídas locais:
 

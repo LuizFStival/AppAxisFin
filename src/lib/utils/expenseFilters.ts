@@ -1,4 +1,5 @@
 import { Transaction } from '../../types';
+import { isInvoicePayment } from './finance';
 import { readTransactionMeta } from './transactionMeta';
 
 export type ExpenseViewFilter =
@@ -25,6 +26,7 @@ export const expenseViewFilterOptions: Array<{ id: ExpenseViewFilter; label: str
 export function matchesExpenseViewFilter(transaction: Transaction, filter: ExpenseViewFilter): boolean {
   if (filter === 'all') return true;
   if (transaction.flow !== 'expense') return false;
+  if (isInvoicePayment(transaction)) return false;
   if (filter === 'others') return Boolean(transaction.isReimbursable);
   if (filter === 'personal') return !transaction.isReimbursable;
   if (transaction.isReimbursable) return false;

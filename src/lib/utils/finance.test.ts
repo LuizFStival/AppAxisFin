@@ -9,6 +9,7 @@ import {
   isCardInvoicePaid,
   getPaymentSource,
   getTransactionCompetenceMonth,
+  getTransactionPersonalAmount,
   shiftMonthKey,
   summarizeDashboard,
   summarizeMonthlyInvestmentGoal,
@@ -512,6 +513,18 @@ const filterTransactions: Transaction[] = [
     date: '2026-06-12',
     isReimbursable: true,
   },
+  {
+    id: 'filter-invoice-payment',
+    description: 'Pagamento fatura',
+    amount: 500,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-13',
+    notes: writeTransactionNotes(undefined, {
+      invoicePaymentCardId: 'card-main',
+      invoicePaymentPeriod: '2026-06',
+    }),
+  },
 ];
 
 assert.equal(matchesExpenseViewFilter(filterTransactions[0], 'variable'), true);
@@ -520,6 +533,8 @@ assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'installment'), tru
 assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'superfluous'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'others'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'personal'), false);
+assert.equal(matchesExpenseViewFilter(filterTransactions[3], 'personal'), false);
+assert.equal(getTransactionPersonalAmount(filterTransactions[3]), 0);
 assert.deepEqual(
   summarizeExpenseBreakdown(filterTransactions.filter((transaction) => !transaction.isReimbursable))
     .map(({ key, total, count }) => ({ key, total, count })),
