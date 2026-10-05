@@ -8,7 +8,10 @@ import { MonthNavigator } from '../shared/MonthNavigator';
 import { CurrencyInput } from '../shared/CurrencyInput';
 import { formatLocalDate } from '../../lib/utils/date';
 import { formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
+import { summarizeBalanceFreshness } from '../../lib/utils/patrimony';
 import { control, cx, screen, surface } from '../shared/visualTokens';
+
+type BalanceAdjustmentNature = 'result' | 'internal_transfer';
 
 interface AccountsViewProps {
   accounts: Account[];
@@ -22,7 +25,7 @@ interface AccountsViewProps {
   onSelectAccount: (accountId: string) => void;
   onAddAccount: () => void;
   onEditAccount: (account: Account) => void;
-  onUpdateAccountBalance: (account: Account, balance: number, date: string, adjustmentDescription?: string) => Promise<void>;
+  onUpdateAccountBalance: (account: Account, balance: number, date: string, adjustmentDescription?: string, adjustmentNature?: BalanceAdjustmentNature) => Promise<void>;
   onArchiveAccount: (account: Account) => void;
   onRestoreAccount: (account: Account) => void;
   onOpenInvoice: (cardId: string, period: string) => void;
@@ -90,7 +93,11 @@ export function AccountsView({
   const archivedAccounts = accounts.filter((account) => !account.isActive);
   const visibleAccounts = showArchived ? archivedAccounts : activeAccounts;
   const totalBalance = activeAccounts.reduce((sum, account) => sum + account.balance, 0);
+  const balanceFreshness = summarizeBalanceFreshness(activeAccounts, [], formatLocalDate(new Date()));
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? null;
+  const selectedAccountFreshness = selectedAccount
+    ? balanceFreshness.items.find((item) => item.id === selectedAccount.id && item.kind === 'account')
+    : undefined;
   const accountMonthlySummaries = useMemo(() => {
     return visibleAccounts.map((account) => {
       const transactionEntries = transactions.flatMap((transaction) =>
@@ -241,6 +248,17 @@ export function AccountsView({
             <div className="px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saldo atual em contas</p>
               <p className="mt-2 font-display text-3xl font-bold text-white">{formatCurrency(totalBalance)}</p>
+              {balanceFreshness.staleCount > 0 || balanceFreshness.mixedBalanceDates ? (
+                <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-400/15 bg-amber-500/10 p-3 text-[11px] font-semibold leading-relaxed text-amber-100">
+                  <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                  <span>
+                    {balanceFreshness.staleCount > 0
+                      ? `${balanceFreshness.staleCount} conta${balanceFreshness.staleCount === 1 ? '' : 's'} com saldo desatualizado. `
+                      : ''}
+                    {balanceFreshness.mixedBalanceDates ? 'O total mistura datas de conferência diferentes.' : ''}
+                  </span>
+                </div>
+              ) : null}
             </div>
             <div className="border-t border-white/8 px-4 py-3">
               <div className="flex items-center justify-between gap-3">
@@ -326,7 +344,9 @@ export function AccountsView({
                 <p className="mt-1 text-xs text-slate-500">{showArchived ? 'Contas que você parar de usar aparecerão aqui.' : 'Adicione suas contas reais para o saldo do app nascer correto.'}</p>
               </div>
             ) : (
-              accountMonthlySummaries.map(({ account, net, count }) => (
+              accountMonthlySummaries.map(({ account, net, count }) => {
+                const freshness = balanceFreshness.items.find((item) => item.id === account.id && item.kind === 'account');
+                return (
                 <article
                   key={account.id}
                   className="relative flex items-center gap-3 overflow-hidden rounded-2xl border bg-white/[0.035] p-4 transition hover:border-white/20 hover:bg-white/[0.055]"
@@ -352,9 +372,14 @@ export function AccountsView({
                     <p className="whitespace-nowrap font-mono text-sm font-bold text-white">
                       {formatCurrency(account.balance)}
                     </p>
-                    <p className="mt-1 whitespace-nowrap text-[10px] text-slate-500">
+                    <p className={`mt-1 whitespace-nowrap text-[10px] ${freshness?.isStale ? 'font-bold text-amber-200' : 'text-slate-500'}`}>
                       Conferido {formatDatePtBr(account.lastBalanceUpdate)}
                     </p>
+                    {freshness?.isStale ? (
+                      <p className="mt-1 inline-flex rounded-full border border-amber-400/15 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-100">
+                        {freshness.daysSinceUpdate} dias
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex justify-end gap-1">
                       <button
                         type="button"
@@ -394,7 +419,8 @@ export function AccountsView({
                     </div>
                   </div>
                 </article>
-              ))
+                );
+              })
             )}
           </section>
         </>
@@ -410,6 +436,12 @@ export function AccountsView({
                 <p className="mt-1 truncate text-xs text-slate-500">
                   {accountTypeLabels[selectedAccount.type]} - {selectedAccount.institution} - conferido {formatDatePtBr(selectedAccount.lastBalanceUpdate)}
                 </p>
+                {selectedAccountFreshness?.isStale ? (
+                  <p className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-400/15 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold text-amber-100">
+                    <AlertCircle size={12} />
+                    Saldo desatualizado ha {selectedAccountFreshness.daysSinceUpdate} dias
+                  </p>
+                ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
@@ -496,8 +528,8 @@ export function AccountsView({
         <AccountBalanceModal
           account={balanceAccount}
           onClose={() => setBalanceAccount(null)}
-          onSave={async (balance, date, adjustmentDescription) => {
-            await onUpdateAccountBalance(balanceAccount, balance, date, adjustmentDescription);
+          onSave={async (balance, date, adjustmentDescription, adjustmentNature) => {
+            await onUpdateAccountBalance(balanceAccount, balance, date, adjustmentDescription, adjustmentNature);
             setBalanceAccount(null);
           }}
         />
@@ -513,10 +545,11 @@ function AccountBalanceModal({
 }: {
   account: Account;
   onClose: () => void;
-  onSave: (balance: number, date: string, adjustmentDescription?: string) => Promise<void>;
+  onSave: (balance: number, date: string, adjustmentDescription?: string, adjustmentNature?: BalanceAdjustmentNature) => Promise<void>;
 }) {
   const [balance, setBalance] = useState(formatCurrencyInput(account.balance));
   const [date, setDate] = useState(formatLocalDate(new Date()));
+  const [adjustmentNature, setAdjustmentNature] = useState<BalanceAdjustmentNature>('result');
   const [adjustmentDescription, setAdjustmentDescription] = useState('');
   const [isAdjustmentDescriptionTouched, setIsAdjustmentDescriptionTouched] = useState(false);
   const [error, setError] = useState('');
@@ -546,7 +579,7 @@ function AccountBalanceModal({
 
     setIsSaving(true);
     try {
-      await onSave(parsedBalance, date, hasDifference ? adjustmentDescription : undefined);
+      await onSave(parsedBalance, date, hasDifference ? adjustmentDescription : undefined, hasDifference ? adjustmentNature : undefined);
     } catch {
       setError('Não foi possível atualizar o saldo. Tente novamente.');
     } finally {
@@ -604,18 +637,43 @@ function AccountBalanceModal({
           </label>
 
           {hasDifference ? (
-            <label className="grid gap-1 text-xs font-semibold text-slate-400">
-              Lançamento do ajuste
-              <input
-                value={adjustmentDescription}
-                onChange={(event) => {
-                  setIsAdjustmentDescriptionTouched(true);
-                  setAdjustmentDescription(event.target.value);
-                }}
-                placeholder={getDefaultBalanceAdjustmentDescription(difference)}
-                className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none placeholder:text-slate-600 focus:border-sky-400"
-              />
-            </label>
+            <div className="grid gap-3">
+              <div className="grid gap-1 text-xs font-semibold text-slate-400">
+                Natureza da diferença
+                <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-black/20 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustmentNature('result')}
+                    className={`h-10 rounded-xl text-xs font-bold transition ${adjustmentNature === 'result' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                  >
+                    Resultado real
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdjustmentNature('internal_transfer')}
+                    className={`h-10 rounded-xl text-xs font-bold transition ${adjustmentNature === 'internal_transfer' ? 'bg-white text-black' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                  >
+                    Transferência interna
+                  </button>
+                </div>
+                <p className="text-[11px] font-medium leading-relaxed text-slate-500">
+                  Use transferência interna para resgate/aplicação entre conta e caixinha. Ela explica o caixa, mas não entra como receita ou despesa do mês.
+                </p>
+              </div>
+
+              <label className="grid gap-1 text-xs font-semibold text-slate-400">
+                Lançamento do ajuste
+                <input
+                  value={adjustmentDescription}
+                  onChange={(event) => {
+                    setIsAdjustmentDescriptionTouched(true);
+                    setAdjustmentDescription(event.target.value);
+                  }}
+                  placeholder={getDefaultBalanceAdjustmentDescription(difference)}
+                  className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none placeholder:text-slate-600 focus:border-sky-400"
+                />
+              </label>
+            </div>
           ) : null}
         </div>
 
@@ -626,7 +684,9 @@ function AccountBalanceModal({
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {hasDifference
-              ? `Será criado um lançamento de ${difference > 0 ? 'entrada' : 'saída'} para explicar a diferença e a conta ficará no saldo conferido.`
+              ? adjustmentNature === 'internal_transfer'
+                ? 'Será criado um lançamento interno para explicar a diferença sem alterar receita, despesa ou resultado do mês.'
+                : `Será criado um lançamento de ${difference > 0 ? 'entrada' : 'saída'} para explicar a diferença e a conta ficará no saldo conferido.`
               : 'Sem diferença: será atualizada apenas a data da conferência.'}
           </p>
         </div>

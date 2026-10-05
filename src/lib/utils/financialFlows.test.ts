@@ -18,16 +18,19 @@ const transactions: Transaction[] = [
   { id: 'credit', description: 'Estorno', amount: 50, flow: 'expense', status: 'paid', date: '2026-06-05', categoryId: 'food', cardId: 'card', notes: writeTransactionNotes(undefined, { invoiceAdjustment: 'credit' }) },
   { id: 'invoice-payment', description: 'Pagamento fatura', amount: 500, flow: 'expense', status: 'paid', date: '2026-06-05', accountId: 'main', notes: writeTransactionNotes(undefined, { invoicePaymentCardId: 'card', invoicePaymentPeriod: '2026-06' }) },
   { id: 'transfer', description: 'Transferência', amount: 80, flow: 'transfer', status: 'paid', date: '2026-06-06', fromAccountId: 'main', toAccountId: 'reserve' },
+  { id: 'reserve-withdrawal', description: 'Resgate caixinha', amount: 145.18, flow: 'income', status: 'paid', date: '2026-06-07', accountId: 'main', notes: writeTransactionNotes(undefined, { internalTransfer: 'balance_adjustment' }) },
 ];
 
 assert.deepEqual(summarizeDashboard(accounts, transactions, '2026-06'), {
   currentBalance: 900,
-  accountInflow: 1100,
+  accountInflow: 1245.18,
   accountInflowPersonal: 1000,
   accountInflowThirdParty: 100,
+  accountInflowInternal: 145.18,
   accountOutflow: 3500,
   accountOutflowPersonal: 2000,
   accountOutflowThirdParty: 1500,
+  accountOutflowInternal: 0,
   income: 1000,
   expenses: 1450,
   settledExpenses: 1450,

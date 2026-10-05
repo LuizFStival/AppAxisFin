@@ -10,6 +10,7 @@ export type ExpenseViewFilter =
   | 'fixed'
   | 'installment'
   | 'essential'
+  | 'durable'
   | 'superfluous';
 
 export const expenseViewFilterOptions: Array<{ id: ExpenseViewFilter; label: string }> = [
@@ -20,6 +21,7 @@ export const expenseViewFilterOptions: Array<{ id: ExpenseViewFilter; label: str
   { id: 'fixed', label: 'Fixas' },
   { id: 'installment', label: 'Parceladas' },
   { id: 'essential', label: 'Essenciais' },
+  { id: 'durable', label: 'Duráveis' },
   { id: 'superfluous', label: 'Supérfluas' },
 ];
 
@@ -32,6 +34,6 @@ export function matchesExpenseViewFilter(transaction: Transaction, filter: Expen
   if (transaction.isReimbursable) return false;
 
   const meta = readTransactionMeta(transaction.notes);
-  if (filter === 'essential' || filter === 'superfluous') return meta.expenseNeed === filter;
+  if (filter === 'essential' || filter === 'durable' || filter === 'superfluous') return meta.expenseNeed === filter;
   return (meta.entryMode ?? 'variable') === filter;
 }

@@ -11,8 +11,11 @@ O usuario precisa controlar dinheiro real em varias contas, cartoes e reservas s
 O problema atual nao e apenas registrar lancamentos. O desafio e responder rapidamente:
 
 - Quanto tenho hoje?
+- Quanto realmente ganhei?
+- Para onde meu dinheiro foi?
 - O que ainda preciso pagar?
 - O que falta receber de terceiros?
+- Meu caixa cresceu ou caiu neste mes?
 - O mes esta saudável ou estou gastando mais do que deveria?
 - Meu patrimonio esta evoluindo?
 - Quais fluxos estao complexos demais no produto?
@@ -41,6 +44,10 @@ Perfil de uso atual:
 - Reembolsos por pessoa, status, valores pendentes/recebidos e recebimento parcial.
 - Metas e compromissos financeiros.
 - Relatorios com escopo geral/pessoal, fixo/parcelado/variavel, patrimonio e visao anual.
+- Resultado mensal separando receita propria, despesa propria, contas a receber e transferencias internas.
+- Variacao patrimonial estimada e alerta de confianca do saldo quando contas/caixinhas estao desatualizadas ou conferidas em datas diferentes.
+- Painel de compromissos futuros com parcelas ja assumidas, projecao por mes e mes em que o compromisso zera.
+- Natureza de gasto como essencial, bem duravel ou superfluo em lancamentos, compromissos futuros, Relatorios e CSV de prova real.
 - Notificacoes de pendencias.
 - Perfil com preferencias, categorias, exportacao e reset.
 
@@ -56,7 +63,8 @@ Perfil de uso atual:
 
 - Importacao de fatura Nubank ja existe, mas ainda precisa amadurecer investigacao/conciliação manual e experiencia de lote.
 - Ajuste de saldo cria lancamento financeiro para diferenca, mas o fluxo ainda precisa ser validado com uso real.
-- Relatorio anual/patrimonial existe, mas precisa de simplificacao visual.
+- Relatorio anual/patrimonial existe e ja diferencia resultado de competencia de variacao patrimonial; ainda pode evoluir em comparativos e historico.
+- Relatorios exportam prova real mensal, mas ainda precisam permitir exportacao multi-mes.
 - Central do Mes ja organiza acoes, mas ainda disputa papel com Home, Transacoes e Relatorios.
 - O modal de lancamento e completo, mas esta denso demais.
 

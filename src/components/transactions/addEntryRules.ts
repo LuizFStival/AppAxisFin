@@ -1,5 +1,6 @@
 import { Category } from '../../types';
 import { addMonths } from '../../lib/utils/date';
+import { expenseNeedOptions } from '../../lib/utils/expenseNeed';
 import { Layers, Repeat, TrendingDown } from 'lucide-react';
 
 export const expenseModes = [
@@ -8,10 +9,7 @@ export const expenseModes = [
   { id: 'installment' as const, label: 'Parcelada', icon: Layers },
 ];
 
-export const expenseNeedOptions = [
-  { id: 'essential' as const, label: 'Essencial' },
-  { id: 'superfluous' as const, label: 'Supérflua' },
-];
+export { expenseNeedOptions };
 
 export type PaymentSourceType = 'account' | 'card';
 

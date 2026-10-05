@@ -130,10 +130,91 @@ Critérios de aceite:
 - Sem regressao em lint/test/build.
 - Graphify nao aponta novos ciclos de importacao.
 
+### Fase 8 - Variacao patrimonial e confianca do saldo
+
+- [x] Criar indicador de variacao patrimonial mensal: patrimonio fim - patrimonio inicio - aportes externos.
+- [x] Exibir resposta executiva: "Seu caixa cresceu/caiu R$ X este mes".
+- [x] Separar resultado de competencia de variacao de patrimonio, para casos de saque/resgate de caixinha.
+- [x] Exibir badge de saldo desatualizado quando a conferencia da conta passar de 7 dias.
+- [x] Alertar quando o total de patrimonio misturar contas conferidas em datas diferentes.
+
+Critérios de aceite:
+
+- Usuario entende se o patrimonio cresceu ou caiu mesmo quando o resultado do mes foi deficitario.
+- Cada conta deixa clara sua data de conferencia.
+- Total consolidado nao parece uma foto unica quando as datas forem diferentes.
+
+### Fase 9 - Compromissos futuros e parcelas
+
+- [x] Criar painel de compromisso futuro.
+- [x] Exibir total comprometido em parcelas futuras.
+- [x] Exibir projecao mes a mes ate a ultima parcela.
+- [x] Exibir o mes em que o compromisso zera.
+- [x] Mostrar alerta de impacto no fluxo mensal e no total comprometido ao registrar parcelamento.
+
+Critérios de aceite:
+
+- Usuario sabe quanto ja assumiu para os proximos meses.
+- Ao criar uma compra parcelada, o app mostra o valor por parcela e o impacto futuro antes de salvar.
+- Parcelas futuras nao ficam escondidas dentro da lista do mes atual.
+
+### Fase 10 - Natureza das parcelas e qualidade do gasto
+
+- [x] Classificar parcela por natureza: essencial, bem duravel ou superfluo.
+- [x] Permitir editar a natureza nas parcelas existentes.
+- [x] Exibir composicao do comprometimento por natureza.
+- [x] Mostrar percentual de compromissos essenciais/duraveis vs superfluos.
+- [x] Exibir qualidade do gasto do mes em Relatorios.
+- [x] Incluir natureza da despesa na prova real CSV mensal.
+
+Critérios de aceite:
+
+- Usuario consegue responder quanto do comprometimento futuro e necessidade, patrimonio de uso ou escolha superflua.
+- Relatorios e Central do Mes conseguem destacar quando superfluos comprometem meses futuros.
+
+### Fase 11 - Evento/Projeto em todos os lancamentos
+
+- [ ] Disponibilizar campo Evento/Projeto em qualquer lancamento, nao apenas em reembolsaveis.
+- [ ] Reutilizar eventos existentes e permitir criar novo evento no fluxo de lancamento.
+- [ ] Exibir evento nas listas de transacoes, faturas e relatorios.
+- [ ] Criar filtro "excluir eventos" em comparativos mes a mes.
+
+Critérios de aceite:
+
+- Viagens, projetos e gastos extraordinarios deixam de inflar categorias recorrentes.
+- Usuario consegue comparar rotina normal com e sem eventos.
+
+### Fase 12 - Comparativos executivos com eventos
+
+- [ ] Criar comparativo mes a mes por categoria.
+- [ ] Permitir alternar comparativo com eventos e sem eventos.
+- [ ] Destacar maiores variacoes de categoria entre meses.
+- [ ] Distinguir meta de investimento realizada por sobra real do mes vs realocacao de caixa.
+
+Critérios de aceite:
+
+- Usuario entende para onde o dinheiro foi em relacao aos meses anteriores.
+- Aporte em investimento deixa claro se veio de sobra real ou apenas movimentacao de caixa.
+
+### Fase 13 - Exportacao CSV multi-mes
+
+- [ ] Permitir selecionar mais de um mes no Relatorio antes de baixar CSV.
+- [ ] Oferecer atalhos: 3 meses, 4 meses, 5 meses, 6 meses e periodo personalizado.
+- [ ] Exportar uma prova real consolidada por mes, mantendo os blocos atuais: receita propria, despesa propria, faturas, debitos, pagamentos de fatura, reembolsos, transferencias internas e patrimonio.
+- [ ] Incluir aba/bloco de resumo consolidado do periodo.
+
+Critérios de aceite:
+
+- Usuario consegue baixar varios meses sem repetir exportacao manual mes a mes.
+- Cada mes continua auditavel individualmente.
+- O consolidado mostra totais do periodo sem misturar reembolso, transferencia interna e receita propria.
+
 ## Backlog priorizado
 
 ### P0 - Critico
 
+- [x] Separar transferencia interna de receita/despesa no resultado mensal.
+- [x] Separar receita propria de reembolso esperado em relatorios, transacoes e CSV de prova real.
 - [x] Documentar workaround confiavel do Graphify/uv no Windows.
 - [x] Revalidar fluxos de parcelamento, reembolso e importacao CSV cobertos por testes automatizados.
 - [x] Confirmar que ajuste manual de saldo cria lancamento explicativo quando houver diferenca.
@@ -142,6 +223,12 @@ Critérios de aceite:
 
 ### P1 - Produto
 
+- [x] Fase 8: indicador de variacao patrimonial mensal e badge de saldo desatualizado.
+- [x] Fase 9: painel de compromisso futuro e impacto de parcelamento.
+- [x] Fase 10: natureza das parcelas.
+- [ ] Fase 11: evento/projeto em todos os lancamentos.
+- [ ] Fase 12: comparativos executivos com e sem eventos.
+- [ ] Fase 13: exportacao CSV multi-mes.
 - [x] Reorganizar navegacao.
 - [x] Simplificar modal de lancamento.
 - [x] Reformatar Relatorios.
@@ -187,12 +274,11 @@ Critérios de aceite:
 
 ## Proximas acoes
 
-1. Validar a navegacao reorganizada no uso real.
-2. Validar Fase 4A em uso real: leitura de Mes, Ano, Patrimonio e CSV.
-3. Validar Fase 5 no uso real: resolver faturas, contas, reembolsos e fixas sem sair da Central.
-4. Validar Fase 6 no uso real: exclusoes, arquivamentos, series fixas e metas devem usar modal interno.
-5. Continuar Fase 7: extrair blocos grandes sem mudar regra financeira.
-6. Executar uma tarefa por vez seguindo Descobrir, Nortear, Especificar e Evidenciar.
+1. Executar Fase 11: evento/projeto em todos os lancamentos.
+2. Executar Fase 12: comparativos executivos com e sem eventos.
+3. Executar Fase 13: exportacao CSV multi-mes.
+4. Continuar Fase 7 em paralelo apenas quando a mudanca tocar arquivos centrais demais.
+5. Executar uma tarefa por vez seguindo Descobrir, Nortear, Especificar e Evidenciar.
 
 ## Pontos a complementar
 

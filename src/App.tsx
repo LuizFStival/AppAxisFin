@@ -223,12 +223,19 @@ export default function App() {
     showFeedback({ title: 'Conta criada', description: `${saved.name} entrou no seu patrimônio.`, tone: 'success' });
   }
 
-  async function handleUpdateAccountBalance(account: FinanceSnapshot['accounts'][number], balance: number, date: string = formatLocalDate(new Date()), adjustmentDescription?: string) {
+  async function handleUpdateAccountBalance(
+    account: FinanceSnapshot['accounts'][number],
+    balance: number,
+    date: string = formatLocalDate(new Date()),
+    adjustmentDescription?: string,
+    adjustmentNature?: 'result' | 'internal_transfer',
+  ) {
     const adjustment = buildAccountBalanceAdjustmentTransaction({
       account,
       balance,
       date,
       description: adjustmentDescription,
+      adjustmentNature,
     });
     const savedAdjustment = adjustment ? await transactionRepository.create(adjustment) : undefined;
     const saved = await accountRepository.updateBalance(account.id, balance, date);
@@ -1218,6 +1225,7 @@ export default function App() {
           categories={snapshot.categories}
           transactions={snapshot.transactions}
           reserveBoxes={snapshot.reserveBoxes}
+          reserveBoxMovements={snapshot.reserveBoxMovements}
           activeMonth={activeMonth}
           summary={summary}
           savingsPreferences={user}
@@ -1453,6 +1461,7 @@ export default function App() {
           month={activeMonth}
           accounts={snapshot.accounts}
           reserveBoxes={snapshot.reserveBoxes}
+          reserveBoxMovements={snapshot.reserveBoxMovements}
           cards={snapshot.cards}
           transactions={snapshot.transactions}
           categories={snapshot.categories}

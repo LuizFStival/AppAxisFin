@@ -973,13 +973,14 @@ export function AddEntryModal({ isOpen, accounts, cards, categories, reimburseme
                   {hasPersonalExpenseShare ? (
                     <div className="grid gap-2 text-sm font-semibold text-slate-200 md:col-span-6">
                       Natureza
-                      <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-white/10 bg-black/20 p-1.5">
+                      <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-black/20 p-1.5">
                         {expenseNeedOptions.map((option) => (
                           <button
                             key={option.id}
                             type="button"
                             onClick={() => setExpenseNeed(option.id)}
-                            className={`h-10 rounded-xl text-xs font-bold transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
+                            title={option.description}
+                            className={`min-h-10 rounded-xl px-1.5 text-xs font-bold leading-tight transition ${expenseNeed === option.id ? 'premium-metal text-white' : 'text-slate-400 hover:bg-white/5'}`}
                           >
                             {option.label}
                           </button>

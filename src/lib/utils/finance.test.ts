@@ -152,9 +152,11 @@ assert.deepEqual(summary, {
   accountInflow: 5000,
   accountInflowPersonal: 5000,
   accountInflowThirdParty: 0,
+  accountInflowInternal: 0,
   accountOutflow: 350,
   accountOutflowPersonal: 350,
   accountOutflowThirdParty: 0,
+  accountOutflowInternal: 0,
   income: 5800,
   expenses: 1682.64,
   settledExpenses: 350,
@@ -304,6 +306,47 @@ const monthlyResultWithReimbursements = summarizeMonthlyResult([
   },
 ], '2026-06');
 assert.equal(monthlyResultWithReimbursements.result, 300);
+assert.equal(monthlyResultWithReimbursements.income, 1000);
+assert.equal(monthlyResultWithReimbursements.reimbursementsExpected, 250);
+assert.equal(monthlyResultWithReimbursements.personalExpenses, 700);
+assert.equal(monthlyResultWithReimbursements.thirdPartyExpenses, 250);
+assert.equal(monthlyResultWithReimbursements.totalInflows, 1000);
+assert.equal(monthlyResultWithReimbursements.totalOutflows, 700);
+
+const monthlyResultWithInternalTransfer = summarizeMonthlyResult([
+  {
+    id: 'salary-with-transfer',
+    description: 'Salario',
+    amount: 4490.57,
+    flow: 'income',
+    status: 'paid',
+    date: '2026-09-05',
+    accountId: 'acc-main',
+  },
+  {
+    id: 'reserve-withdrawal-adjustment',
+    description: 'Resgate Dolar',
+    amount: 145.18,
+    flow: 'income',
+    status: 'paid',
+    date: '2026-09-11',
+    accountId: 'acc-main',
+    notes: writeTransactionNotes(undefined, { internalTransfer: 'balance_adjustment' }),
+  },
+  {
+    id: 'expense-with-transfer',
+    description: 'Despesa propria',
+    amount: 5248.83,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-09-12',
+    accountId: 'acc-main',
+  },
+], '2026-09');
+assert.equal(monthlyResultWithInternalTransfer.income, 4490.57);
+assert.equal(monthlyResultWithInternalTransfer.totalInflows, 4490.57);
+assert.equal(monthlyResultWithInternalTransfer.result, -758.26);
+
 const cardReimbursementByInvoiceMonth = summarizeMonthlyResult([
   {
     id: 'may-third-party-card',
@@ -505,12 +548,21 @@ const filterTransactions: Transaction[] = [
     notes: writeTransactionNotes(undefined, { entryMode: 'installment', expenseNeed: 'superfluous' }),
   },
   {
+    id: 'filter-fixed-durable',
+    description: 'Notebook',
+    amount: 70,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-06-12',
+    notes: writeTransactionNotes(undefined, { entryMode: 'fixed', expenseNeed: 'durable' }),
+  },
+  {
     id: 'filter-others',
     description: 'Compra para terceiro',
     amount: 60,
     flow: 'expense',
     status: 'paid',
-    date: '2026-06-12',
+    date: '2026-06-13',
     isReimbursable: true,
   },
   {
@@ -519,7 +571,7 @@ const filterTransactions: Transaction[] = [
     amount: 500,
     flow: 'expense',
     status: 'paid',
-    date: '2026-06-13',
+    date: '2026-06-14',
     notes: writeTransactionNotes(undefined, {
       invoicePaymentCardId: 'card-main',
       invoicePaymentPeriod: '2026-06',
@@ -531,16 +583,18 @@ assert.equal(matchesExpenseViewFilter(filterTransactions[0], 'variable'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[0], 'essential'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'installment'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[1], 'superfluous'), true);
-assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'others'), true);
-assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'personal'), false);
+assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'fixed'), true);
+assert.equal(matchesExpenseViewFilter(filterTransactions[2], 'durable'), true);
+assert.equal(matchesExpenseViewFilter(filterTransactions[3], 'others'), true);
 assert.equal(matchesExpenseViewFilter(filterTransactions[3], 'personal'), false);
-assert.equal(getTransactionPersonalAmount(filterTransactions[3]), 0);
+assert.equal(matchesExpenseViewFilter(filterTransactions[4], 'personal'), false);
+assert.equal(getTransactionPersonalAmount(filterTransactions[4]), 0);
 assert.deepEqual(
   summarizeExpenseBreakdown(filterTransactions.filter((transaction) => !transaction.isReimbursable))
     .map(({ key, total, count }) => ({ key, total, count })),
   [
     { key: 'installment', total: 80, count: 1 },
-    { key: 'fixed', total: 0, count: 0 },
+    { key: 'fixed', total: 70, count: 1 },
     { key: 'variable', total: 120, count: 1 },
   ],
 );

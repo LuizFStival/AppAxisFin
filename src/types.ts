@@ -2,7 +2,7 @@ export type MoneyFlow = 'income' | 'expense' | 'transfer';
 export type EntryStatus = 'paid' | 'pending';
 export type ExpenseEntryMode = 'variable' | 'fixed' | 'installment';
 export type EditSeriesScope = 'single' | 'forward';
-export type ExpenseNeed = 'essential' | 'superfluous';
+export type ExpenseNeed = 'essential' | 'durable' | 'superfluous';
 export type ReimbursementStatus = 'pending' | 'received';
 export type ExpenseSplitMode = 'none' | 'shared' | 'third_party_full';
 export type AccountType = 'checking' | 'savings' | 'cash' | 'investment';
@@ -179,6 +179,7 @@ export interface RecurringTransaction {
 export interface TransactionMeta {
   entryMode?: ExpenseEntryMode;
   expenseNeed?: ExpenseNeed;
+  internalTransfer?: 'account_transfer' | 'reserve_box' | 'balance_adjustment';
   invoiceAdjustment?: 'credit';
   reimbursementOriginalAmount?: number;
   reimbursementPayments?: Array<{ amount: number; accountId: string; date: string }>;
@@ -235,9 +236,11 @@ export interface DashboardSummary {
   accountInflow: number;
   accountInflowPersonal: number;
   accountInflowThirdParty: number;
+  accountInflowInternal: number;
   accountOutflow: number;
   accountOutflowPersonal: number;
   accountOutflowThirdParty: number;
+  accountOutflowInternal: number;
   income: number;
   expenses: number;
   settledExpenses: number;

@@ -32,8 +32,38 @@ const people: ReimbursementPerson[] = [
 
 const transactions: Transaction[] = [
   { id: 'salary', description: 'Salario', amount: 1000, flow: 'income', status: 'paid', date: '2026-09-05', accountId: 'acc-main', categoryId: 'income' },
-  { id: 'account-expense', description: 'Internet', amount: 80, flow: 'expense', status: 'paid', date: '2026-09-10', accountId: 'acc-main', categoryId: 'food' },
-  { id: 'card-personal', description: 'Mercado cartao', amount: 300, flow: 'expense', status: 'paid', date: '2026-09-12', cardId: card.id, categoryId: 'food' },
+  {
+    id: 'reserve-withdrawal',
+    description: 'Resgate Dolar',
+    amount: 145.18,
+    flow: 'income',
+    status: 'paid',
+    date: '2026-09-20',
+    accountId: 'acc-main',
+    notes: writeTransactionNotes(undefined, { internalTransfer: 'balance_adjustment' }),
+  },
+  {
+    id: 'account-expense',
+    description: 'Internet',
+    amount: 80,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-09-10',
+    accountId: 'acc-main',
+    categoryId: 'food',
+    notes: writeTransactionNotes(undefined, { expenseNeed: 'essential' }),
+  },
+  {
+    id: 'card-personal',
+    description: 'Mercado cartao',
+    amount: 300,
+    flow: 'expense',
+    status: 'paid',
+    date: '2026-09-12',
+    cardId: card.id,
+    categoryId: 'food',
+    notes: writeTransactionNotes(undefined, { expenseNeed: 'durable' }),
+  },
   {
     id: 'card-shared',
     description: 'Ticket viagem',
@@ -77,11 +107,23 @@ const rows = buildMonthlyProofReportRows({
   visualScopeLabel: 'Geral',
 });
 
-const summaryOutflow = rows.find((row) => row[0] === 'Resumo do mes' && row[7] === 'Saidas totais');
+const summaryIncome = rows.find((row) => row[0] === 'Resumo do mes' && row[7] === 'Receita propria');
+assert.ok(summaryIncome);
+assert.equal(summaryIncome[9], '1000,00');
+
+const summaryOutflow = rows.find((row) => row[0] === 'Resumo do mes' && row[7] === 'Despesas proprias');
 assert.ok(summaryOutflow);
-assert.equal(summaryOutflow[9], '-500,00');
+assert.equal(summaryOutflow[9], '-430,00');
 assert.equal(summaryOutflow[10], '-430,00');
-assert.equal(summaryOutflow[11], '-70,00');
+
+const thirdPartyOutflow = rows.find((row) => row[0] === 'Resumo do mes' && row[7] === 'Gasto pago para terceiros');
+assert.ok(thirdPartyOutflow);
+assert.equal(thirdPartyOutflow[9], '-70,00');
+
+const internalTransfer = rows.find((row) => row[0] === 'Transferencias internas' && row[7] === 'Resgate Dolar');
+assert.ok(internalTransfer);
+assert.equal(internalTransfer[9], '145,18');
+assert.match(String(internalTransfer[12]), /Nao entra como receita/);
 
 const invoicePayment = rows.find((row) => row[0] === 'Pagamentos de fatura' && row[7] === 'Pagamento da fatura NuCredito');
 assert.ok(invoicePayment);
@@ -93,6 +135,15 @@ assert.ok(invoiceSummary);
 assert.equal(invoiceSummary[9], '-420,00');
 assert.equal(invoiceSummary[10], '-350,00');
 assert.equal(invoiceSummary[11], '-70,00');
+
+const durableNature = rows.find((row) => row[0] === 'Despesas por natureza' && row[1] === 'Bem durável');
+assert.ok(durableNature);
+assert.equal(durableNature[9], '-300,00');
+assert.match(String(durableNature[12]), /Bem duravel/);
+
+const cardItem = rows.find((row) => row[0] === 'Itens de fatura' && row[7] === 'Mercado cartao');
+assert.ok(cardItem);
+assert.match(String(cardItem[12]), /Natureza: Bem durável/);
 
 const reimbursement = rows.find((row) => row[0] === 'Reembolsos' && row[6] === 'Viagem BC');
 assert.ok(reimbursement);

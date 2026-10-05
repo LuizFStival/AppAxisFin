@@ -2,6 +2,8 @@ import { Account, Card, Category, ReimbursementPerson, ReserveBox, Transaction }
 import { getCardInvoiceInfoForClosingMonth } from './cardInvoices';
 import { formatDatePtBr } from './date';
 import { summarizeExpenseBreakdown } from './expenseBreakdown';
+import { getExpenseNeedLabel } from './expenseNeed';
+import { summarizeExpenseNeed } from './expenseNeedSummary';
 import {
   expensesByCategory,
   formatMonthLabel,
@@ -15,8 +17,10 @@ import {
   getTransactionReimbursementBaseAmount,
   getTransactionReimbursementReceivedAmount,
   isCardInvoicePaid,
+  isInternalTransfer,
   isInvoiceCredit,
   isInvoicePayment,
+  isOwnIncome,
   isThirdPartyExpense,
   roundMoney,
   summarizeMonthlyResult,
@@ -119,7 +123,8 @@ export function buildMonthlyProofReportRows(input: {
     isInvoicePayment(transaction)
     && readTransactionMeta(transaction.notes).invoicePaymentPeriod === month
   );
-  const incomeTransactions = cashTransactions.filter((transaction) => transaction.flow === 'income');
+  const incomeTransactions = cashTransactions.filter(isOwnIncome);
+  const internalTransfers = cashTransactions.filter(isInternalTransfer);
   const reimbursementTransactions = transactions
     .filter(isThirdPartyExpense)
     .filter((transaction) => reimbursementsEnabled && getReimbursementMonthKey(transaction, cards) === month);
@@ -136,6 +141,7 @@ export function buildMonthlyProofReportRows(input: {
     })
     .filter((item) => item.invoiceTransactions.length > 0 || invoicePayments.some((payment) => readTransactionMeta(payment.notes).invoicePaymentCardId === item.card.id));
   const expenseBreakdown = summarizeExpenseBreakdown(personalExpenseTransactions, getPersonalExpenseSignedAmount);
+  const expenseNeedSummary = summarizeExpenseNeed(personalExpenseTransactions, getPersonalExpenseSignedAmount);
   const categoryRows = expensesByCategory(transactions, categories, month, cards);
   const currentAccountsBalance = roundMoney(accounts.filter((account) => account.isActive).reduce((sum, account) => sum + account.balance, 0));
   const currentReserveBalance = roundMoney(reserveBoxes.filter((box) => box.isActive).reduce((sum, box) => sum + box.currentBalance, 0));
@@ -149,16 +155,15 @@ export function buildMonthlyProofReportRows(input: {
     Observacao: visualScopeLabel,
   }));
   rows.push(csvRow('Resumo do mes', 'Metricas principais', {
-    Descricao: 'Entradas totais',
+    Descricao: 'Receita propria',
     Valor: money(monthlyResult.totalInflows),
-    Observacao: 'Receitas + reembolsos esperados quando habilitados.',
+    Observacao: 'Somente dinheiro realmente ganho. Nao inclui reembolso nem transferencia interna.',
   }));
   rows.push(csvRow('Resumo do mes', 'Metricas principais', {
-    Descricao: 'Saidas totais',
+    Descricao: 'Despesas proprias',
     Valor: money(-monthlyResult.totalOutflows),
     'Meu valor': money(-monthlyResult.personalExpenses),
-    Terceiros: money(-monthlyResult.thirdPartyExpenses),
-    Observacao: 'Nao inclui pagamento de fatura para evitar dupla contagem com compras do cartao.',
+    Observacao: 'Nao inclui pagamento de fatura, valores de terceiros nem transferencia interna.',
   }));
   rows.push(csvRow('Resumo do mes', 'Metricas principais', {
     Descricao: 'Resultado',
@@ -168,12 +173,17 @@ export function buildMonthlyProofReportRows(input: {
   rows.push(csvRow('Resumo do mes', 'Metricas principais', {
     Descricao: 'Taxa de economia',
     Valor: percent(savingsRate),
-    Observacao: 'Percentual do resultado sobre entradas totais.',
+    Observacao: 'Percentual do resultado sobre receita propria.',
   }));
   rows.push(csvRow('Resumo do mes', 'Reembolsos', {
-    Descricao: 'Reembolsos esperados',
+    Descricao: 'Contas a receber de terceiros',
     Valor: money(monthlyResult.reimbursementsExpected),
     Observacao: reimbursementsEnabled ? 'Valores de terceiros vinculados ao mes.' : 'Fluxo de reembolso desabilitado.',
+  }));
+  rows.push(csvRow('Resumo do mes', 'Reembolsos', {
+    Descricao: 'Gasto pago para terceiros',
+    Valor: money(-monthlyResult.thirdPartyExpenses),
+    Observacao: 'Saiu do caixa, mas nao e despesa propria do resultado.',
   }));
 
   categoryRows.forEach((item) => {
@@ -189,6 +199,21 @@ export function buildMonthlyProofReportRows(input: {
       Descricao: `${item.count} lancamento${item.count === 1 ? '' : 's'}`,
       Valor: money(-item.total),
       'Meu valor': money(-item.total),
+    }));
+  });
+
+  expenseNeedSummary.forEach((item) => {
+    rows.push(csvRow('Despesas por natureza', item.label, {
+      Descricao: `${item.count} lancamento${item.count === 1 ? '' : 's'}; ${percent(item.percent)}% das despesas proprias.`,
+      Valor: money(-item.total),
+      'Meu valor': money(-item.total),
+      Observacao: item.key === 'durable'
+        ? 'Bem duravel: compra que vira patrimonio de uso ou melhora estrutural.'
+        : item.key === 'superfluous'
+          ? 'Superflua: escolha de consumo que pode ser reduzida ou adiada.'
+          : item.key === 'essential'
+            ? 'Essencial: necessidade recorrente ou gasto inevitavel.'
+            : 'Sem natureza informada no lancamento.',
     }));
   });
 
@@ -220,7 +245,7 @@ export function buildMonthlyProofReportRows(input: {
           Valor: money(-getExpenseSignedAmount(transaction)),
           'Meu valor': money(-getPersonalExpenseSignedAmount(transaction)),
           Terceiros: money(-getTransactionReimbursementAmount(transaction)),
-          Observacao: `${entryModeLabel(transaction)}${isInvoiceCredit(transaction) ? '; credito/estorno' : ''}`,
+          Observacao: `${entryModeLabel(transaction)}; Natureza: ${getExpenseNeedLabel(readTransactionMeta(transaction.notes).expenseNeed ?? 'unclassified')}${isInvoiceCredit(transaction) ? '; credito/estorno' : ''}`,
         }));
       });
   });
@@ -237,7 +262,22 @@ export function buildMonthlyProofReportRows(input: {
         Descricao: transaction.description,
         Status: transaction.status,
         Valor: money(transaction.amount),
-        Observacao: 'Entrada financeira do mes.',
+        Observacao: 'Receita propria do mes.',
+      }));
+    });
+
+  internalTransfers
+    .slice()
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .forEach((transaction) => {
+      rows.push(csvRow('Transferencias internas', transaction.flow === 'transfer' ? 'Entre contas' : 'Ajuste de saldo', {
+        Data: transaction.date,
+        Competencia: getFinancialMonthKey(transaction),
+        Origem: getPaymentSource(accounts, cards, transaction),
+        Descricao: transaction.description,
+        Status: transaction.status,
+        Valor: money(transaction.amount),
+        Observacao: 'Movimentacao entre bolsos do proprio usuario. Nao entra como receita nem despesa.',
       }));
     });
 
@@ -256,7 +296,7 @@ export function buildMonthlyProofReportRows(input: {
         Valor: money(-transaction.amount),
         'Meu valor': money(-getPersonalExpenseSignedAmount(transaction)),
         Terceiros: money(-getTransactionReimbursementAmount(transaction)),
-        Observacao: entryModeLabel(transaction),
+        Observacao: `${entryModeLabel(transaction)}; Natureza: ${getExpenseNeedLabel(readTransactionMeta(transaction.notes).expenseNeed ?? 'unclassified')}`,
       }));
     });
 

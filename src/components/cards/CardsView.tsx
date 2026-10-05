@@ -7,6 +7,7 @@ import { formatDatePtBr, formatLocalDate, formatShortDatePtBr } from '../../lib/
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { ExpenseViewFilter, matchesExpenseViewFilter } from '../../lib/utils/expenseFilters';
+import { getExpenseNeedLabel, getExpenseNeedTagClass } from '../../lib/utils/expenseNeed';
 import { CardInvoiceActions } from './CardInvoiceActions';
 import { ExpenseFilterChips } from '../shared/ExpenseFilterChips';
 import { CollapsibleSearch } from '../shared/CollapsibleSearch';
@@ -70,22 +71,10 @@ function getEntryModeLabel(entryMode?: string) {
   return 'Variável';
 }
 
-function getExpenseNeedLabel(expenseNeed?: string) {
-  if (expenseNeed === 'essential') return 'Essencial';
-  if (expenseNeed === 'superfluous') return 'Supérflua';
-  return '';
-}
-
 function getEntryModeTagClass(entryMode?: string) {
   if (entryMode === 'installment') return 'border-violet-400/20 bg-violet-500/15 text-violet-100';
   if (entryMode === 'fixed') return 'border-amber-400/20 bg-amber-500/15 text-amber-100';
   return 'border-sky-400/20 bg-sky-500/15 text-sky-100';
-}
-
-function getExpenseNeedTagClass(expenseNeed?: string) {
-  if (expenseNeed === 'essential') return 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100';
-  if (expenseNeed === 'superfluous') return 'border-rose-400/20 bg-rose-500/15 text-rose-100';
-  return 'border-slate-400/20 bg-slate-500/15 text-slate-100';
 }
 
 function getReimbursementPersonName(people: ReimbursementPerson[], personId?: string) {

@@ -1,14 +1,14 @@
 # AxisFin Graphify Map
 
-Atualizado em 2026-10-02 a partir de `src/graphify-out/GRAPH_REPORT.md`.
+Atualizado em 2026-10-04 a partir de `src/graphify-out/GRAPH_REPORT.md`.
 
 ## Resultado do Mapeamento
 
 - Escopo analisado: `src/`
 - Arquivos de código: 113
-- Nós no grafo: 942
-- Conexões: 3431
-- Comunidades: 36
+- Nós no grafo: 974
+- Conexões: 3554
+- Comunidades: 41
 - Custo de tokens: 0 input / 0 output
 - Ciclos de importação: nenhum detectado
 
@@ -124,6 +124,25 @@ Prioridades sugeridas:
 - Download de Relatorios passou a gerar prova real mensal com resumo, faturas, itens, entradas, debitos, pagamentos de fatura, reembolsos e patrimonio atual.
 - O comando `npm.cmd run graphify:src` falhou no sandbox por `_socket` e o wrapper `graphify` falhou no terminal aprovado por politica do Windows (`os error 4551`).
 - Regerado o grafo incremental via fallback `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify src` e `cluster-only src`: 942 nos, 3431 conexoes, 36 comunidades e nenhum ciclo de importacao detectado.
+
+### 2026-10-03
+
+- Resultado mensal passou a separar receita propria, despesa propria, contas a receber e transferencias internas.
+- Ajuste manual de saldo ganhou escolha entre resultado real e transferencia interna para explicar resgates/aplicacoes sem inflar receita.
+- CSV de prova real mensal passou a listar transferencias internas em bloco separado.
+- Regerado o grafo incremental via `npm.cmd run graphify:src` fora do sandbox/aprovado: 950 nos, 3458 conexoes, 47 comunidades e nenhum ciclo de importacao detectado.
+
+### 2026-10-04
+
+- Fase 8 adicionou helper de patrimonio para variacao mensal estimada e confianca do saldo.
+- Home, Relatorios e Contas passaram a usar a mesma leitura de patrimonio, saldo desatualizado e alerta de datas misturadas.
+- Regerado o grafo incremental via `npm.cmd run graphify:src` fora do sandbox/aprovado: 966 nos, 3518 conexoes, 39 comunidades e nenhum ciclo de importacao detectado.
+- Fase 9 adicionou helper de compromissos futuros para parcelas assumidas depois do mes selecionado.
+- Central do Mes ganhou painel de total futuro, projecao mensal e mes de zeragem; o modal de lancamento passou a mostrar impacto futuro do parcelamento.
+- Regerado o grafo incremental via `npm.cmd run graphify:src` fora do sandbox/aprovado: 974 nos, 3554 conexoes, 41 comunidades e nenhum ciclo de importacao detectado.
+- Fase 10 adicionou helpers de natureza do gasto para padronizar essencial, bem duravel, superfluo e sem natureza entre modal, Central, Relatorios e CSV.
+- Regerado o grafo incremental via `npm.cmd run graphify:src` fora do sandbox/aprovado: 986 nos, 3617 conexoes, 46 comunidades e nenhum ciclo de importacao detectado.
+- Observacao: o Graphify avisou que o conjunto de comunidades mudou desde a rotulagem anterior; 41 nomes foram reaproveitados pelo hub ate uma futura rodada de `graphify label`.
 
 ## Funcionalidades Para Reorganizar
 

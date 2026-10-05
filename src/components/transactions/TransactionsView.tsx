@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronUp, Circle, CreditCard, Landmark, Pencil, Trash2, UserRound, X } from 'lucide-react';
 import { Account, Card, Category, DashboardTransactionFilter, ReimbursementPerson, Transaction, TransactionTab } from '../../types';
-import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, getPendingInvoiceSummaries, getPersonalExpenseSignedAmount, getTransactionCompetenceMonth, getTransactionPersonalAmount, getTransactionReimbursementAmount, getTransactionReimbursementReceivedAmount, isInvoiceCredit, isInvoicePayment, isPendingAccountExpense, isThirdPartyExpense, shiftMonthKey, summarizeMonthlyResult } from '../../lib/utils/finance';
+import { formatCurrency, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource, getPendingInvoiceSummaries, getPersonalExpenseSignedAmount, getTransactionCompetenceMonth, getTransactionPersonalAmount, getTransactionReimbursementAmount, getTransactionReimbursementReceivedAmount, isInternalTransfer, isInvoiceCredit, isInvoicePayment, isOwnIncome, isPendingAccountExpense, isThirdPartyExpense, shiftMonthKey, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
 import { ExpenseViewFilter } from '../../lib/utils/expenseFilters';
+import { getExpenseNeedLabel } from '../../lib/utils/expenseNeed';
 import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
 import { ExpenseFilterChips } from '../shared/ExpenseFilterChips';
 import { CollapsibleSearch } from '../shared/CollapsibleSearch';
@@ -45,6 +46,7 @@ const personalExpenseOptions: Array<{ id: ExpenseViewFilter; label: string }> = 
   { id: 'fixed', label: 'Fixas' },
   { id: 'installment', label: 'Parceladas' },
   { id: 'essential', label: 'Essenciais' },
+  { id: 'durable', label: 'Duráveis' },
   { id: 'superfluous', label: 'Supérfluas' },
 ];
 
@@ -68,19 +70,19 @@ const movementFilters: Array<{ id: MovementFilter; label: string }> = [
 function matchesScopedExpenseFilter(transaction: Transaction, filter: ExpenseViewFilter) {
   if (filter === 'personal') return true;
   const meta = readTransactionMeta(transaction.notes);
-  if (filter === 'essential' || filter === 'superfluous') return meta.expenseNeed === filter;
+  if (filter === 'essential' || filter === 'durable' || filter === 'superfluous') return meta.expenseNeed === filter;
   return (meta.entryMode ?? 'variable') === filter;
 }
 
 function matchesDashboardFilter(transaction: Transaction, selectedMonth: string, filter: DashboardTransactionFilter, cards: Card[]) {
   if (filter === 'received') {
-    return transaction.flow === 'income' && transaction.status === 'paid' && getFinancialMonthKey(transaction) === selectedMonth;
+    return isOwnIncome(transaction) && transaction.status === 'paid' && getFinancialMonthKey(transaction) === selectedMonth;
   }
   if (getTransactionCompetenceMonth(transaction, cards) !== selectedMonth) return false;
-  if (filter === 'income') return transaction.flow === 'income';
+  if (filter === 'income') return isOwnIncome(transaction);
   if (filter === 'expenses') return transaction.flow === 'expense' && getTransactionPersonalAmount(transaction) > 0 && !isInvoicePayment(transaction);
   if (filter === 'reimbursements') return isThirdPartyExpense(transaction);
-  if (filter === 'result') return !isInvoicePayment(transaction);
+  if (filter === 'result') return !isInvoicePayment(transaction) && !isInternalTransfer(transaction);
   return transaction.flow === 'expense' && transaction.status === 'paid' && !transaction.cardId;
 }
 
@@ -250,7 +252,7 @@ export function TransactionsView({
   const viewTotal = useMemo(() => {
     if (dashboardDetailFilter === 'received') {
       const transactionTotal = filteredTransactions.reduce((sum, transaction) => {
-        if (transaction.flow === 'income') return sum + transaction.amount;
+        if (isOwnIncome(transaction)) return sum + transaction.amount;
         return sum;
       }, 0);
       return transactionTotal + receivedReimbursementGroups.reduce((sum, group) => sum + group.total, 0);
@@ -263,7 +265,8 @@ export function TransactionsView({
     }
     const transactionTotal = filteredTransactions.reduce((sum, transaction) => {
       if (isInvoicePayment(transaction)) return sum;
-      if (transaction.flow === 'income') return sum + transaction.amount;
+      if (isInternalTransfer(transaction)) return sum;
+      if (isOwnIncome(transaction)) return sum + transaction.amount;
       if (isInvoiceCredit(transaction)) return sum + transaction.amount;
       if (transaction.flow === 'expense' && expenseScope === 'personal') return sum - getPersonalExpenseSignedAmount(transaction);
       if (transaction.flow === 'expense' && expenseScope === 'others') return sum - getTransactionReimbursementAmount(transaction);
@@ -285,7 +288,7 @@ export function TransactionsView({
   }, [sourceTransactions]);
   const incomeTotal = useMemo(() => {
     return sourceTransactions.reduce((sum, transaction) => {
-      if (transaction.flow === 'income') return sum + transaction.amount;
+      if (isOwnIncome(transaction)) return sum + transaction.amount;
       return sum;
     }, 0);
   }, [sourceTransactions]);
@@ -321,9 +324,9 @@ export function TransactionsView({
     + receivedReimbursementGroups.length
     + (movementFilter === 'pending' ? pendingInvoiceSummaries.length : 0);
   const totalLabel = movementFilter === 'income'
-    ? 'Total de entradas'
+    ? 'Receita própria'
     : movementFilter === 'expenses'
-      ? 'Total de saídas'
+      ? 'Despesa própria'
       : movementFilter === 'pending'
         ? 'Pendências do mês'
       : expenseScope === 'all'
@@ -432,7 +435,7 @@ export function TransactionsView({
           </div>
           <div className="grid grid-cols-2 border-t border-white/8">
             <div className="px-3 py-2.5">
-              <p className="text-[9px] font-semibold uppercase tracking-widest text-emerald-300">Total de entradas</p>
+              <p className="text-[9px] font-semibold uppercase tracking-widest text-emerald-300">Receita própria</p>
               <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(totalInflows)}</p>
             </div>
             <div className="border-l border-white/8 px-3 py-2.5">
@@ -455,7 +458,7 @@ export function TransactionsView({
                 <p className="text-[9px] font-semibold uppercase tracking-widest text-emerald-300">Composição das entradas</p>
                 <div className="mt-2 space-y-1.5 text-[10px]">
                 <div className="flex items-center justify-between gap-2 text-slate-500">
-                  <span>Receitas</span>
+                  <span>Receita própria</span>
                   <span className="font-mono text-slate-300">{formatCurrency(incomeTotal)}</span>
                 </div>
                   {reimbursementsEnabled ? (
@@ -623,7 +626,7 @@ export function TransactionsView({
           const isPaid = transaction.status === 'paid';
           const meta = readTransactionMeta(transaction.notes);
           const isInvoiceSettled = Boolean(meta.paidAt && meta.paidFromAccountId);
-          const expenseNeedLabel = transaction.isReimbursable ? '' : meta.expenseNeed === 'essential' ? 'Essencial' : meta.expenseNeed === 'superfluous' ? 'Supérflua' : '';
+          const expenseNeedLabel = transaction.isReimbursable ? '' : getExpenseNeedLabel(meta.expenseNeed);
           const sourceLabel = getPaymentSource(accounts, cards, transaction);
           return (
             <article

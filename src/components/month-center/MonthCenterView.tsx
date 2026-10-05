@@ -24,6 +24,8 @@ import {
 import { getCardInvoiceInfo, getCardInvoiceInfoForClosingMonth } from '../../lib/utils/cardInvoices';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { getReimbursementMonthKey, isReimbursementOverdue } from '../../lib/utils/reimbursements';
+import { summarizeFutureInstallmentCommitments } from '../../lib/utils/futureCommitments';
+import { getExpenseNeedShortLabel, getExpenseNeedToneClass } from '../../lib/utils/expenseNeed';
 import { getTransactionExpenseNeed, getTransactionInstallmentLabel, hasInvoiceSettlementMeta, hasRecurringSourceMeta } from '../../lib/utils/transactionMeta';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { CardInvoiceActions } from '../cards/CardInvoiceActions';
@@ -247,6 +249,9 @@ export function MonthCenterView({
   const accountExpenseTotal = roundMoney(pendingAccountExpenses.reduce((sum, item) => sum + item.amount, 0));
   const fixedExpenseTotal = roundMoney(fixedExpenses.reduce((sum, item) => sum + getPersonalExpenseSignedAmount(item), 0));
   const installmentExpenseTotal = roundMoney(installmentExpenses.reduce((sum, item) => sum + getPersonalExpenseSignedAmount(item), 0));
+  const futureInstallmentCommitments = useMemo(() => (
+    summarizeFutureInstallmentCommitments(transactions, cards, activeMonth)
+  ), [activeMonth, cards, transactions]);
   const commitmentPeople = useMemo(() => {
     return getCommitmentPeople(fixedExpenses, installmentExpenses, people);
   }, [fixedExpenses, installmentExpenses, people]);
@@ -292,8 +297,16 @@ export function MonthCenterView({
     .filter((transaction) => transaction.flow === 'expense' && !isInvoicePayment(transaction))
     .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const topCategory = expensesByCategory(transactions, categories, activeMonth, cards)[0];
-  const superfluousTotal = roundMoney(monthTransactions
+  const ownExpenseTransactions = monthTransactions
     .filter((transaction) => transaction.flow === 'expense' && !isInvoicePayment(transaction))
+    .filter((transaction) => getPersonalExpenseSignedAmount(transaction) > 0);
+  const essentialDurableMonthTotal = roundMoney(ownExpenseTransactions
+    .filter((transaction) => {
+      const need = getTransactionExpenseNeed(transaction.notes);
+      return need === 'essential' || need === 'durable';
+    })
+    .reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0));
+  const superfluousTotal = roundMoney(ownExpenseTransactions
     .filter((transaction) => getTransactionExpenseNeed(transaction.notes) === 'superfluous')
     .reduce((sum, transaction) => sum + getPersonalExpenseSignedAmount(transaction), 0));
   const monthResult = roundMoney(summary.income - summary.expenses);
@@ -472,6 +485,7 @@ export function MonthCenterView({
       <section className="mt-3 flex shrink-0 flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.025] p-3 text-xs font-semibold text-slate-400 lg:flex-row lg:items-center lg:justify-between">
         <span>Resultado do mês: <strong className="font-mono text-white">{formatCurrency(monthResult)}</strong></span>
         <span>Meu x terceiros: <strong className="font-mono text-white">{formatCurrency(monthPersonalExpenses)}</strong> / {formatCurrency(monthThirdPartyExpenses)}</span>
+        <span>Essencial/durável: <strong className="font-mono text-white">{formatCurrency(essentialDurableMonthTotal)}</strong></span>
         <span>Supérfluos: <strong className="font-mono text-white">{formatCurrency(superfluousTotal)}</strong></span>
       </section>
 
@@ -692,6 +706,94 @@ export function MonthCenterView({
               <p className="mt-2 font-display text-2xl font-black text-white">{formatCurrency(selectedInstallmentTotal)}</p>
               <p className="mt-1 text-xs text-slate-500">{visibleInstallmentExpenses.length} parcela{visibleInstallmentExpenses.length === 1 ? '' : 's'} no mês</p>
             </button>
+          </div>
+
+          <div className="rounded-2xl border border-violet-400/15 bg-violet-500/[0.055] p-4">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-violet-100/80">Compromisso futuro parcelado</p>
+                <p className="mt-2 font-display text-3xl font-black text-white">{formatCurrency(futureInstallmentCommitments.totalCommitted)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                  {futureInstallmentCommitments.totalCommitted > 0
+                    ? `${futureInstallmentCommitments.installmentCount} parcela${futureInstallmentCommitments.installmentCount === 1 ? '' : 's'} futura${futureInstallmentCommitments.installmentCount === 1 ? '' : 's'} em ${futureInstallmentCommitments.seriesCount} compra${futureInstallmentCommitments.seriesCount === 1 ? '' : 's'}.`
+                    : 'Nenhuma parcela futura assumida depois deste mês.'}
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl border border-white/8 bg-black/15 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Este mês</p>
+                    <p className="mt-1 font-mono text-sm font-black text-white">{formatCurrency(futureInstallmentCommitments.currentMonthTotal)}</p>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/15 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Zera em</p>
+                    <p className="mt-1 text-sm font-black capitalize text-white">
+                      {futureInstallmentCommitments.lastCommitmentMonth ? formatMonthLabel(futureInstallmentCommitments.lastCommitmentMonth) : 'sem parcelas futuras'}
+                    </p>
+                  </div>
+                </div>
+                {futureInstallmentCommitments.totalCommitted > 0 ? (
+                  <div className="mt-3 rounded-xl border border-white/8 bg-black/15 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Necessidade + durável</p>
+                      <p className="font-mono text-sm font-black text-white">{futureInstallmentCommitments.essentialDurablePercent.toFixed(0)}%</p>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                      <span className="block h-full rounded-full bg-emerald-300" style={{ width: `${Math.min(100, futureInstallmentCommitments.essentialDurablePercent)}%` }} />
+                    </div>
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      {formatCurrency(futureInstallmentCommitments.essentialDurableTotal)} essencial/durável • {formatCurrency(futureInstallmentCommitments.superfluousTotal)} supérfluo
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="rounded-2xl border border-white/8 bg-black/15 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Projeção mês a mês</p>
+                  {futureInstallmentCommitments.monthlyProjection.length > 4 ? (
+                    <span className="text-[10px] font-semibold text-slate-500">+{futureInstallmentCommitments.monthlyProjection.length - 4} mês(es)</span>
+                  ) : null}
+                </div>
+                {futureInstallmentCommitments.monthlyProjection.length === 0 ? (
+                  <p className="mt-3 text-sm font-semibold text-slate-500">Sem parcelas futuras para projetar.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {futureInstallmentCommitments.natureSummary.length > 0 ? (
+                      <div className="grid gap-1.5 pb-1 sm:grid-cols-2">
+                        {futureInstallmentCommitments.natureSummary.map((item) => (
+                          <div key={item.key} className="rounded-xl bg-white/[0.035] px-2.5 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex min-w-0 items-center gap-1.5 text-[10px] font-bold text-slate-300">
+                                <span className={`h-2 w-2 rounded-full ${getExpenseNeedToneClass(item.key)}`} />
+                                {getExpenseNeedShortLabel(item.key)}
+                              </span>
+                              <span className="font-mono text-[10px] font-black text-white">{item.percent.toFixed(0)}%</span>
+                            </div>
+                            <p className="mt-0.5 font-mono text-[10px] text-slate-500">{formatCurrency(item.total)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {futureInstallmentCommitments.monthlyProjection.slice(0, 4).map((item) => {
+                      const width = futureInstallmentCommitments.totalCommitted > 0
+                        ? Math.max(8, Math.min(100, item.total / futureInstallmentCommitments.totalCommitted * 100))
+                        : 0;
+                      return (
+                        <div key={item.month} className="rounded-xl bg-white/[0.035] p-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="truncate text-xs font-bold capitalize text-slate-200">{formatMonthLabel(item.month)}</span>
+                            <span className="font-mono text-xs font-black text-violet-100">{formatCurrency(item.total)}</span>
+                          </div>
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                            <span className="block h-full rounded-full bg-violet-300" style={{ width: `${width}%` }} />
+                          </div>
+                          <p className="mt-1 text-[10px] text-slate-500">{item.count} parcela{item.count === 1 ? '' : 's'} • {item.seriesCount} compra{item.seriesCount === 1 ? '' : 's'}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-2 sm:flex-row sm:items-center sm:justify-between">

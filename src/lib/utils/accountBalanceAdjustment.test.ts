@@ -49,3 +49,16 @@ const unchanged = buildAccountBalanceAdjustmentTransaction({
 });
 
 assert.equal(unchanged, undefined);
+
+const internalTransferAdjustment = buildAccountBalanceAdjustmentTransaction({
+  account,
+  balance: 883.47,
+  date: '2026-09-29',
+  description: 'Resgate Dolar',
+  adjustmentNature: 'internal_transfer',
+});
+
+assert.ok(internalTransferAdjustment);
+assert.equal(internalTransferAdjustment.flow, 'income');
+assert.equal(internalTransferAdjustment.amount, 145.18);
+assert.equal(readTransactionMeta(internalTransferAdjustment.notes).internalTransfer, 'balance_adjustment');

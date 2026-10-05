@@ -7,6 +7,7 @@ export function buildAccountBalanceAdjustmentTransaction(input: {
   balance: number;
   date: string;
   description?: string;
+  adjustmentNature?: 'result' | 'internal_transfer';
 }): Omit<Transaction, 'id'> | undefined {
   const difference = roundMoney(input.balance - input.account.balance);
   if (Math.abs(difference) < 0.01) return undefined;
@@ -27,6 +28,7 @@ export function buildAccountBalanceAdjustmentTransaction(input: {
       accountBalancePreviousBalance: input.account.balance,
       accountBalanceNewBalance: input.balance,
       accountBalanceAdjustmentDate: input.date,
+      internalTransfer: input.adjustmentNature === 'internal_transfer' ? 'balance_adjustment' : undefined,
     }),
     isReimbursable: false,
     splitMode: 'none',

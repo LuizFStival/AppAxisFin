@@ -99,6 +99,10 @@ const installmentContext = buildAddEntryFlowContext({
 });
 
 assert.equal(readableCurrencySpacing(installmentContext.installmentPreview ?? ''), '5x de R$ 59,51. Total R$ 297,55.');
+assert.match(
+  readableCurrencySpacing(installmentContext.entrySummary),
+  /Sua parte pesa cerca de R\$ 59,51 por mês e adiciona R\$ 238,04 em compromissos futuros até janeiro de 2027\./,
+);
 assert.equal(installmentContext.entryDraft.amount, 297.55);
 assert.equal(installmentContext.entryDraft.cardId, 'nucredit');
 assert.equal(installmentContext.entryDraft.accountId, 'nubank');

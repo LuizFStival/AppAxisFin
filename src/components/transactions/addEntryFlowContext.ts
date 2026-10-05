@@ -132,6 +132,8 @@ export function buildAddEntryFlowContext(input: AddEntryFlowContextInput) {
     isInvoiceCredit: input.isInvoiceCredit,
     selectedSourceName,
     installmentCount: input.installmentCount,
+    date: input.date,
+    firstInstallmentMonth: invoiceInfo?.period ?? input.date.slice(0, 7),
     shouldCreateSharedEntries,
     reimbursementAmount,
     personalAmount,

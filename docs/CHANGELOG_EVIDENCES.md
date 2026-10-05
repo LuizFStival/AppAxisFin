@@ -2,6 +2,201 @@
 
 ## Decisoes relevantes
 
+## 2026-10-04 - Fase 10: natureza das parcelas e qualidade do gasto
+
+### Antes
+
+O app diferenciava despesa essencial e superflua em alguns pontos, mas nao tinha a categoria "bem duravel" nem uma leitura consistente do quanto das parcelas futuras representava necessidade, patrimonio de uso ou escolha de consumo.
+
+### Depois
+
+Foi adicionada a natureza `durable` aos metadados financeiros. O modal de lancamento passou a oferecer essencial, bem duravel e superflua; Transacoes, Cartoes, Central do Mes e Relatorios passaram a reconhecer a nova natureza. A Central mostra o percentual do compromisso futuro em essencial/duravel vs superfluo, e Relatorios mostra a qualidade do gasto do mes. O CSV de prova real ganhou bloco "Despesas por natureza" e observacao de natureza nos itens de fatura e debitos de conta.
+
+### Decisao
+
+Manter a natureza dentro de `TransactionMeta.expenseNeed` para preservar a compatibilidade com parcelas existentes, edicao de series e importacoes futuras. A leitura executiva soma essencial + bem duravel porque ambas representam necessidade ou patrimonio de uso, separando isso de consumo superfluo.
+
+### Evidencia
+
+- `src/types.ts`
+- `src/lib/utils/expenseNeed.ts`
+- `src/lib/utils/expenseNeedSummary.ts`
+- `src/lib/utils/futureCommitments.ts`
+- `src/components/transactions/AddEntryModal.tsx`
+- `src/components/month-center/MonthCenterView.tsx`
+- `src/components/reports/ReportsView.tsx`
+- `src/lib/utils/monthlyProofReport.ts`
+- `src/lib/utils/futureCommitments.test.ts`
+- `src/lib/utils/finance.test.ts`
+- `src/lib/utils/monthlyProofReport.test.ts`
+- `npm.cmd test -- futureCommitments finance monthlyProofReport` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 22 arquivos.
+- `npm.cmd run build` passou.
+- `git diff --check` passou com apenas avisos LF/CRLF conhecidos do Windows.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`) e passou fora do sandbox/aprovado.
+- Graphify atualizado: 986 nos, 3617 arestas, 46 comunidades e nenhum ciclo de importacao detectado.
+- Graphify avisou que o conjunto de comunidades mudou desde a rotulagem anterior; 41 nomes foram reaproveitados pelo hub ate uma futura rodada de `graphify label`.
+
+### Impacto observado
+
+[A VALIDAR] Usuario deve conseguir responder quanto do comprometimento futuro e necessidade, bem duravel ou superfluo, e perceber quando o superfluo esta ocupando meses futuros.
+
+### Proximos passos
+
+Executar Fase 11: evento/projeto em todos os lancamentos.
+
+## 2026-10-04 - Fase 9: compromissos futuros e impacto de parcelamento
+
+### Antes
+
+A Central do Mes mostrava fixas e parceladas do mes selecionado, mas nao respondia quanto ja estava comprometido nos meses seguintes nem quando as parcelas zeravam. O modal de lancamento ja dividia corretamente o valor total em parcelas, mas o impacto futuro ainda era descrito de forma curta.
+
+### Depois
+
+Foi criado um helper de compromissos futuros para somar somente a parte pessoal das parcelas futuras, respeitando o mes de competencia da fatura no cartao. A Central ganhou painel com total comprometido, projecao mes a mes e mes de zeragem. O modal de lancamento parcelado passou a informar quanto pesa por mes e quanto fica comprometido depois do mes atual.
+
+### Decisao
+
+Usar transacoes parceladas ja geradas como fonte de verdade do compromisso futuro, em vez de criar uma segunda estrutura paralela. Isso preserva conciliacao com faturas, edicoes de parcelas e importacoes futuras.
+
+### Evidencia
+
+- `src/lib/utils/futureCommitments.ts`
+- `src/lib/utils/futureCommitments.test.ts`
+- `src/components/month-center/MonthCenterView.tsx`
+- `src/components/transactions/addEntryPresentation.ts`
+- `src/components/transactions/addEntryFlowContext.ts`
+- `src/components/transactions/addEntryFlowContext.test.ts`
+- `docs/ROADMAP.md`
+- `docs/SDD.md`
+- `docs/SOBRE.md`
+- `npm.cmd test -- futureCommitments addEntryPresentation addEntryFlowContext` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 22 arquivos.
+- `npm.cmd run build` passou.
+- `git diff --check` passou com apenas avisos LF/CRLF conhecidos do Windows.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`) e passou fora do sandbox/aprovado.
+- Graphify atualizado: 974 nos, 3554 arestas, 41 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+[A VALIDAR] Usuario deve entender o estoque de parcelas futuras antes de assumir novas compras e deve perceber o impacto de um parcelamento antes de salvar.
+
+### Proximos passos
+
+Executar Fase 10: natureza das parcelas como essencial, bem duravel ou superfluo.
+
+## 2026-10-04 - Fase 8: variacao patrimonial e confianca do saldo
+
+### Antes
+
+O app ja separava receita propria, reembolso e transferencia interna no resultado mensal, mas ainda nao respondia com clareza se o patrimonio/caixa cresceu ou caiu no mes. Contas e caixinhas tambem podiam aparecer somadas como um total unico mesmo quando tinham datas de conferencia diferentes.
+
+### Depois
+
+Foi criado um helper de patrimonio para calcular patrimonio atual, movimento mensal estimado, aportes externos e confianca dos saldos. Home e Relatorios passaram a mostrar a resposta "Seu caixa cresceu/caiu R$ X este mes", separada do resultado de competencia. Contas e Relatorios agora destacam saldos desatualizados e avisam quando o total mistura datas de conferencia.
+
+### Decisao
+
+Manter resultado de competencia e variacao patrimonial como leituras diferentes. Resultado responde "quanto ganhei menos quanto gastei"; variacao patrimonial responde se o conjunto de contas e caixinhas cresceu ou caiu, sem transformar aplicacao/resgate interno em receita ou despesa.
+
+### Evidencia
+
+- `src/lib/utils/patrimony.ts`
+- `src/lib/utils/patrimony.test.ts`
+- `src/components/dashboard/DashboardView.tsx`
+- `src/components/reports/ReportsView.tsx`
+- `src/components/accounts/AccountsView.tsx`
+- `src/App.tsx`
+- `docs/ROADMAP.md`
+- `docs/SDD.md`
+- `docs/SOBRE.md`
+- `npm.cmd test -- patrimony` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd run build` passou.
+- `npm.cmd test` passou com 21 arquivos.
+- `git diff --check` passou com apenas avisos LF/CRLF conhecidos do Windows.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`) e passou fora do sandbox/aprovado.
+- Graphify atualizado: 966 nos, 3518 arestas, 39 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+[A VALIDAR] Usuario deve conseguir diferenciar um mes deficitario de um mes em que o patrimonio caiu, ficou estavel ou cresceu por rendimento/aporte.
+
+### Proximos passos
+
+Executar Fase 9: painel de compromissos futuros e impacto de parcelamentos.
+
+## 2026-10-03 - Proximos blocos separados em fases 8 a 13
+
+### Antes
+
+As proximas melhorias estavam listadas como itens soltos de P1/P2: variacao patrimonial, compromissos futuros, natureza das parcelas, evento/projeto, saldo desatualizado e exportacao CSV de varios meses.
+
+### Depois
+
+O roadmap passou a organizar esses itens em seis fases sequenciais: Fase 8 para patrimonio e confianca do saldo, Fase 9 para compromissos futuros, Fase 10 para natureza das parcelas, Fase 11 para evento/projeto, Fase 12 para comparativos executivos e Fase 13 para CSV multi-mes.
+
+### Decisao
+
+Executar primeiro o que melhora confianca nos numeros e depois o que melhora explicacao de futuro/comparacao. A exportacao multi-mes fica depois da consolidacao das regras, para nascer com as mesmas separacoes de receita propria, reembolso e transferencia interna.
+
+### Evidencia
+
+- `docs/ROADMAP.md`
+- `docs/SDD.md`
+- `docs/SOBRE.md`
+
+### Impacto observado
+
+[A VALIDAR] A separacao em fases deve reduzir escopo por entrega e facilitar validar um bloco financeiro por vez.
+
+### Proximos passos
+
+Iniciar a Fase 8 pelo indicador de variacao patrimonial e pelos badges de saldo desatualizado.
+
+## 2026-10-03 - Resultado mensal com receita propria, reembolso separado e transferencia interna
+
+### Antes
+
+Entradas do mes podiam misturar salario, reembolso esperado e movimentacao interna entre conta/caixinha. Isso fazia o resultado parecer melhor do que era, porque um resgate de caixinha podia entrar como receita e reembolso de terceiros podia parecer renda propria.
+
+### Depois
+
+O calculo executivo passou a considerar receita propria menos despesa propria. Reembolso fica separado como contas a receber/gasto de terceiros, e transferencias internas marcadas em `notes.internalTransfer` ficam fora de receita, despesa e resultado.
+
+### Decisao
+
+Separar competencia, caixa e patrimonio: dinheiro realmente ganho responde "quanto ganhei"; reembolso responde "o que preciso receber"; transferencia interna responde apenas "qual bolso movimentou". Ajustes manuais de saldo podem ser marcados como resultado real ou transferencia interna.
+
+### Evidencia
+
+- `src/lib/utils/finance.ts`
+- `src/lib/utils/monthlyProofReport.ts`
+- `src/lib/utils/accountBalanceAdjustment.ts`
+- `src/components/reports/ReportsView.tsx`
+- `src/components/transactions/TransactionsView.tsx`
+- `src/components/accounts/AccountsView.tsx`
+- `src/lib/utils/finance.test.ts`
+- `src/lib/utils/financialFlows.test.ts`
+- `src/lib/utils/monthlyProofReport.test.ts`
+- `src/lib/utils/accountBalanceAdjustment.test.ts`
+- `npm.cmd test -- finance financialFlows accountBalanceAdjustment monthlyProofReport` passou.
+- `npm.cmd test` passou com 20 arquivos.
+- `npm.cmd run lint` passou.
+- `npm.cmd run build` passou.
+- `npm.cmd run graphify:src` falhou no sandbox por `_socket` (`os error 10013`) e passou fora do sandbox/aprovado.
+- Graphify atualizado: 950 nos, 3458 arestas, 47 comunidades e nenhum ciclo de importacao detectado.
+
+### Impacto observado
+
+[A VALIDAR] Em setembro/2026, a leitura esperada passa a preservar o deficit real de receita propria contra despesa propria, sem reduzir o negativo por resgate de caixinha ou por reembolso esperado.
+
+### Proximos passos
+
+Implementar o indicador de variacao patrimonial, painel de compromissos futuros, natureza de parcelas, evento/projeto em qualquer lancamento e badge de saldo desatualizado.
+
 ### 2026-09-30 - Adotar D.N.E.E. Docs
 
 ### Antes
@@ -748,14 +943,19 @@ Validar o CSV exportado em um mes real com faturas pagas, reembolsos e despesas 
 - 2026-10-02 - Aplicacao em caixinha passou a permitir conta negativa no app quando o saldo cadastrado esta defasado.
 - 2026-10-02 - Pagamento de fatura deixou de contar como gasto pessoal de competencia para evitar dupla contagem.
 - 2026-10-02 - Download de Relatorios virou prova real mensal com faturas, debitos, entradas, reembolsos e patrimonio.
+- 2026-10-03 - Resultado mensal passou a separar receita propria, contas a receber e transferencias internas.
+- 2026-10-03 - Proximos blocos foram separados em Fases 8 a 13, incluindo CSV multi-mes.
+- 2026-10-04 - Fase 8 adicionou variacao patrimonial estimada e confianca do saldo.
+- 2026-10-04 - Fase 9 adicionou painel de compromissos futuros e impacto de parcelamento.
+- 2026-10-04 - Fase 10 adicionou natureza essencial/bem duravel/superflua em lancamentos, compromissos futuros, Relatorios e CSV de prova real.
 
 ## Metricas observadas ou sugeridas
 
-Metricas tecnicas atuais extraidas do Graphify em 2026-10-02:
+Metricas tecnicas atuais extraidas do Graphify em 2026-10-04:
 
-- 942 nos.
-- 3431 arestas.
-- 36 comunidades.
+- 974 nos.
+- 3554 arestas.
+- 41 comunidades.
 - 0 ciclos de importacao detectados.
 
 Metricas sugeridas:

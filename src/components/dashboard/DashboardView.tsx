@@ -3,6 +3,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ArrowRight,
+  AlertTriangle,
   Bell,
   ChevronRight,
   Eye,
@@ -14,10 +15,11 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
-import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, ReserveBox, Transaction, UserProfile } from '../../types';
+import { Account, Card, Category, DashboardSummary, DashboardTransactionFilter, ReserveBox, ReserveBoxMovement, Transaction, UserProfile } from '../../types';
 import { formatCurrency, formatMonthLabel, getAccountMovementEntries, getCurrentMonthKey, shiftMonthKey, summarizeDashboard, summarizeMonthlyInvestmentGoal, summarizeMonthlyResult } from '../../lib/utils/finance';
 import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { summarizeReserveBoxes } from '../../lib/utils/reserveBoxes';
+import { summarizePatrimonyVariation } from '../../lib/utils/patrimony';
 import { StatCard } from '../shared/StatCard';
 import { BankLogo } from '../shared/BankLogo';
 import { DashboardCardsSection } from './DashboardCardsSection';
@@ -29,6 +31,7 @@ interface DashboardViewProps {
   categories: Category[];
   transactions: Transaction[];
   reserveBoxes: ReserveBox[];
+  reserveBoxMovements: ReserveBoxMovement[];
   activeMonth: string;
   summary: DashboardSummary;
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
@@ -107,6 +110,7 @@ export function DashboardView({
   categories,
   transactions,
   reserveBoxes,
+  reserveBoxMovements,
   activeMonth,
   summary,
   savingsPreferences,
@@ -139,7 +143,17 @@ export function DashboardView({
     includeReimbursements: reimbursementsEnabled,
   });
   const reimbursementsTotal = summary.reimbursementsPending + summary.reimbursementsReceived;
-  const reserveSummary = summarizeReserveBoxes(reserveBoxes, formatLocalDate(new Date()));
+  const today = formatLocalDate(new Date());
+  const reserveSummary = summarizeReserveBoxes(reserveBoxes, today);
+  const patrimonySummary = summarizePatrimonyVariation({
+    accounts,
+    reserveBoxes,
+    reserveBoxMovements,
+    transactions,
+    cards,
+    month: activeMonth,
+    referenceDate: today,
+  });
   const previousReimbursementsTotal = previousSummary.reimbursementsPending + previousSummary.reimbursementsReceived;
   const cashMonthResult = Math.round((summary.accountInflow - summary.accountOutflow) * 100) / 100;
   const personalCashMonthResult = Math.round((summary.accountInflowPersonal - summary.accountOutflowPersonal) * 100) / 100;
@@ -294,6 +308,7 @@ export function DashboardView({
               </p>
               <p className="mt-1 truncate text-[10px] text-slate-500">
                 Meu {hiddenMoney(showBalances, summary.accountInflowPersonal)} • Terceiros {hiddenMoney(showBalances, summary.accountInflowThirdParty)}
+                {summary.accountInflowInternal > 0 ? <> • Interno {hiddenMoney(showBalances, summary.accountInflowInternal)}</> : null}
               </p>
             </button>
             <button type="button" onClick={() => onViewDashboardTransactions('paid')} className="rounded-2xl border border-white/8 bg-black/20 p-3 text-left transition hover:border-white/15 hover:bg-white/[0.045]" title="Ver saídas confirmadas">
@@ -303,6 +318,7 @@ export function DashboardView({
               </p>
               <p className="mt-1 truncate text-[10px] text-slate-500">
                 Meu {hiddenMoney(showBalances, summary.accountOutflowPersonal)} • Terceiros {hiddenMoney(showBalances, summary.accountOutflowThirdParty)}
+                {summary.accountOutflowInternal > 0 ? <> • Interno {hiddenMoney(showBalances, summary.accountOutflowInternal)}</> : null}
               </p>
             </button>
           </div>
@@ -319,6 +335,45 @@ export function DashboardView({
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="app-page-gutters mt-3">
+        <button
+          type="button"
+          onClick={onViewReserves}
+          className={`w-full rounded-3xl border p-4 text-left transition ${patrimonySummary.adjustedPatrimonyChange >= 0 ? 'border-emerald-400/15 bg-emerald-500/[0.07] hover:border-emerald-300/25' : 'border-rose-400/15 bg-rose-500/[0.07] hover:border-rose-300/25'}`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Variação patrimonial estimada</p>
+              <h2 className={`mt-1 font-display text-lg font-bold ${patrimonySummary.adjustedPatrimonyChange >= 0 ? 'text-emerald-200' : 'text-rose-200'}`}>
+                Seu caixa {patrimonySummary.adjustedPatrimonyChange >= 0 ? 'cresceu' : 'caiu'} {hiddenMoney(showBalances, Math.abs(patrimonySummary.adjustedPatrimonyChange))} este mês
+              </h2>
+              <p className="mt-1 text-xs font-medium text-slate-400">
+                Patrimônio {hiddenMoney(showBalances, patrimonySummary.currentPatrimony)} • contas {hiddenMoney(showBalances, patrimonySummary.accountPatrimony)} • caixinhas {hiddenMoney(showBalances, patrimonySummary.reservePatrimony)}
+              </p>
+            </div>
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${patrimonySummary.adjustedPatrimonyChange >= 0 ? 'bg-emerald-500/15 text-emerald-200' : 'bg-rose-500/15 text-rose-200'}`}>
+              {patrimonySummary.adjustedPatrimonyChange >= 0 ? <TrendingUp size={19} /> : <TrendingDown size={19} />}
+            </span>
+          </div>
+          {patrimonySummary.externalContributions > 0 ? (
+            <p className="mt-2 text-[11px] text-slate-500">
+              Aportes externos destacados: {hiddenMoney(showBalances, patrimonySummary.externalContributions)}.
+            </p>
+          ) : null}
+          {patrimonySummary.freshness.staleCount > 0 || patrimonySummary.freshness.mixedBalanceDates ? (
+            <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-400/15 bg-amber-500/10 p-3 text-[11px] font-semibold leading-relaxed text-amber-100">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              <span>
+                {patrimonySummary.freshness.staleCount > 0
+                  ? `${patrimonySummary.freshness.staleCount} saldo${patrimonySummary.freshness.staleCount === 1 ? '' : 's'} precisa${patrimonySummary.freshness.staleCount === 1 ? '' : 'm'} de conferência. `
+                  : ''}
+                {patrimonySummary.freshness.mixedBalanceDates ? 'O total mistura datas de conferência diferentes.' : ''}
+              </span>
+            </div>
+          ) : null}
+        </button>
       </section>
 
       <section className="app-page-gutters mt-3 grid grid-cols-2 items-start gap-2.5 md:grid-cols-4">

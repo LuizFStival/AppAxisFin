@@ -1,5 +1,5 @@
 import { EditSeriesScope, ExpenseEntryMode, ExpenseSplitMode, MoneyFlow } from '../../types';
-import { formatCurrency } from '../../lib/utils/finance';
+import { formatCurrency, formatMonthLabel, roundMoney, shiftMonthKey } from '../../lib/utils/finance';
 import { parseEntryCount } from './addEntryRules';
 import { splitAmountIntoInstallments } from './addEntryBuilder';
 
@@ -22,6 +22,8 @@ export interface AddEntryImpactSummaryInput {
   isInvoiceCredit: boolean;
   selectedSourceName?: string;
   installmentCount: string;
+  date?: string;
+  firstInstallmentMonth?: string;
   shouldCreateSharedEntries: boolean;
   reimbursementAmount: number;
   personalAmount: number;
@@ -91,10 +93,20 @@ export function getEntryImpactSummary(input: AddEntryImpactSummaryInput) {
     const count = parseEntryCount(input.installmentCount, 2);
     const amounts = splitAmountIntoInstallments(input.amount, count);
     const firstAmount = amounts[0] ?? 0;
+    const personalAmounts = splitAmountIntoInstallments(input.personalAmount, count);
+    const firstPersonalAmount = personalAmounts[0] ?? firstAmount;
+    const futurePersonalAmount = roundMoney(personalAmounts.slice(1).reduce((sum, amount) => sum + amount, 0));
+    const firstMonth = input.firstInstallmentMonth ?? input.date?.slice(0, 7);
+    const lastMonth = firstMonth ? shiftMonthKey(firstMonth, count - 1) : undefined;
+    const futureCommitmentText = input.personalAmount > 0 && futurePersonalAmount > 0 && lastMonth
+      ? ` Sua parte pesa cerca de ${formatCurrency(firstPersonalAmount)} por mês e adiciona ${formatCurrency(futurePersonalAmount)} em compromissos futuros até ${formatMonthLabel(lastMonth)}.`
+      : input.personalAmount === 0
+        ? ' Não adiciona compromisso pessoal futuro porque a despesa é de terceiro.'
+        : '';
     const reimbursementText = input.shouldCreateSharedEntries
       ? ` Também cria ${count} registro${count === 1 ? '' : 's'} de reembolso para ${formatCurrency(input.reimbursementAmount)} no total.`
       : '';
-    return `Compra total de ${formatCurrency(input.amount)} será dividida em ${count} parcela${count === 1 ? '' : 's'} de aproximadamente ${formatCurrency(firstAmount)}.${reimbursementText}`;
+    return `Compra total de ${formatCurrency(input.amount)} será dividida em ${count} parcela${count === 1 ? '' : 's'} de aproximadamente ${formatCurrency(firstAmount)}.${futureCommitmentText}${reimbursementText}`;
   }
 
   if (input.expenseMode === 'fixed' && !input.isEditing) {

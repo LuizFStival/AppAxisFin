@@ -72,6 +72,10 @@ O usuario importa CSV Nubank, revisa itens, ignora entradas que nao sao despesa,
 
 Contas exibem saldo real, movimentos do mes e detalhe por conta. Ajuste manual de saldo deve gerar um lancamento financeiro de entrada ou saida para explicar a diferenca.
 
+Quando a diferenca de saldo for rendimento, tarifa, correcao ou dinheiro externo, o lancamento explicativo entra no resultado como receita ou despesa propria. Quando a diferenca representa apenas dinheiro movido entre bolsos do proprio usuario, como resgate/aplicacao entre conta e caixinha, o lancamento deve ser marcado como transferencia interna (`internalTransfer` em `notes`) e ficar fora de receita, despesa e resultado do mes.
+
+Contas e patrimonio devem indicar a confianca do saldo. Se uma conta ou caixinha ficar mais de 7 dias sem conferencia, a UI exibe badge de saldo desatualizado. Quando o total consolidado mistura datas de conferencia diferentes, o app deve avisar que o patrimonio nao representa uma foto unica do mesmo dia.
+
 ### Caixinhas
 
 Caixinhas sao reservas separadas do saldo disponivel. Movimentos podem representar aplicacao, retirada, rendimento e atualizacao de saldo. Aplicacao/retirada vinculada a conta deve movimentar tambem a conta correspondente.
@@ -82,17 +86,29 @@ Quando uma aplicacao em caixinha usa uma conta com saldo cadastrado insuficiente
 
 Despesas de terceiros podem ser 100% de terceiro ou divididas. O app registra pessoa, valor pendente, status, recebimento parcial/total e conta de recebimento.
 
+Receita propria e reembolso nao devem ser misturados. O card principal de resultado considera apenas receita propria menos despesa propria. Valores de terceiros ficam em "Contas a receber", separados entre pendente e recebido quando a tela tiver esse detalhe. Gasto pago para terceiros explica caixa, mas nao deve inflar despesa propria.
+
 ### Central do Mes
 
 Central operacional para pagar faturas/despesas, registrar reembolsos, revisar compromissos fixos/parcelados e decidir se o mes pode ser fechado.
 
 A tela funciona como cockpit de acao: no topo, a faixa "Resolver agora" concentra a proxima fatura, a proxima despesa de conta, o proximo reembolso e a proxima fixa que pode ser ignorada. A priorizacao por atraso, hoje e proximos sete dias responde "o que preciso resolver agora?", enquanto Home fica com leitura de situacao e Transacoes fica como trilha de auditoria/investigacao.
 
+O bloco de fixas e parceladas tambem mostra compromisso futuro: total parcelado ja assumido depois do mes selecionado, projecao mes a mes e mes de zeragem. A base e a parte pessoal das transacoes com `entryMode: installment`, usando o mes de competencia da fatura quando a parcela esta no cartao.
+
+As parcelas e demais despesas proprias podem ser classificadas por natureza: essencial, bem duravel ou superfluo. A Central usa essa classificacao para mostrar quanto do compromisso futuro e necessidade/patrimonio de uso e quanto e escolha de consumo.
+
 ### Relatorios
 
 Relatorios sao separados em `Mes`, `Ano` e `Patrimonio`. Cada visao deve responder primeiro a pergunta executiva antes dos graficos: se o mes sobrou ou faltou, se o ano acumula sobra ou deficit, e qual e a composicao atual do patrimonio. O detalhamento fixo/parcelado/variavel fica progressivo para nao competir com o resumo.
 
-O download CSV de Relatorios funciona como prova real mensal do sistema. Para o mes selecionado, ele deve organizar resumo financeiro, despesas por categoria e tipo, faturas do mes, itens de cada fatura, entradas, debitos de conta, pagamentos de fatura, reembolsos e patrimonio atual. Pagamento de fatura aparece como baixa de caixa explicativa, mas nao como novo gasto de competencia, evitando dupla contagem com as compras do cartao.
+A visao patrimonial tambem mostra a variacao mensal estimada: patrimonio atual menos movimento do mes, destacando aportes externos. Esse numero e separado do resultado de competencia, porque saque/resgate de caixinha pode mudar o caixa disponivel sem ser receita, e aplicacao pode reduzir conta sem ser despesa.
+
+O download CSV de Relatorios funciona como prova real mensal do sistema. Para o mes selecionado, ele deve organizar resumo financeiro, despesas por categoria e tipo, faturas do mes, itens de cada fatura, receita propria, debitos de conta, pagamentos de fatura, reembolsos, transferencias internas e patrimonio atual. Pagamento de fatura aparece como baixa de caixa explicativa, mas nao como novo gasto de competencia, evitando dupla contagem com as compras do cartao.
+
+Relatorios tambem mostram qualidade do gasto por natureza: essencial, bem duravel, superfluo e sem natureza quando houver lancamento antigo sem classificacao. Essa leitura usa a parte pessoal das despesas e nao deve contar pagamento de fatura como novo gasto.
+
+Proxima evolucao planejada: permitir exportar mais de um mes no mesmo CSV, com selecao rapida de 3, 4, 5 ou 6 meses e periodo personalizado. A exportacao multi-mes deve manter cada mes auditavel individualmente e adicionar um resumo consolidado do periodo, sem misturar receita propria, reembolso e transferencia interna.
 
 ## Arquitetura e stack identificadas
 
@@ -156,10 +172,20 @@ Saidas:
 - Pagamento de fatura reduz a conta escolhida.
 - Pagamento de fatura nao deve compor gasto pessoal, gasto variavel/fixo/parcelado nem resultado por competencia, para nao somar a baixa da conta com as compras ja registradas na fatura.
 - Transferencia move saldo entre contas e nao altera patrimonio total.
+- Transferencia interna entre conta, caixinha ou ajuste marcado como interno explica movimento de caixa, mas nao e receita propria nem despesa propria.
+- Receita propria exclui reembolso e transferencia interna.
 - Despesa pessoal pesa no resultado pessoal.
 - Despesa de terceiro deve ser separada de gasto pessoal.
-- Reembolso esperado pode compor visao geral, mas nao deve parecer dinheiro ja recebido.
+- Reembolso esperado deve compor "Contas a receber", nao "Receita propria".
+- Resultado do mes = receita propria - despesa propria.
 - Compra parcelada deve dividir o valor total pelo numero de parcelas.
+- Compromisso futuro deve mostrar saldo parcelado restante, projecao mes a mes e mes de zeragem.
+- Ao registrar parcelamento, o modal deve mostrar valor por parcela, impacto mensal da parte pessoal e total que fica comprometido para meses futuros.
+- Parcelas e despesas proprias devem poder ser classificadas como essencial, bem duravel ou superfluo.
+- Compromissos futuros e relatorios devem mostrar percentual de essencial/duravel vs superfluo.
+- Evento/Projeto deve estar disponivel para qualquer lancamento e permitir comparativos com ou sem eventos.
+- Variacao patrimonial mensal deve ser apresentada separada do resultado contabil do mes.
+- Confianca do saldo deve considerar `lastBalanceUpdate`: mais de 7 dias sem conferencia gera alerta, e datas diferentes no consolidado devem ser explicitadas.
 - Edicao de parcela/fixa precisa deixar claro se afeta apenas uma ocorrencia ou tambem futuras.
 - Ajuste manual de saldo com diferenca deve criar lancamento explicativo.
 - Caixinhas ficam separadas do saldo disponivel de contas.
@@ -177,13 +203,15 @@ Uso esperado:
 - usar `npm.cmd run graphify:src` apos mudancas de codigo para atualizar o mapa;
 - registrar no changelog quando o Graphify indicar mudanca relevante de centralidade, comunidade ou gargalo.
 
-Estado conhecido em 2026-10-02:
+Estado conhecido em 2026-10-04:
 
-- 942 nos;
-- 3431 arestas;
-- 36 comunidades;
+- 986 nos;
+- 3617 arestas;
+- 46 comunidades;
 - nenhum ciclo de importacao detectado;
-- pontos centrais: `App()`, `getUserFriendlyError()`, `Transaction`, `readTransactionMeta()`, `Card`, `Account`, `formatCurrency()`, `MonthCenterView()`, `AddEntryModal()`, `Category`.
+- pontos centrais: `App()`, `getUserFriendlyError()`, `Transaction`, `readTransactionMeta()`, `Card`, `Account`, `formatCurrency()`, `MonthCenterView()`, `roundMoney()`, `Category`.
+
+Observacao: na ultima execucao o conjunto de comunidades mudou desde a rotulagem anterior; 41 nomes foram reaproveitados pelo hub ate uma futura rodada de `graphify label`.
 
 Observacao Windows: o script `scripts/run-graphify-src.mjs` usa `uvx.exe --no-cache --python 3.12 --from graphifyy graphify` para evitar travas de cache do `uv`. Dentro do sandbox ainda pode ocorrer bloqueio de `_socket` (`os error 10013`). Se o terminal aprovado baixar o pacote mas a politica do Windows bloquear o wrapper `graphify` (`os error 4551`), usar o fallback `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify src` e depois `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify cluster-only src`.
 

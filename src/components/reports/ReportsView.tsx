@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
@@ -31,7 +32,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Account, Card, Category, ReimbursementPerson, ReportWidgetId, ReserveBox, Transaction, UserProfile } from '../../types';
+import { Account, Card, Category, ReimbursementPerson, ReportWidgetId, ReserveBox, ReserveBoxMovement, Transaction, UserProfile } from '../../types';
 import {
   expensesByCategory,
   formatCurrency,
@@ -42,6 +43,7 @@ import {
   getTransactionReimbursementAmount,
   getTransactionReimbursementReceivedAmount,
   isInvoicePayment,
+  isOwnIncome,
   isThirdPartyExpense,
   shiftMonthKey,
   summarizeMonthlyInvestmentGoal,
@@ -49,8 +51,12 @@ import {
   roundMoney,
 } from '../../lib/utils/finance';
 import { summarizeExpenseBreakdown } from '../../lib/utils/expenseBreakdown';
+import { getExpenseNeedShortLabel, getExpenseNeedToneClass } from '../../lib/utils/expenseNeed';
+import { summarizeExpenseNeed } from '../../lib/utils/expenseNeedSummary';
 import { buildMonthlyProofReportCsv } from '../../lib/utils/monthlyProofReport';
+import { summarizePatrimonyVariation } from '../../lib/utils/patrimony';
 import { getReimbursementMonthKey } from '../../lib/utils/reimbursements';
+import { formatDatePtBr, formatLocalDate } from '../../lib/utils/date';
 import { MonthNavigator } from '../shared/MonthNavigator';
 import { cx, screen, surface } from '../shared/visualTokens';
 import { BudgetSection } from './BudgetSection';
@@ -61,6 +67,7 @@ interface ReportsViewProps {
   categories: Category[];
   accounts: Account[];
   reserveBoxes: ReserveBox[];
+  reserveBoxMovements: ReserveBoxMovement[];
   cards: Card[];
   reimbursementPeople: ReimbursementPerson[];
   savingsPreferences: Pick<UserProfile, 'savingsGoalMode' | 'savingsGoalAmount' | 'savingsGoalPercentage' | 'includePendingSalary'>;
@@ -136,6 +143,7 @@ export function ReportsView({
   categories,
   accounts,
   reserveBoxes,
+  reserveBoxMovements,
   cards,
   reimbursementPeople,
   savingsPreferences,
@@ -154,7 +162,7 @@ export function ReportsView({
     const summarize = (period: string) => {
       const periodTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period);
       return periodTransactions.reduce((totals, transaction) => {
-        if (transaction.flow === 'income') totals.income += transaction.amount;
+        if (isOwnIncome(transaction)) totals.income += transaction.amount;
         if (transaction.flow === 'expense' && !isInvoicePayment(transaction)) {
           if (isThirdPartyExpense(transaction)) {
             const amount = getTransactionReimbursementAmount(transaction);
@@ -242,6 +250,17 @@ export function ReportsView({
     });
   }, [cards, effectiveReportScope, month, monthTransactions, reimbursementsEnabled, transactions]);
   const expenseBreakdownTotal = expenseBreakdown.reduce((sum, item) => sum + Math.max(0, item.total), 0);
+  const expenseNeedSummary = useMemo(
+    () => summarizeExpenseNeed(monthTransactions, getPersonalExpenseSignedAmount),
+    [monthTransactions],
+  );
+  const expenseNeedTotal = expenseNeedSummary.reduce((sum, item) => sum + Math.max(0, item.total), 0);
+  const essentialDurableTotal = expenseNeedSummary
+    .filter((item) => item.key === 'essential' || item.key === 'durable')
+    .reduce((sum, item) => sum + item.total, 0);
+  const superfluousNeedTotal = expenseNeedSummary.find((item) => item.key === 'superfluous')?.total ?? 0;
+  const essentialDurablePercent = expenseNeedTotal > 0 ? (essentialDurableTotal / expenseNeedTotal) * 100 : 0;
+  const superfluousNeedPercent = expenseNeedTotal > 0 ? (superfluousNeedTotal / expenseNeedTotal) * 100 : 0;
   const monthlyEvolution = useMemo(() => {
     return Array.from({ length: 6 }, (_, index) => shiftMonthKey(month, index - 5)).map((period) => {
       const result = summarizeMonthlyResult(transactions, period, cards, {
@@ -252,7 +271,7 @@ export function ReportsView({
         : transactions
           .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period)
           .reduce((current, transaction) => {
-            if (transaction.flow === 'income') current.income += transaction.amount;
+            if (isOwnIncome(transaction)) current.income += transaction.amount;
             if (
               transaction.flow === 'expense'
               && !isInvoicePayment(transaction)
@@ -272,13 +291,18 @@ export function ReportsView({
   }, [cards, effectiveReportScope, month, reimbursementsEnabled, transactions]);
   const reportYear = month.slice(0, 4);
   const selectedYearMonthIndex = Math.min(12, Math.max(1, Number(month.slice(5, 7)) || 1));
-  const accountPatrimony = roundMoney(accounts
-    .filter((account) => account.isActive)
-    .reduce((sum, account) => sum + account.balance, 0));
-  const reservePatrimony = roundMoney(reserveBoxes
-    .filter((box) => box.isActive)
-    .reduce((sum, box) => sum + box.currentBalance, 0));
-  const currentPatrimony = roundMoney(accountPatrimony + reservePatrimony);
+  const patrimonySummary = summarizePatrimonyVariation({
+    accounts,
+    reserveBoxes,
+    reserveBoxMovements,
+    transactions,
+    cards,
+    month,
+    referenceDate: formatLocalDate(new Date()),
+  });
+  const accountPatrimony = patrimonySummary.accountPatrimony;
+  const reservePatrimony = patrimonySummary.reservePatrimony;
+  const currentPatrimony = patrimonySummary.currentPatrimony;
   const annualEvolution = useMemo(() => {
     let accumulated = 0;
     const periods = Array.from({ length: 12 }, (_, index) => `${reportYear}-${String(index + 1).padStart(2, '0')}`);
@@ -291,7 +315,7 @@ export function ReportsView({
         : transactions
           .filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === period)
           .reduce((totals, transaction) => {
-            if (transaction.flow === 'income') totals.income += transaction.amount;
+            if (isOwnIncome(transaction)) totals.income += transaction.amount;
             if (
               transaction.flow === 'expense'
               && !isInvoicePayment(transaction)
@@ -371,7 +395,7 @@ export function ReportsView({
       if (transaction.flow === 'transfer' || isInvoicePayment(transaction)) return;
       const day = Number(transaction.date.slice(8, 10));
       const current = totals.get(day) ?? { income: 0, expenses: 0 };
-      if (transaction.flow === 'income') current.income += transaction.amount;
+      if (isOwnIncome(transaction)) current.income += transaction.amount;
       if (transaction.flow === 'expense') current.expenses += getPersonalExpenseSignedAmount(transaction);
       totals.set(day, current);
     });
@@ -384,19 +408,23 @@ export function ReportsView({
   const largestCategory = categoryData[0];
   const categoryTotal = categoryData.reduce((sum, item) => sum + item.value, 0);
   const scopeHint = effectiveReportScope === 'general'
-    ? 'Geral: meu + terceiros'
+    ? 'Geral: resultado próprio + contas a receber separadas'
     : 'Apenas meus valores';
+  const primaryIncomeLabel = effectiveReportScope === 'general' ? 'Receita própria' : 'Entradas';
+  const primaryExpenseLabel = effectiveReportScope === 'general' ? 'Despesa própria' : 'Saídas';
   const topExpenseBreakdown = expenseBreakdown.reduce((top, item) => (
     item.total > top.total ? item : top
   ), expenseBreakdown[0] ?? { key: 'variable', label: 'Variáveis', total: 0, count: 0 });
   const monthResultLabel = balance >= 0 ? 'Sobrou no mês' : 'Faltou no mês';
   const monthResultDescription = balance >= 0
     ? `Você fechou ${formatMonthLabel(month)} com sobra de ${formatCurrency(balance)}.`
-    : `Você gastou ${formatCurrency(Math.abs(balance))} acima das entradas em ${formatMonthLabel(month)}.`;
+    : `Você gastou ${formatCurrency(Math.abs(balance))} acima da receita própria em ${formatMonthLabel(month)}.`;
   const annualResultDescription = annualResult >= 0
     ? `Até ${formatMonthLabel(month)}, o ano acumula sobra de ${formatCurrency(annualResult)}.`
     : `Até ${formatMonthLabel(month)}, o ano acumula déficit de ${formatCurrency(Math.abs(annualResult))}.`;
   const patrimonyDescription = `Contas representam ${formatCurrency(accountPatrimony)} e caixinhas somam ${formatCurrency(reservePatrimony)}.`;
+  const patrimonyChangeLabel = patrimonySummary.adjustedPatrimonyChange >= 0 ? 'Seu caixa cresceu' : 'Seu caixa caiu';
+  const balanceFreshnessWarning = patrimonySummary.freshness.staleCount > 0 || patrimonySummary.freshness.mixedBalanceDates;
 
   return (
     <div className={cx(screen.scrollWide, 'w-full min-w-0 overflow-x-hidden')}>
@@ -472,11 +500,11 @@ export function ReportsView({
             </div>
             <div className="mt-5 grid gap-3 md:grid-cols-4">
               <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">Entradas</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-200">{primaryIncomeLabel}</p>
                 <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(visibleInflows)}</p>
               </div>
               <div className="rounded-2xl border border-rose-400/15 bg-rose-500/[0.07] p-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-rose-200">Saídas</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-rose-200">{primaryExpenseLabel}</p>
                 <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(visibleOutflows)}</p>
               </div>
               <div className={`rounded-2xl border p-3 ${balance >= 0 ? 'border-sky-400/15 bg-sky-500/[0.07]' : 'border-rose-400/15 bg-rose-500/[0.07]'}`}>
@@ -495,8 +523,8 @@ export function ReportsView({
           {reportWidgets.length > 0 ? (
             <section className="mt-4 grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
               {reportWidgets.map((widget) => {
-                const incomeLabel = effectiveReportScope === 'general' ? 'Total de entradas' : 'Receitas';
-                const expenseLabel = effectiveReportScope === 'general' ? 'Total de saídas' : 'Despesas pessoais';
+                const incomeLabel = effectiveReportScope === 'general' ? 'Receita própria' : 'Receitas';
+                const expenseLabel = effectiveReportScope === 'general' ? 'Despesa própria' : 'Despesas pessoais';
                 const item = widget === 'income'
                   ? [incomeLabel, formatCurrency(visibleInflows), 'border-emerald-400/15 bg-emerald-500/[0.07] text-emerald-300']
                   : widget === 'expenses'
@@ -549,6 +577,56 @@ export function ReportsView({
                 })}
               </div>
             ) : null}
+          </section>
+
+          <section className={cx(surface.panel, 'mt-4 p-4')}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <span>
+                <span className="block text-[10px] font-semibold uppercase tracking-widest text-sky-300">Qualidade do gasto</span>
+                <span className="mt-1 block font-display text-lg font-bold text-white">Essencial, durável e supérfluo</span>
+              </span>
+              <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-right">
+                <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Essencial + durável</span>
+                <span className="font-mono text-sm font-bold text-white">{essentialDurablePercent.toFixed(1).replace('.', ',')}%</span>
+              </span>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.07] p-3">
+                <p className="text-xs font-bold text-emerald-100">Necessidade + durável</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(essentialDurableTotal)}</p>
+                <p className="mt-1 text-[10px] text-emerald-200/70">{essentialDurablePercent.toFixed(1).replace('.', ',')}% das despesas próprias</p>
+              </div>
+              <div className="rounded-2xl border border-rose-400/15 bg-rose-500/[0.07] p-3">
+                <p className="text-xs font-bold text-rose-100">Supérfluo</p>
+                <p className="mt-1 font-mono text-sm font-bold text-white">{formatCurrency(superfluousNeedTotal)}</p>
+                <p className="mt-1 text-[10px] text-rose-200/70">{superfluousNeedPercent.toFixed(1).replace('.', ',')}% das despesas próprias</p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {expenseNeedSummary.length > 0 ? expenseNeedSummary.map((item) => {
+                const percentage = expenseNeedTotal > 0 ? (Math.max(0, item.total) / expenseNeedTotal) * 100 : 0;
+                return (
+                  <div key={item.key} className="min-w-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold text-slate-100">{item.label}</span>
+                      <span className="font-mono text-sm font-bold text-white">{formatCurrency(item.total)}</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-white/8">
+                        <div className={`h-full rounded-full ${getExpenseNeedToneClass(item.key)}`} style={{ width: `${percentage}%` }} />
+                      </div>
+                      <span className="w-24 shrink-0 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                        {getExpenseNeedShortLabel(item.key)} {percentage.toFixed(1).replace('.', ',')}%
+                      </span>
+                    </div>
+                  </div>
+                );
+              }) : (
+                <p className="rounded-2xl border border-white/8 bg-white/[0.025] p-3 text-xs text-slate-400">
+                  Nenhuma despesa própria classificada neste mês.
+                </p>
+              )}
+            </div>
           </section>
 
           <section className={cx(surface.panel, 'mt-4 p-4')}>
@@ -738,6 +816,12 @@ export function ReportsView({
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Patrimônio atual</p>
                 <h2 className="mt-1 font-display text-2xl font-bold text-white">{formatCurrency(currentPatrimony)}</h2>
                 <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-400">{patrimonyDescription}</p>
+                {balanceFreshnessWarning ? (
+                  <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-amber-400/15 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold text-amber-100">
+                    <AlertTriangle size={12} />
+                    {patrimonySummary.freshness.mixedBalanceDates ? 'Total mistura datas' : 'Saldo desatualizado'}
+                  </p>
+                ) : null}
               </div>
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-300">
                 <PiggyBank size={22} />
@@ -756,6 +840,16 @@ export function ReportsView({
                 <p className={`text-[10px] font-bold uppercase tracking-widest ${annualResult >= 0 ? 'text-violet-200' : 'text-rose-200'}`}>Sobra no ano</p>
                 <p className={`mt-1 font-mono text-sm font-bold ${annualResult >= 0 ? 'text-violet-200' : 'text-rose-200'}`}>{annualResult >= 0 ? '+' : '-'}{formatCurrency(Math.abs(annualResult))}</p>
               </div>
+            </div>
+            <div className={`mt-3 rounded-2xl border p-3 ${patrimonySummary.adjustedPatrimonyChange >= 0 ? 'border-emerald-400/15 bg-emerald-500/[0.07]' : 'border-rose-400/15 bg-rose-500/[0.07]'}`}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Variação mensal estimada</p>
+              <p className={`mt-1 font-display text-lg font-bold ${patrimonySummary.adjustedPatrimonyChange >= 0 ? 'text-emerald-200' : 'text-rose-200'}`}>
+                {patrimonyChangeLabel} {formatCurrency(Math.abs(patrimonySummary.adjustedPatrimonyChange))} em {formatMonthLabel(month)}
+              </p>
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                Início estimado {formatCurrency(patrimonySummary.estimatedStartPatrimony)} • movimento bruto {formatCurrency(patrimonySummary.monthlyPatrimonyChange)}
+                {patrimonySummary.externalContributions > 0 ? ` • aportes externos ${formatCurrency(patrimonySummary.externalContributions)}` : ''}
+              </p>
             </div>
           </section>
 
@@ -793,9 +887,14 @@ export function ReportsView({
                   <article key={account.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.025] p-3">
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-bold text-white">{account.name}</span>
-                      <span className="text-[10px] text-slate-500">{account.institution}</span>
+                      <span className="text-[10px] text-slate-500">{account.institution} • conferido {formatDatePtBr(account.lastBalanceUpdate)}</span>
                     </span>
-                    <span className="font-mono text-sm font-bold text-white">{formatCurrency(account.balance)}</span>
+                    <span className="shrink-0 text-right">
+                      <span className="block font-mono text-sm font-bold text-white">{formatCurrency(account.balance)}</span>
+                      {patrimonySummary.freshness.items.find((item) => item.kind === 'account' && item.id === account.id)?.isStale ? (
+                        <span className="mt-1 inline-flex rounded-full border border-amber-400/15 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-100">desatualizado</span>
+                      ) : null}
+                    </span>
                   </article>
                 ))}
               </div>
@@ -807,9 +906,14 @@ export function ReportsView({
                   <article key={box.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.025] p-3">
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-bold text-white">{box.name}</span>
-                      <span className="text-[10px] text-slate-500">{box.institution}</span>
+                      <span className="text-[10px] text-slate-500">{box.institution} • atualizado {formatDatePtBr(box.lastBalanceUpdate)}</span>
                     </span>
-                    <span className="font-mono text-sm font-bold text-white">{formatCurrency(box.currentBalance)}</span>
+                    <span className="shrink-0 text-right">
+                      <span className="block font-mono text-sm font-bold text-white">{formatCurrency(box.currentBalance)}</span>
+                      {patrimonySummary.freshness.items.find((item) => item.kind === 'reserve_box' && item.id === box.id)?.isStale ? (
+                        <span className="mt-1 inline-flex rounded-full border border-amber-400/15 bg-amber-500/10 px-2 py-0.5 text-[9px] font-bold text-amber-100">desatualizado</span>
+                      ) : null}
+                    </span>
                   </article>
                 ))}
               </div>

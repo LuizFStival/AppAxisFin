@@ -17,7 +17,7 @@ export function roundMoney(value: number): number {
 }
 
 export function getTransactionPersonalAmount(transaction: Transaction): number {
-  if (transaction.flow !== 'expense' || isInvoiceCredit(transaction) || isInvoicePayment(transaction)) return 0;
+  if (transaction.flow !== 'expense' || isInvoiceCredit(transaction) || isInvoicePayment(transaction) || isInternalTransfer(transaction)) return 0;
   if (!transaction.isReimbursable) return transaction.amount;
   if (typeof transaction.personalAmount === 'number') return roundMoney(transaction.personalAmount);
   return 0;
@@ -164,6 +164,14 @@ export function isInvoicePayment(transaction: Transaction): boolean {
   return transaction.flow === 'expense' && Boolean(readTransactionMeta(transaction.notes).invoicePaymentCardId);
 }
 
+export function isInternalTransfer(transaction: Transaction): boolean {
+  return transaction.flow === 'transfer' || Boolean(readTransactionMeta(transaction.notes).internalTransfer);
+}
+
+export function isOwnIncome(transaction: Transaction): boolean {
+  return transaction.flow === 'income' && !isInternalTransfer(transaction);
+}
+
 export function getExpenseSignedAmount(transaction: Transaction): number {
   return isInvoiceCredit(transaction) ? -transaction.amount : transaction.amount;
 }
@@ -276,7 +284,8 @@ export function summarizeDashboard(
 ): DashboardSummary {
   const includeReimbursements = options.includeReimbursements ?? true;
   const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month);
-  const incomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
+  const incomeTransactions = monthTransactions.filter(isOwnIncome);
+  const accountIncomeTransactions = monthTransactions.filter((transaction) => transaction.flow === 'income');
   const expenseTransactions = monthTransactions.filter((transaction) =>
     transaction.flow === 'expense'
     && !isInvoicePayment(transaction),
@@ -292,6 +301,10 @@ export function summarizeDashboard(
   const received = roundMoney(incomeTransactions
     .filter((transaction) => transaction.status === 'paid')
     .reduce((sum, transaction) => sum + transaction.amount, 0));
+  const internalAccountInflow = roundMoney(accountIncomeTransactions
+    .filter(isInternalTransfer)
+    .filter((transaction) => transaction.status === 'paid')
+    .reduce((sum, transaction) => sum + transaction.amount, 0));
   const settledExpenses = roundMoney(Math.min(expenses, expenseTransactions
     .filter((transaction) =>
       transaction.status === 'paid'
@@ -305,6 +318,8 @@ export function summarizeDashboard(
         const split = splitInvoicePaymentAmount(transaction, transactions, cards);
         totals.personal += split.personal;
         totals.thirdParty += split.thirdParty;
+      } else if (isInternalTransfer(transaction)) {
+        totals.internal += transaction.amount;
       } else if (isThirdPartyExpense(transaction)) {
         totals.thirdParty += getTransactionReimbursementAmount(transaction);
         totals.personal += getTransactionPersonalAmount(transaction);
@@ -312,9 +327,10 @@ export function summarizeDashboard(
         totals.personal += transaction.amount;
       }
       return totals;
-    }, { personal: 0, thirdParty: 0 });
+    }, { personal: 0, thirdParty: 0, internal: 0 });
   const paid = roundMoney(accountOutflowByOwner.personal);
   const thirdPartyAccountOutflow = includeReimbursements ? roundMoney(accountOutflowByOwner.thirdParty) : 0;
+  const internalAccountOutflow = roundMoney(accountOutflowByOwner.internal);
   const reimbursementsPending = roundMoney(reimbursementTransactions
     .filter((transaction) => transaction.reimbursementStatus !== 'received')
     .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
@@ -328,12 +344,14 @@ export function summarizeDashboard(
 
   return {
     currentBalance: roundMoney(accounts.reduce((sum, account) => sum + account.balance, 0)),
-    accountInflow: roundMoney(received + accountReimbursementsReceived),
+    accountInflow: roundMoney(received + accountReimbursementsReceived + internalAccountInflow),
     accountInflowPersonal: received,
     accountInflowThirdParty: accountReimbursementsReceived,
-    accountOutflow: includeReimbursements ? roundMoney(paid + thirdPartyAccountOutflow) : roundMoney(paid + accountOutflowByOwner.thirdParty),
+    accountInflowInternal: internalAccountInflow,
+    accountOutflow: includeReimbursements ? roundMoney(paid + thirdPartyAccountOutflow + internalAccountOutflow) : roundMoney(paid + accountOutflowByOwner.thirdParty + internalAccountOutflow),
     accountOutflowPersonal: includeReimbursements ? paid : roundMoney(paid + accountOutflowByOwner.thirdParty),
     accountOutflowThirdParty: thirdPartyAccountOutflow,
+    accountOutflowInternal: internalAccountOutflow,
     income,
     expenses,
     settledExpenses: effectiveSettledExpenses,
@@ -360,7 +378,7 @@ export function summarizeMonthlyResult(
       ? getReimbursementMonthKey(transaction, cards) === month
       : getFinancialMonthKey(transaction) === month));
   const income = roundMoney(monthTransactions
-    .filter((transaction) => transaction.flow === 'income')
+    .filter(isOwnIncome)
     .reduce((sum, transaction) => sum + transaction.amount, 0));
   const personalExpenses = roundMoney(monthTransactions
     .filter((transaction) =>
@@ -372,8 +390,8 @@ export function summarizeMonthlyResult(
     .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
   const thirdPartyExpenses = roundMoney(reimbursementTransactions
     .reduce((sum, transaction) => sum + getTransactionReimbursementAmount(transaction), 0));
-  const totalInflows = roundMoney(income + reimbursementsExpected);
-  const totalOutflows = roundMoney(personalExpenses + thirdPartyExpenses);
+  const totalInflows = income;
+  const totalOutflows = personalExpenses;
 
   return {
     income,
@@ -382,7 +400,7 @@ export function summarizeMonthlyResult(
     thirdPartyExpenses,
     totalInflows,
     totalOutflows,
-    result: roundMoney(totalInflows - totalOutflows),
+    result: roundMoney(income - personalExpenses),
   };
 }
 
