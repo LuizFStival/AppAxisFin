@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Archive, Bell, Check, ChevronDown, ChevronUp, CreditCard, Database, Download, Eye, EyeOff, HandCoins, LogOut, Pencil, PiggyBank, Plus, RotateCcw, Tags, Trash2, Wallet, X } from 'lucide-react';
 import { Account, Card, Category, ReportWidgetId, Transaction, UserProfile } from '../../types';
 import { getUserFriendlyError } from '../../lib/utils/userFriendlyError';
-import { getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getPaymentSource } from '../../lib/utils/finance';
+import { formatMonthLabel, getCategoryName, getCurrentMonthKey, getFinancialMonthKey, getMonthDateRange, getPaymentSource } from '../../lib/utils/finance';
 import { getVisibleNotes } from '../../lib/utils/transactionMeta';
 import { formatCurrencyInput, parseCurrencyInput } from '../../lib/utils/currency';
 import { CurrencyInput } from '../shared/CurrencyInput';
@@ -161,6 +161,12 @@ export function ProfileView({
 
   function handleExportData() {
     const periodKey = exportPeriod === 'monthly' ? exportMonth : exportYear;
+    const periodWindow = exportPeriod === 'monthly'
+      ? (() => {
+        const range = getMonthDateRange(exportMonth);
+        return `${formatMonthLabel(exportMonth)} · ${range.startDate.slice(8, 10)}/${range.startDate.slice(5, 7)} a ${range.endDate.slice(8, 10)}/${range.endDate.slice(5, 7)}`;
+      })()
+      : `${exportYear} · 01/01 a 31/12`;
     const exportedTransactions = transactions
       .filter((transaction) => {
         const transactionMonth = getFinancialMonthKey(transaction);
@@ -198,7 +204,13 @@ export function ProfileView({
       transaction.isProjected ? 'Sim' : 'Não',
       getVisibleNotes(transaction.notes),
     ]);
-    const csv = [headers, ...rows]
+    const ruleRows = [
+      ['Regra da exportação', 'Exportação bruta do Perfil'],
+      ['Janela', periodWindow],
+      ['Observação', 'Este CSV lista lançamentos do cadastro. Para prova real de competência, faturas, reembolsos e patrimônio, use o CSV de Relatórios.'],
+      [],
+    ];
+    const csv = [...ruleRows, headers, ...rows]
       .map((row) => row.map((cell) => escapeCsvCell(cell)).join(';'))
       .join('\r\n');
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
@@ -808,7 +820,7 @@ export function ProfileView({
             </label>
 
             <p className={cx(surface.panelMuted, 'mt-4 p-3 text-xs leading-relaxed text-slate-500')}>
-              O arquivo inclui lançamentos confirmados, pendentes e projetados, além de categorias, origem e reembolsos.
+              O arquivo inclui lançamentos confirmados, pendentes e projetados. É uma exportação bruta do cadastro; a prova real de competência fica em Relatórios.
             </p>
 
             <button type="button" onClick={handleExportData} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white font-bold text-black transition hover:bg-slate-200">

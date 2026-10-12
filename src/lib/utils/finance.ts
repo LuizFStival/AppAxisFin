@@ -69,6 +69,20 @@ export function formatMonthLabel(month: string): string {
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date);
 }
 
+export function getMonthDateRange(month: string): { startDate: string; endDate: string } {
+  const [year, monthIndex] = month.split('-').map(Number);
+  const lastDay = new Date(year, monthIndex, 0).getDate();
+  return {
+    startDate: `${month}-01`,
+    endDate: `${month}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+export function formatCompetenceWindow(month: string): string {
+  const { startDate, endDate } = getMonthDateRange(month);
+  return `Competência: data do evento · ${formatMonthLabel(month)} · ${startDate.slice(8, 10)}/${startDate.slice(5, 7)} a ${endDate.slice(8, 10)}/${endDate.slice(5, 7)}`;
+}
+
 export function getAvailableMonths(transactions: Transaction[]): string[] {
   return Array.from(new Set(transactions.map(getFinancialMonthKey)))
     .sort()
@@ -81,16 +95,7 @@ export function getFinancialMonthKey(transaction: Transaction): string {
   return getMonthKey(transaction.date);
 }
 
-export function getTransactionCompetenceMonth(transaction: Transaction, cards: Card[] = []): string {
-  if (
-    transaction.flow === 'expense'
-    && transaction.cardId
-    && !isInvoicePayment(transaction)
-  ) {
-    const card = cards.find((item) => item.id === transaction.cardId);
-    if (card) return getCardInvoiceClosingMonth(card, transaction.date);
-  }
-
+export function getTransactionCompetenceMonth(transaction: Transaction, _cards: Card[] = []): string {
   return getFinancialMonthKey(transaction);
 }
 

@@ -107,6 +107,10 @@ const rows = buildMonthlyProofReportRows({
   visualScopeLabel: 'Geral',
 });
 
+assert.equal(rows[0][0], 'Regra do relatorio');
+assert.match(String(rows[0][7]), /Competência: data do evento/);
+assert.match(String(rows[0][12]), /ciclo de fatura permanece para caixa/);
+
 const summaryIncome = rows.find((row) => row[0] === 'Resumo do mes' && row[7] === 'Receita propria');
 assert.ok(summaryIncome);
 assert.equal(summaryIncome[9], '1000,00');

@@ -216,7 +216,7 @@ const paidInvoiceDashboard = summarizeDashboard(accounts, [
       paidFromAccountId: 'acc-main',
     }),
   },
-], '2026-06', cards);
+], '2026-05', cards);
 assert.equal(paidInvoiceDashboard.expenses, 100);
 assert.equal(paidInvoiceDashboard.pendingExpenses, 0);
 assert.equal(paidInvoiceDashboard.settledExpenses, 100);
@@ -467,11 +467,12 @@ const lateMayCardExpense: Transaction = {
   categoryId: 'cat-food',
   cardId: closesOnTwentySix.id,
 };
-assert.equal(getTransactionCompetenceMonth(lateMayCardExpense, [closesOnTwentySix]), '2026-06');
-assert.equal(summarizeDashboard(accounts, [lateMayCardExpense], '2026-05', [closesOnTwentySix]).expenses, 0);
-assert.equal(summarizeDashboard(accounts, [lateMayCardExpense], '2026-06', [closesOnTwentySix]).expenses, 946.89);
-assert.equal(summarizeMonthlyResult([lateMayCardExpense], '2026-05', [closesOnTwentySix]).personalExpenses, 0);
-assert.equal(summarizeMonthlyResult([lateMayCardExpense], '2026-06', [closesOnTwentySix]).personalExpenses, 946.89);
+assert.equal(getTransactionCompetenceMonth(lateMayCardExpense, [closesOnTwentySix]), '2026-05');
+assert.equal(getTransactionCompetenceMonth(lateMayCardExpense, [{ ...closesOnTwentySix, closingDay: 1 }]), '2026-05');
+assert.equal(summarizeDashboard(accounts, [lateMayCardExpense], '2026-05', [closesOnTwentySix]).expenses, 946.89);
+assert.equal(summarizeDashboard(accounts, [lateMayCardExpense], '2026-06', [closesOnTwentySix]).expenses, 0);
+assert.equal(summarizeMonthlyResult([lateMayCardExpense], '2026-05', [closesOnTwentySix]).personalExpenses, 946.89);
+assert.equal(summarizeMonthlyResult([lateMayCardExpense], '2026-06', [closesOnTwentySix]).personalExpenses, 0);
 assert.equal(getFinancialMonthKey({
   id: 'tx-cycle-boundary',
   description: 'Compra no fechamento',

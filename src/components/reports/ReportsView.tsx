@@ -36,6 +36,7 @@ import { Account, Card, Category, ReimbursementPerson, ReportWidgetId, ReserveBo
 import {
   expensesByCategory,
   formatCurrency,
+  formatCompetenceWindow,
   getFinancialMonthKey,
   formatMonthLabel,
   getPersonalExpenseSignedAmount,
@@ -410,6 +411,7 @@ export function ReportsView({
   const scopeHint = effectiveReportScope === 'general'
     ? 'Geral: resultado próprio + contas a receber separadas'
     : 'Apenas meus valores';
+  const competenceWindow = formatCompetenceWindow(month);
   const primaryIncomeLabel = effectiveReportScope === 'general' ? 'Receita própria' : 'Entradas';
   const primaryExpenseLabel = effectiveReportScope === 'general' ? 'Despesa própria' : 'Saídas';
   const topExpenseBreakdown = expenseBreakdown.reduce((top, item) => (
@@ -483,7 +485,10 @@ export function ReportsView({
           </button>
         </div>
       ) : null}
-      <p className="mt-2 text-xs font-semibold text-slate-500">{scopeHint}</p>
+      <div className="mt-2 space-y-1">
+        <p className="text-xs font-semibold text-slate-500">{scopeHint}</p>
+        <p className="text-[11px] font-semibold text-sky-300">{competenceWindow}</p>
+      </div>
 
       {reportView === 'month' ? (
         <>

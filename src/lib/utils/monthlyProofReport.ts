@@ -6,6 +6,7 @@ import { getExpenseNeedLabel } from './expenseNeed';
 import { summarizeExpenseNeed } from './expenseNeedSummary';
 import {
   expensesByCategory,
+  formatCompetenceWindow,
   formatMonthLabel,
   getCardInvoiceTransactions,
   getExpenseSignedAmount,
@@ -105,8 +106,16 @@ export function buildMonthlyProofReportRows(input: {
     reimbursementsEnabled,
     visualScopeLabel = 'Todos os valores do mes',
   } = input;
-  const rows: MonthlyProofReportRow[] = [HEADER];
   const monthLabel = formatMonthLabel(month);
+  const competenceWindow = formatCompetenceWindow(month);
+  const rows: MonthlyProofReportRow[] = [
+    csvRow('Regra do relatorio', 'Competencia', {
+      Competencia: month,
+      Descricao: competenceWindow,
+      Observacao: 'Prova real de Relatorios. Despesas por competencia usam data do evento; ciclo de fatura permanece para caixa, vencimento e pagamento.',
+    }),
+    HEADER,
+  ];
   const monthlyResult = summarizeMonthlyResult(transactions, month, cards, { includeReimbursements: reimbursementsEnabled });
   const monthTransactions = transactions.filter((transaction) => getTransactionCompetenceMonth(transaction, cards) === month);
   const personalExpenseTransactions = monthTransactions.filter((transaction) =>

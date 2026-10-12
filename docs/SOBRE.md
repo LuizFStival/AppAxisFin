@@ -67,6 +67,8 @@ Perfil de uso atual:
 - Relatorios exportam prova real mensal, mas ainda precisam permitir exportacao multi-mes.
 - Central do Mes ja organiza acoes, mas ainda disputa papel com Home, Transacoes e Relatorios.
 - O modal de lancamento e completo, mas esta denso demais.
+- Natureza do gasto existe, mas a nomenclatura deve evoluir para Fixo / Necessario / Opcional e ganhar fila de classificacao pendente.
+- Evento/Projeto ainda precisa virar campo transversal, evitando usar Pessoa de reembolso como projeto.
 
 ## Hipotese de valor
 
@@ -98,7 +100,7 @@ AxisFin e um painel financeiro pessoal que separa o dinheiro real em conta, os g
 
 Momento de consolidacao de produto.
 
-O app ja tem muitas funcionalidades reais. A proxima fase deve reduzir ruido, melhorar fluxos e documentar decisoes para evitar retrabalho com IA.
+O app ja entregou as grandes leituras executivas de variacao patrimonial, compromissos futuros, natureza do gasto, receita propria vs reembolso, transferencias internas e competencia por data do evento. A prioridade agora e clareza operacional: uma fila clara para completar classificacoes sem travar o lancamento rapido, evento/projeto transversal e tratamento visual de meses projetados.
 
 ## Mapa da documentacao
 

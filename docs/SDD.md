@@ -60,6 +60,8 @@ Risco atual: excesso de estados e condicionais no mesmo componente.
 
 Despesa de cartao entra na fatura pelo ciclo de fechamento/vencimento. A fatura mostra total, valor pessoal, valor de terceiros, pendencias de reembolso, estornos, status e lista reordenavel.
 
+A competencia mensal de despesas de cartao usa a data da compra, igual debito em conta. O ciclo de fatura continua existindo para previsao de caixa, vencimento, pagamento e leitura de fatura, mas nao define o resultado de competencia. Motivo: `closingDay` e configuracao mutavel; alterar o cadastro de um cartao nao pode reclassificar historico fechado. Motivo adicional: compras feitas no mesmo dia em cartoes diferentes devem cair no mesmo mes de competencia.
+
 Pagamento de fatura e uma baixa de caixa da conta escolhida, nao um novo gasto de competencia. Telas de transacoes, relatorios, breakdown fixo/parcelado/variavel e filtros de "meus gastos" devem ignorar `invoicePayment` para evitar dupla contagem com as compras da fatura.
 
 O visual de cartao fisico e compartilhado entre a tela Cartoes e a Home para manter consistencia em total de fatura, bandeira, status e ciclo. Selects de conta/cartao tambem devem usar o seletor visual compartilhado, mantendo o select nativo por baixo para acessibilidade e dando contexto de saldo, limite e instituicao.
@@ -101,6 +103,8 @@ As parcelas e demais despesas proprias podem ser classificadas por natureza: ess
 ### Relatorios
 
 Relatorios sao separados em `Mes`, `Ano` e `Patrimonio`. Cada visao deve responder primeiro a pergunta executiva antes dos graficos: se o mes sobrou ou faltou, se o ano acumula sobra ou deficit, e qual e a composicao atual do patrimonio. O detalhamento fixo/parcelado/variavel fica progressivo para nao competir com o resumo.
+
+Todo relatorio e CSV deve declarar no inicio a regra de competencia usada e a janela de datas. Exemplo: `Competencia: data do evento - Set/26 - 01/09 a 30/09`. Essa declaracao evita confusao entre exportacao bruta do Perfil e prova real de Relatorios sem exigir que os dois fluxos sejam unificados. O Perfil exporta lancamentos brutos do cadastro; Relatorios exporta a prova real financeira por competencia.
 
 A visao patrimonial tambem mostra a variacao mensal estimada: patrimonio atual menos movimento do mes, destacando aportes externos. Esse numero e separado do resultado de competencia, porque saque/resgate de caixinha pode mudar o caixa disponivel sem ser receita, e aplicacao pode reduzir conta sem ser despesa.
 
@@ -171,6 +175,8 @@ Saidas:
 - Despesa no cartao nao reduz conta ate o pagamento da fatura.
 - Pagamento de fatura reduz a conta escolhida.
 - Pagamento de fatura nao deve compor gasto pessoal, gasto variavel/fixo/parcelado nem resultado por competencia, para nao somar a baixa da conta com as compras ja registradas na fatura.
+- Competencia alvo de despesas deve ser a data do evento: debito usa data do debito e cartao usa data da compra. Ciclo de fatura nao deve reclassificar resultado mensal.
+- Relatorios e CSVs devem declarar regra de competencia e janela de datas no inicio.
 - Transferencia move saldo entre contas e nao altera patrimonio total.
 - Transferencia interna entre conta, caixinha ou ajuste marcado como interno explica movimento de caixa, mas nao e receita propria nem despesa propria.
 - Receita propria exclui reembolso e transferencia interna.
@@ -181,9 +187,11 @@ Saidas:
 - Compra parcelada deve dividir o valor total pelo numero de parcelas.
 - Compromisso futuro deve mostrar saldo parcelado restante, projecao mes a mes e mes de zeragem.
 - Ao registrar parcelamento, o modal deve mostrar valor por parcela, impacto mensal da parte pessoal e total que fica comprometido para meses futuros.
-- Parcelas e despesas proprias devem poder ser classificadas como essencial, bem duravel ou superfluo.
-- Compromissos futuros e relatorios devem mostrar percentual de essencial/duravel vs superfluo.
-- Evento/Projeto deve estar disponivel para qualquer lancamento e permitir comparativos com ou sem eventos.
+- Parcelas e despesas proprias devem poder ser classificadas por natureza. A nomenclatura alvo e Fixo / Necessario / Opcional, reduzindo julgamento de valor.
+- Compromissos futuros e relatorios devem mostrar percentual de gasto flexivel/opcional.
+- Lancamentos sem natureza devem entrar em fila de classificacao pendente, preferencialmente revisavel em lote, sem bloquear o registro rapido.
+- Evento/Projeto deve estar disponivel para qualquer lancamento e permitir comparativos com ou sem eventos. A opcao alvo e avaliar um campo Vinculo tipado (`Pessoa`, `Empresa`, `Evento`) para nao usar Pessoa de reembolso como projeto.
+- Meses futuros com `isProjected` devem ter tratamento visual proprio: tracejado/opacidade e rotulo "Projetado" no lugar de "Resultado".
 - Variacao patrimonial mensal deve ser apresentada separada do resultado contabil do mes.
 - Confianca do saldo deve considerar `lastBalanceUpdate`: mais de 7 dias sem conferencia gera alerta, e datas diferentes no consolidado devem ser explicitadas.
 - Edicao de parcela/fixa precisa deixar claro se afeta apenas uma ocorrencia ou tambem futuras.

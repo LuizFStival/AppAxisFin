@@ -172,17 +172,34 @@ Critérios de aceite:
 - Usuario consegue responder quanto do comprometimento futuro e necessidade, patrimonio de uso ou escolha superflua.
 - Relatorios e Central do Mes conseguem destacar quando superfluos comprometem meses futuros.
 
+### Bloco P0 - Confiabilidade do numero
+
+- [x] Unificar regra de competencia por data do evento: cartao passa a usar data da compra, igual debito.
+- [x] Manter ciclo de fatura apenas para previsao de caixa, vencimento e pagamento.
+- [x] Garantir que mudar `closingDay` de cartao nao reclassifique historico fechado.
+- [x] Declarar em todo CSV e relatorio a regra usada e a janela de datas. Exemplo: `Competencia: data do evento - Set/26 - 01/09 a 30/09`.
+- [x] Diferenciar claramente exportacao bruta do Perfil e prova real de Relatorios sem exigir unificacao dos dois fluxos.
+
+Critérios de aceite:
+
+- Compras do mesmo dia ficam na mesma competencia mesmo em cartoes com ciclos diferentes.
+- Alterar cadastro de cartao nao muda resultado historico de meses fechados.
+- Usuario entende no topo da tela/exportacao qual regra e janela de datas estao sendo usadas.
+- Pagamento de fatura continua como baixa de caixa explicativa, sem duplicar despesa de competencia.
+
 ### Fase 11 - Evento/Projeto em todos os lancamentos
 
 - [ ] Disponibilizar campo Evento/Projeto em qualquer lancamento, nao apenas em reembolsaveis.
 - [ ] Reutilizar eventos existentes e permitir criar novo evento no fluxo de lancamento.
 - [ ] Exibir evento nas listas de transacoes, faturas e relatorios.
 - [ ] Criar filtro "excluir eventos" em comparativos mes a mes.
+- [ ] Avaliar campo Vinculo tipado (`Pessoa`, `Empresa`, `Evento`) para reaproveitar estrutura existente sem poluir Pessoa de reembolso.
 
 Critérios de aceite:
 
 - Viagens, projetos e gastos extraordinarios deixam de inflar categorias recorrentes.
 - Usuario consegue comparar rotina normal com e sem eventos.
+- Pessoa de reembolso deixa de carregar eventos como "Viagem BC".
 
 ### Fase 12 - Comparativos executivos com eventos
 
@@ -215,20 +232,28 @@ Critérios de aceite:
 
 - [x] Separar transferencia interna de receita/despesa no resultado mensal.
 - [x] Separar receita propria de reembolso esperado em relatorios, transacoes e CSV de prova real.
+- [x] Entregar variacao patrimonial mensal.
+- [x] Entregar painel de compromissos futuros.
+- [x] Entregar natureza do gasto na leitura atual.
 - [x] Documentar workaround confiavel do Graphify/uv no Windows.
 - [x] Revalidar fluxos de parcelamento, reembolso e importacao CSV cobertos por testes automatizados.
 - [x] Confirmar que ajuste manual de saldo cria lancamento explicativo quando houver diferenca.
 - [x] Permitir aplicacao em caixinha mesmo quando o saldo cadastrado da conta estiver defasado, com aviso de conta negativa no app.
 - [x] Corrigir filtros e breakdowns para pagamento de fatura nao duplicar gasto pessoal da competencia.
+- [x] Unificar competencia por data do evento para debito e cartao.
+- [x] Declarar regra de competencia e janela de datas no topo de relatorios e CSVs.
 
 ### P1 - Produto
 
-- [x] Fase 8: indicador de variacao patrimonial mensal e badge de saldo desatualizado.
+- [x] Fase 8: indicador de variacao patrimonial mensal e confianca do saldo.
 - [x] Fase 9: painel de compromisso futuro e impacto de parcelamento.
 - [x] Fase 10: natureza das parcelas.
+- [ ] Renomear natureza para Fixo / Necessario / Opcional, reduzindo julgamento de valor.
+- [ ] Criar fila de classificacao pendente para lancamentos sem natureza.
 - [ ] Fase 11: evento/projeto em todos os lancamentos.
 - [ ] Fase 12: comparativos executivos com e sem eventos.
 - [ ] Fase 13: exportacao CSV multi-mes.
+- [ ] Tratar visualmente `isProjected`: tracejado/opacidade e rotulo "Projetado" em meses futuros.
 - [x] Reorganizar navegacao.
 - [x] Simplificar modal de lancamento.
 - [x] Reformatar Relatorios.
@@ -237,6 +262,9 @@ Critérios de aceite:
 
 ### P2 - Visual
 
+- [ ] Fluxo de caixa por vencimento: quanto sai em cada data.
+- [ ] Revisar e garantir badge de saldo desatualizado quando passar de 7 dias.
+- [ ] Historico de saldo por data para contas.
 - [x] Reduzir excesso de cards/gradientes em Home, Relatorios e Central.
 - [x] Uniformizar selects ricos para contas/cartoes.
 - [x] Melhorar listas densas no desktop para Cartoes, Transacoes e Contas.
@@ -274,11 +302,12 @@ Critérios de aceite:
 
 ## Proximas acoes
 
-1. Executar Fase 11: evento/projeto em todos os lancamentos.
-2. Executar Fase 12: comparativos executivos com e sem eventos.
-3. Executar Fase 13: exportacao CSV multi-mes.
-4. Continuar Fase 7 em paralelo apenas quando a mudanca tocar arquivos centrais demais.
-5. Executar uma tarefa por vez seguindo Descobrir, Nortear, Especificar e Evidenciar.
+1. Executar P1: renomear natureza para Fixo / Necessario / Opcional e criar fila de classificacao pendente.
+2. Executar Fase 11: Evento/Projeto ou Vinculo tipado em todos os lancamentos.
+3. Executar P1: tratamento visual de `isProjected` em meses futuros.
+4. Executar Fase 12 e Fase 13 depois que a confiabilidade do numero estiver estabilizada em uso real.
+5. Continuar Fase 7 em paralelo apenas quando a mudanca tocar arquivos centrais demais.
+6. Executar uma tarefa por vez seguindo Descobrir, Nortear, Especificar e Evidenciar.
 
 ## Pontos a complementar
 

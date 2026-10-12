@@ -2,6 +2,80 @@
 
 ## Decisoes relevantes
 
+## 2026-10-12 - Bloco P0: competencia por data do evento
+
+### Antes
+
+Despesas de cartao entravam na competencia pelo mes de fechamento da fatura. Isso fazia uma compra de maio cair em junho se o fechamento do cartao fosse em junho, e tambem deixava o historico vulneravel a mudancas de `closingDay`.
+
+### Depois
+
+`getTransactionCompetenceMonth()` passou a usar a data do evento para despesas de cartao, igual debito em conta. O ciclo de fatura continua sendo usado para listar faturas, vencimentos, pagamentos e previsao de caixa. Relatorios mostram a regra e a janela de datas na tela, o CSV de Relatorios comeca com uma linha de regra, e a exportacao do Perfil declara que e uma exportacao bruta do cadastro.
+
+### Decisao
+
+Competencia responde quando o evento financeiro aconteceu. Fatura responde quando o dinheiro sai do caixa para pagar o cartao. Essas leituras ficam separadas para evitar dupla contagem e para impedir que configuracoes mutaveis de cartao alterem resultado historico.
+
+### Evidencia
+
+- `src/lib/utils/finance.ts`
+- `src/components/reports/ReportsView.tsx`
+- `src/lib/utils/monthlyProofReport.ts`
+- `src/components/profile/ProfileView.tsx`
+- `src/lib/utils/finance.test.ts`
+- `src/lib/utils/monthlyProofReport.test.ts`
+- `docs/ROADMAP.md`
+- `docs/SDD.md`
+- `docs/SOBRE.md`
+- `npm.cmd test -- finance monthlyProofReport futureCommitments monthCenterRules` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 22 arquivos.
+- `npm.cmd run build` passou.
+- `git diff --check` passou com apenas avisos LF/CRLF conhecidos do Windows.
+- `npm.cmd run graphify:src` falhou no sandbox por acesso negado ao temporario do Python (`os error 5`).
+- Fallback `uvx.exe --no-cache --python 3.12 --from graphifyy python -m graphify src` tambem falhou por politica de Controle de Aplicativo bloqueando o DLL `_mt19937` do NumPy.
+- Graphify nao foi atualizado nesta rodada por bloqueio local do Windows App Control; nenhum arquivo `src/graphify-out` foi alterado.
+
+### Impacto observado
+
+[HIPOTESE - CONFIRMAR] Compras do mesmo dia devem cair no mesmo mes de competencia mesmo em cartoes diferentes, e alterar o fechamento do cartao nao deve mexer no resultado de meses fechados.
+
+### Proximos passos
+
+Executar P1: renomear natureza para Fixo / Necessario / Opcional e criar fila de classificacao pendente.
+
+## 2026-10-12 - Priorizacao pos-levantamento
+
+### Antes
+
+O backlog ainda misturava melhorias ja entregues com proximos blocos. Variacao patrimonial, compromissos futuros, natureza do gasto, separacao de receita propria vs reembolso e transferencias internas continuavam competindo visualmente com itens ainda pendentes.
+
+### Depois
+
+O backlog foi reordenado em torno de confiabilidade do numero. O novo P0 e unificar competencia por data do evento e declarar regra/janela em todo relatorio e CSV. Itens ja entregues foram marcados como concluidos/removidos da fila de melhorias. O P1 ficou com clareza operacional: renomear natureza para Fixo / Necessario / Opcional, criar fila de classificacao pendente, implementar Evento/Projeto ou Vinculo tipado, e diferenciar visualmente meses projetados. P2 ficou para fluxo de caixa por vencimento, revisao do badge de saldo desatualizado e historico de saldo por data para contas.
+
+### Decisao
+
+Cartao deve usar data da compra para competencia, igual debito em conta. Ciclo de fatura continua existindo para previsao de caixa, vencimento e pagamento, mas nao deve alterar o resultado mensal. Essa decisao evita que uma mudanca em `closingDay` reclassifique historico fechado e faz compras do mesmo dia cairem no mesmo mes, mesmo em cartoes diferentes.
+
+Relatorios e CSVs devem declarar no topo a regra de competencia e a janela de datas. Exemplo: `Competencia: data do evento - Set/26 - 01/09 a 30/09`.
+
+### Evidencia
+
+- `docs/ROADMAP.md`
+- `docs/SDD.md`
+- `docs/SOBRE.md`
+- `docs/CHANGELOG_EVIDENCES.md`
+- Mudanca apenas documental; nao exigiu `npm.cmd run lint`, `npm.cmd test`, `npm.cmd run build` nem Graphify.
+
+### Impacto observado
+
+[HIPOTESE - CONFIRMAR] A proxima implementacao deve reduzir divergencia percebida entre faturas, debitos e resultado do mes, principalmente em cenario com varios cartoes e ciclos diferentes.
+
+### Proximos passos
+
+Implementar Bloco P0: competencia por data do evento + declaracao de regra/janela em tela e CSV.
+
 ## 2026-10-04 - Fase 10: natureza das parcelas e qualidade do gasto
 
 ### Antes
