@@ -70,6 +70,8 @@ O visual de cartao fisico e compartilhado entre a tela Cartoes e a Home para man
 
 O usuario importa CSV Nubank, revisa itens, ignora entradas que nao sao despesa, investiga candidatos e cria despesas em lote. Para reembolso/divisao, o importador deve respeitar a mesma regra do cadastro manual.
 
+Quando o CSV traz uma compra parcelada, como `Vila Verde Centro Auto - Parcela 1/10`, o valor da linha e tratado como valor mensal da parcela e o app cria as parcelas restantes ate o total informado. Se a despesa for dividida com terceiro, cada parcela futura tambem nasce quebrada entre parte pessoal e reembolso. Ao importar faturas seguintes, a conciliacao deve reconhecer parcelas futuras ja criadas por importacao anterior, inclusive quando a parcela foi dividida em dois registros, para evitar duplicidade.
+
 ### Contas e saldo
 
 Contas exibem saldo real, movimentos do mes e detalhe por conta. Ajuste manual de saldo deve gerar um lancamento financeiro de entrada ou saida para explicar a diferenca.

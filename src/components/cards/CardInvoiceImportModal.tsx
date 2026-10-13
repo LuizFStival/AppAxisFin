@@ -14,6 +14,7 @@ import {
   InvoiceImportReimbursementDraft,
   suggestInvoiceImportCategoryId,
 } from '../../lib/utils/invoiceImport';
+import { readTransactionMeta } from '../../lib/utils/transactionMeta';
 
 interface CardInvoiceImportModalProps {
   card: Card;
@@ -52,9 +53,23 @@ export function CardInvoiceImportModal({
   const activeRows = rows.filter((row) => !ignoredImportIds.includes(row.id));
   const importableRows = activeRows.filter((row) => row.matchStatus === 'new');
   const matchedRows = activeRows.filter((row) => row.matchStatus === 'matched');
+  const transactionsToCreate = useMemo(
+    () => buildInvoiceImportTransactions({
+      items: activeRows,
+      cardId: card.id,
+      categoryByImportId,
+      reimbursementByImportId,
+      reimbursementPersonNameById: Object.fromEntries(reimbursementPeople.map((person) => [person.id, person.name])),
+    }),
+    [activeRows, card.id, categoryByImportId, reimbursementByImportId, reimbursementPeople],
+  );
   const totalToImport = useMemo(
-    () => importableRows.reduce((sum, row) => sum + (row.kind === 'credit' ? -row.amount : row.amount), 0),
-    [importableRows],
+    () => transactionsToCreate.reduce((sum, transaction) => sum + (isInvoiceCredit(transaction as Transaction) ? -transaction.amount : transaction.amount), 0),
+    [transactionsToCreate],
+  );
+  const futureInstallmentCount = useMemo(
+    () => transactionsToCreate.filter((transaction) => !activeRows.some((row) => row.id === readInvoiceImportId(transaction.notes))).length,
+    [activeRows, transactionsToCreate],
   );
 
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -225,8 +240,9 @@ export function CardInvoiceImportModal({
                   <p className="mt-1 font-display text-xl font-bold text-white">{matchedRows.length}</p>
                 </div>
                 <div className="rounded-2xl border border-violet-400/15 bg-violet-500/10 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-violet-200">Impacto</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-violet-200">Impacto total</p>
                   <p className={`mt-1 truncate font-display text-xl font-bold ${totalToImport < 0 ? 'text-emerald-200' : 'text-white'}`}>{formatCurrency(totalToImport)}</p>
+                  {futureInstallmentCount > 0 ? <p className="mt-1 text-[10px] font-semibold text-violet-100">{futureInstallmentCount} futuro{futureInstallmentCount === 1 ? '' : 's'}</p> : null}
                 </div>
                 <div className="rounded-2xl border border-slate-400/15 bg-slate-500/10 p-3">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Ignorados</p>
@@ -420,17 +436,21 @@ export function CardInvoiceImportModal({
           <button
             type="button"
             onClick={() => void handleImport()}
-            disabled={isSaving || importableRows.length === 0}
+            disabled={isSaving || transactionsToCreate.length === 0}
             className="flex h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-black transition hover:bg-slate-200 disabled:opacity-40"
           >
             <Check size={17} />
-            {isSaving ? 'Importando...' : `Importar ${importableRows.length}`}
+            {isSaving ? 'Importando...' : `Importar ${transactionsToCreate.length}`}
           </button>
         </div>
       </div>
     </div>,
     document.body,
   );
+}
+
+function readInvoiceImportId(notes?: string) {
+  return readTransactionMeta(notes).invoiceImportId;
 }
 
 function getMatchReasonLabel(reason: ReconciledInvoiceImportItem['matchReason']) {

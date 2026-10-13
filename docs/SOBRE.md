@@ -61,7 +61,7 @@ Perfil de uso atual:
 
 ## Funcionalidades parciais
 
-- Importacao de fatura Nubank ja existe, mas ainda precisa amadurecer investigacao/conciliação manual e experiencia de lote.
+- Importacao de fatura Nubank ja existe, cria parcelas futuras quando o CSV indica parcelamento e ainda pode amadurecer investigacao/conciliação manual e experiencia de lote.
 - Ajuste de saldo cria lancamento financeiro para diferenca, mas o fluxo ainda precisa ser validado com uso real.
 - Relatorio anual/patrimonial existe e ja diferencia resultado de competencia de variacao patrimonial; ainda pode evoluir em comparativos e historico.
 - Relatorios exportam prova real mensal, mas ainda precisam permitir exportacao multi-mes.

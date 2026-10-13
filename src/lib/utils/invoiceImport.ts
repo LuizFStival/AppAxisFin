@@ -1,5 +1,6 @@
 import { Card, Category, ReimbursementStatus, Transaction, TransactionMeta } from '../../types';
 import { getCardInvoiceClosingMonth } from './cardInvoices';
+import { addMonths } from './date';
 import { roundMoney } from './finance';
 import { readTransactionMeta, writeTransactionNotes } from './transactionMeta';
 
@@ -139,18 +140,33 @@ export function reconcileInvoiceImportItems(
         && roundMoney(transaction.amount) === item.amount
         && !usedTransactionIds.has(transaction.id);
     });
+    const splitCandidates = existingTransactions.filter((transaction) => {
+      const meta = readTransactionMeta(transaction.notes);
+      const sameKind = item.kind === 'credit' ? meta.invoiceAdjustment === 'credit' : meta.invoiceAdjustment !== 'credit';
+      const transactionMerchant = merchantKey(transaction.description);
+      return sameKind
+        && transaction.date === item.date
+        && !usedTransactionIds.has(transaction.id)
+        && (transactionMerchant.includes(item.merchantKey) || item.merchantKey.includes(transactionMerchant));
+    });
+    const splitGroupMatch = item.kind === 'expense'
+      && splitCandidates.length > 1
+      && roundMoney(splitCandidates.reduce((sum, transaction) => sum + transaction.amount, 0)) === item.amount
+      ? splitCandidates
+      : undefined;
     const merchantMatch = exactImportMatch ? undefined : candidates.find((transaction) => merchantKey(transaction.description) === item.merchantKey);
     const dateAmountMatch = exactImportMatch || merchantMatch || sameImportedCount !== 1 || candidates.length !== 1
       ? undefined
       : candidates[0];
-    const matchedTransaction = exactImportMatch ?? merchantMatch ?? dateAmountMatch;
+    const matchedTransaction = exactImportMatch ?? merchantMatch ?? dateAmountMatch ?? splitGroupMatch?.[0];
 
     if (matchedTransaction) usedTransactionIds.add(matchedTransaction.id);
+    splitGroupMatch?.forEach((transaction) => usedTransactionIds.add(transaction.id));
 
     return {
       ...item,
       matchStatus: matchedTransaction ? 'matched' : 'new',
-      matchReason: exactImportMatch ? 'import_id' : merchantMatch ? 'merchant' : dateAmountMatch ? 'date_amount' : undefined,
+      matchReason: exactImportMatch ? 'import_id' : merchantMatch || splitGroupMatch ? 'merchant' : dateAmountMatch ? 'date_amount' : undefined,
       matchedTransaction,
     };
   });
@@ -186,69 +202,94 @@ export function buildInvoiceImportTransactions(input: {
       const baseMeta: TransactionMeta = {
         entryMode: isInstallment ? 'installment' : 'variable',
         invoiceAdjustment: item.kind === 'credit' ? 'credit' : undefined,
-        installmentNumber: item.installmentNumber,
         totalInstallments: item.totalInstallments,
         generatedFrom: isInstallment ? item.date : undefined,
         invoiceImportSource: 'nubank_csv',
-        invoiceImportId: item.id,
         invoiceImportBank: item.bank,
       };
-      const baseDescription = isInstallment ? `${item.baseTitle} (${item.installmentNumber}/${item.totalInstallments})` : item.baseTitle;
       const categoryId = input.categoryByImportId[item.id] || undefined;
 
-      if (effectiveSplitMode === 'shared' && reimbursement && reimbursement.personalAmount > 0 && reimbursement.reimbursementAmount > 0) {
-        const personName = reimbursementDraft?.reimbursementPersonId
-          ? input.reimbursementPersonNameById?.[reimbursementDraft.reimbursementPersonId]
-          : undefined;
-        return [
-          {
-            description: baseDescription,
-            amount: reimbursement.personalAmount,
-            flow: 'expense',
-            status: 'pending',
-            date: item.date,
-            notes: writeTransactionNotes(undefined, { ...baseMeta, invoiceImportPart: 'personal' }),
-            categoryId,
-            cardId: input.cardId,
-            isReimbursable: false,
-            splitMode: 'none',
-          },
-          {
-            description: personName ? `${baseDescription} - ${personName}` : `${baseDescription} - terceiro`,
-            amount: reimbursement.reimbursementAmount,
-            flow: 'expense',
-            status: 'pending',
-            date: item.date,
-            notes: writeTransactionNotes(undefined, { ...baseMeta, expenseNeed: undefined, invoiceImportPart: 'reimbursement' }),
-            categoryId,
-            cardId: input.cardId,
-            isReimbursable: true,
-            splitMode: 'third_party_full',
-            personalAmount: 0,
-            reimbursementAmount: reimbursement.reimbursementAmount,
-            reimbursementPersonId: reimbursementDraft?.reimbursementPersonId,
-            reimbursementStatus: reimbursementDraft?.reimbursementStatus ?? 'pending',
-          },
-        ] satisfies Array<Omit<Transaction, 'id'>>;
-      }
+      return getInstallmentNumbersToCreate(item).flatMap((installmentNumber): Array<Omit<Transaction, 'id'>> => {
+        const installmentDate = getImportedInstallmentDate(item, installmentNumber);
+        const installmentMeta: TransactionMeta = {
+          ...baseMeta,
+          installmentNumber: isInstallment ? installmentNumber : undefined,
+          invoiceImportId: getImportedInstallmentId(item, installmentNumber),
+        };
+        const baseDescription = isInstallment ? `${item.baseTitle} (${installmentNumber}/${item.totalInstallments})` : item.baseTitle;
 
-      return [{
-        description: baseDescription,
-        amount: item.amount,
-        flow: 'expense',
-        status: 'pending',
-        date: item.date,
-        notes: writeTransactionNotes(undefined, { ...baseMeta, invoiceImportPart: effectiveSplitMode === 'third_party_full' ? 'reimbursement' : 'personal' }),
-        categoryId,
-        cardId: input.cardId,
-        isReimbursable: effectiveSplitMode !== 'personal',
-        splitMode: effectiveSplitMode === 'personal' ? 'none' : effectiveSplitMode,
-        personalAmount: reimbursement?.personalAmount,
-        reimbursementAmount: reimbursement?.reimbursementAmount,
-        reimbursementPersonId: effectiveSplitMode !== 'personal' ? reimbursementDraft?.reimbursementPersonId : undefined,
-        reimbursementStatus: effectiveSplitMode !== 'personal' ? reimbursementDraft?.reimbursementStatus ?? 'pending' : undefined,
-      }];
+        if (effectiveSplitMode === 'shared' && reimbursement && reimbursement.personalAmount > 0 && reimbursement.reimbursementAmount > 0) {
+          const personName = reimbursementDraft?.reimbursementPersonId
+            ? input.reimbursementPersonNameById?.[reimbursementDraft.reimbursementPersonId]
+            : undefined;
+          return [
+            {
+              description: baseDescription,
+              amount: reimbursement.personalAmount,
+              flow: 'expense',
+              status: 'pending',
+              date: installmentDate,
+              notes: writeTransactionNotes(undefined, { ...installmentMeta, invoiceImportPart: 'personal' }),
+              categoryId,
+              cardId: input.cardId,
+              isReimbursable: false,
+              splitMode: 'none',
+            },
+            {
+              description: personName ? `${baseDescription} - ${personName}` : `${baseDescription} - terceiro`,
+              amount: reimbursement.reimbursementAmount,
+              flow: 'expense',
+              status: 'pending',
+              date: installmentDate,
+              notes: writeTransactionNotes(undefined, { ...installmentMeta, expenseNeed: undefined, invoiceImportPart: 'reimbursement' }),
+              categoryId,
+              cardId: input.cardId,
+              isReimbursable: true,
+              splitMode: 'third_party_full',
+              personalAmount: 0,
+              reimbursementAmount: reimbursement.reimbursementAmount,
+              reimbursementPersonId: reimbursementDraft?.reimbursementPersonId,
+              reimbursementStatus: reimbursementDraft?.reimbursementStatus ?? 'pending',
+            },
+          ] satisfies Array<Omit<Transaction, 'id'>>;
+        }
+
+        return [{
+          description: baseDescription,
+          amount: item.amount,
+          flow: 'expense',
+          status: 'pending',
+          date: installmentDate,
+          notes: writeTransactionNotes(undefined, { ...installmentMeta, invoiceImportPart: effectiveSplitMode === 'third_party_full' ? 'reimbursement' : 'personal' }),
+          categoryId,
+          cardId: input.cardId,
+          isReimbursable: effectiveSplitMode !== 'personal',
+          splitMode: effectiveSplitMode === 'personal' ? 'none' : effectiveSplitMode,
+          personalAmount: reimbursement?.personalAmount,
+          reimbursementAmount: reimbursement?.reimbursementAmount,
+          reimbursementPersonId: effectiveSplitMode !== 'personal' ? reimbursementDraft?.reimbursementPersonId : undefined,
+          reimbursementStatus: effectiveSplitMode !== 'personal' ? reimbursementDraft?.reimbursementStatus ?? 'pending' : undefined,
+        }];
+      });
     });
+}
+
+function getInstallmentNumbersToCreate(item: ImportedInvoiceItem): number[] {
+  if (!item.installmentNumber || !item.totalInstallments || item.totalInstallments < item.installmentNumber) return [1];
+  return Array.from(
+    { length: item.totalInstallments - item.installmentNumber + 1 },
+    (_, index) => item.installmentNumber! + index,
+  );
+}
+
+function getImportedInstallmentDate(item: ImportedInvoiceItem, installmentNumber: number) {
+  if (!item.installmentNumber || installmentNumber === item.installmentNumber) return item.date;
+  return addMonths(item.date, installmentNumber - item.installmentNumber);
+}
+
+function getImportedInstallmentId(item: ImportedInvoiceItem, installmentNumber: number) {
+  if (!item.installmentNumber || installmentNumber === item.installmentNumber) return item.id;
+  return `${item.id}:installment:${installmentNumber}`;
 }
 
 function buildReimbursementValues(amount: number, draft?: InvoiceImportReimbursementDraft) {

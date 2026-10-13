@@ -242,6 +242,7 @@ Critérios de aceite:
 - [x] Corrigir filtros e breakdowns para pagamento de fatura nao duplicar gasto pessoal da competencia.
 - [x] Unificar competencia por data do evento para debito e cartao.
 - [x] Declarar regra de competencia e janela de datas no topo de relatorios e CSVs.
+- [x] Corrigir importacao Nubank parcelada para criar parcelas futuras e conciliar faturas seguintes sem duplicar.
 
 ### P1 - Produto
 

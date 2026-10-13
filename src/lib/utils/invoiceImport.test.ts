@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { Card, Category, Transaction } from '../../types';
-import { writeTransactionNotes } from './transactionMeta';
+import { readTransactionMeta, writeTransactionNotes } from './transactionMeta';
 import {
   buildInvoiceImportTransactions,
   filterInvoiceImportItemsByCardPeriod,
@@ -80,7 +80,7 @@ const transactions = buildInvoiceImportTransactions({
     'person-1': 'Viagem BC',
   },
 });
-assert.equal(transactions.length, 3);
+assert.equal(transactions.length, 9);
 assert.equal(transactions[0].description, 'Netflix (2/5)');
 assert.equal(transactions[0].categoryId, 'cat-services');
 assert.equal(transactions[0].amount, 10);
@@ -92,13 +92,28 @@ assert.equal(transactions[1].splitMode, 'third_party_full');
 assert.equal(transactions[1].personalAmount, 0);
 assert.equal(transactions[1].reimbursementAmount, 19.9);
 assert.equal(transactions[1].reimbursementPersonId, 'person-1');
-assert.equal(transactions[2].description, 'Estorno Nubank');
-assert.equal(transactions[2].amount, 10);
+assert.equal(transactions[2].description, 'Netflix (3/5)');
+assert.equal(transactions[2].date, '2026-10-12');
+assert.equal(readTransactionMeta(transactions[2].notes).invoiceImportId, `${reconciled[1].id}:installment:3`);
+assert.equal(transactions[6].description, 'Netflix (5/5)');
+assert.equal(transactions[6].date, '2026-12-12');
+assert.equal(transactions[8].description, 'Estorno Nubank');
+assert.equal(transactions[8].amount, 10);
 
 const reimported = reconcileInvoiceImportItems(periodItems, [
   { ...transactions[0], id: 'personal-imported' },
   { ...transactions[1], id: 'reimbursement-imported' },
-  { ...transactions[2], id: 'credit-imported' },
+  { ...transactions[8], id: 'credit-imported' },
 ]);
 assert.equal(reimported[1].matchStatus, 'matched');
 assert.equal(reimported[1].matchReason, 'import_id');
+
+const nextInstallment = parseNubankInvoiceCsv(`date,title,amount
+2026-10-12,Netflix - Parcela 3/5,29.90
+`);
+const nextReconciled = reconcileInvoiceImportItems(nextInstallment.items, [
+  { ...transactions[2], id: 'personal-future' },
+  { ...transactions[3], id: 'reimbursement-future' },
+]);
+assert.equal(nextReconciled[0].matchStatus, 'matched');
+assert.equal(nextReconciled[0].matchReason, 'merchant');

@@ -2,6 +2,43 @@
 
 ## Decisoes relevantes
 
+## 2026-10-12 - Importacao Nubank cria parcelas futuras
+
+### Antes
+
+Ao importar uma fatura Nubank, uma linha como `Vila Verde Centro Auto - Parcela 1/10` era cadastrada apenas como o item presente no CSV. O app mostrava `1/10` em setembro, mas outubro nao exibia automaticamente `2/10` porque as parcelas futuras nao eram materializadas.
+
+### Depois
+
+O importador passou a criar as parcelas restantes quando a linha importada informa parcelamento. O valor da linha do CSV e tratado como valor mensal da parcela, nao como valor total da compra. Em despesas divididas/reembolsaveis, cada parcela futura tambem e quebrada entre parte pessoal e parte de terceiro. A conciliacao reconhece parcelas futuras ja criadas quando a fatura seguinte for importada, inclusive quando a soma de dois registros divididos bate com o valor cheio da linha da fatura.
+
+### Decisao
+
+Importacao de fatura deve se comportar como compromisso assumido: se o banco informa que aquela compra e `1/10`, o AxisFin precisa projetar as demais parcelas para responder compromissos futuros e evitar que o usuario espere a proxima fatura para descobrir o impacto.
+
+### Evidencia
+
+- `src/lib/utils/invoiceImport.ts`
+- `src/lib/utils/invoiceImport.test.ts`
+- `src/components/cards/CardInvoiceImportModal.tsx`
+- `docs/SOBRE.md`
+- `docs/SDD.md`
+- `docs/ROADMAP.md`
+- `npm.cmd test -- invoiceImport` passou.
+- `npm.cmd run lint` passou.
+- `npm.cmd test` passou com 22 arquivos.
+- `npm.cmd run build` passou.
+- `npm.cmd run graphify:src` falhou no sandbox por acesso negado ao temporario do Python (`os error 5`), mas passou fora do sandbox/aprovado.
+- Graphify atualizado: 994 nos, 3647 arestas, 44 comunidades. O Graphify avisou que o conjunto de comunidades mudou desde a rotulagem anterior; 44 nomes foram reaproveitados pelo hub ate futura rodada de `graphify label`.
+
+### Impacto observado
+
+[A VALIDAR] Uma compra importada como `1/10` deve aparecer nas faturas seguintes como `2/10`, `3/10` etc., e a proxima importacao do CSV deve conciliar com essas parcelas em vez de criar duplicatas.
+
+### Proximos passos
+
+Validar no uso real com a compra `Vila Verde Centro Auto` e, se necessario, adicionar tratamento visual para diferenciar parcelas projetadas de parcelas confirmadas pela fatura importada.
+
 ## 2026-10-12 - Bloco P0: competencia por data do evento
 
 ### Antes
